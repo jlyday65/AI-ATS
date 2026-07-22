@@ -24,18 +24,27 @@ npm test
 npm run build
 ```
 
-## Claude ATS connection
+## Gina ATS connection (production)
 
-Configure your Claude ATS base URL + API key under **ATS Connect**.
+SignalHire is wired to the Lyday Talent Partners ATS (**Gina**) at:
 
-Expected endpoint:
+`https://lyday-gina-backend-production.up.railway.app`
 
-```http
-POST /candidates/import
-Authorization: Bearer <api_key>
+```bash
+cp .env.example .env.local
+# set GINA_ATS_APP_PASSWORD to the Gina sign-in gate password
 ```
 
-Demo mode is enabled for `*.example.com` base URLs so you can validate the full flow before wiring production credentials.
+Test connectivity:
+
+```bash
+curl -s http://localhost:3000/api/ats/gina/test | jq
+```
+
+Gina auth flow used by the connector:
+
+1. `POST /auth/app-login` with the app password (session cookie)
+2. Authenticated calls to `/api/jobs`, `/api/candidates`, `/api/candidates/import`, etc.
 
 ## Key API routes
 

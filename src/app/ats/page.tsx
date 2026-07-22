@@ -1,4 +1,5 @@
 import { AtsConnectForm } from "@/components/ats-connect-form";
+import { GINA_DEFAULT_BASE_URL } from "@/lib/ats/gina-client";
 import { ATS_PROVIDERS } from "@/lib/ats/providers";
 import { getDemoOrg, listAtsConnections } from "@/lib/store";
 
@@ -11,8 +12,9 @@ export default function AtsPage() {
       <p className="chip">Integrations</p>
       <h1 className="display mt-3 text-4xl font-bold text-ink">Connect your ATS</h1>
       <p className="mt-3 max-w-3xl text-ink-soft">
-        SignalHire is designed to sit on top of the ATS you already run — especially your custom
-        Claude-built ATS — while also supporting major market systems.
+        SignalHire syncs into{" "}
+        <span className="font-semibold text-ink">Gina</span>, the Lyday Talent Partners ATS at{" "}
+        <code className="text-ink">{GINA_DEFAULT_BASE_URL.replace("https://", "")}</code>.
       </p>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
@@ -43,22 +45,19 @@ export default function AtsPage() {
       </div>
 
       <section className="panel mt-8 rounded-2xl p-6">
-        <h2 className="display text-2xl font-bold">Claude ATS contract</h2>
+        <h2 className="display text-2xl font-bold">Gina auth model</h2>
         <p className="mt-2 text-ink-soft">
-          Your Claude ATS should expose <code className="text-ink">POST /candidates/import</code>{" "}
-          and accept Bearer auth. SignalHire sends normalized candidate payloads with skills,
-          profile URLs, and source tags.
+          Gina uses an app-password gate at <code className="text-ink">/auth/app-login</code>, then
+          cookie-authenticated <code className="text-ink">/api/*</code> routes. Set{" "}
+          <code className="text-ink">GINA_ATS_APP_PASSWORD</code> in the environment (or enter it in
+          the form) to unlock live sync.
         </p>
         <pre className="mt-4 overflow-x-auto rounded-xl bg-ink px-4 py-4 text-sm text-mist">
-{`POST {baseUrl}/candidates/import
-Authorization: Bearer <api_key>
-Content-Type: application/json
+{`GINA_ATS_BASE_URL=${GINA_DEFAULT_BASE_URL}
+GINA_ATS_APP_PASSWORD=********
 
-{
-  "source": "ai-ats",
-  "jobExternalId": "claude_req_1001",
-  "candidates": [{ "fullName": "...", "email": "...", "skills": [] }]
-}`}
+# Optional service key if enabled on Gina
+GINA_ATS_API_KEY=`}
         </pre>
       </section>
     </div>

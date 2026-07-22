@@ -82,6 +82,7 @@ export interface OrgMember {
 }
 
 export type AtsProvider =
+  | "gina_ats"
   | "claude_ats"
   | "greenhouse"
   | "lever"

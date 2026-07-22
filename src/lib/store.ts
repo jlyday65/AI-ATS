@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { GINA_DEFAULT_BASE_URL } from "@/lib/ats/gina-client";
 import type {
   AtsConnection,
   JobRequisition,
@@ -17,21 +18,24 @@ interface DatabaseShape {
   syncEvents: SyncEvent[];
 }
 
+const STORE_VERSION = "gina-v1";
+
 const globalStore = globalThis as typeof globalThis & {
   __aiAtsStore?: DatabaseShape;
+  __aiAtsStoreVersion?: string;
 };
 
 function seed(): DatabaseShape {
-  const orgId = "org_demo_acme";
+  const orgId = "org_lyday_talent";
   const now = new Date().toISOString();
 
   const organization: Organization = {
     id: orgId,
-    name: "Acme Talent Group",
-    slug: "acme-talent",
-    industry: "Staffing & Recruiting",
-    plan: "growth",
-    seats: 25,
+    name: "Lyday Talent Partners",
+    slug: "lyday-talent-partners",
+    industry: "Executive Search & Workforce Strategy",
+    plan: "enterprise",
+    seats: 40,
     createdAt: now,
   };
 
@@ -39,15 +43,15 @@ function seed(): DatabaseShape {
     {
       id: "mem_owner",
       orgId,
-      email: "owner@acme-talent.example",
-      name: "Jordan Lee",
+      email: "james@lydaytalentpartners.com",
+      name: "James Lyday",
       role: "owner",
     },
     {
       id: "mem_recruiter",
       orgId,
-      email: "recruiter@acme-talent.example",
-      name: "Sam Rivera",
+      email: "recruiting@lydaytalentpartners.com",
+      name: "Talent Desk",
       role: "recruiter",
     },
   ];
@@ -66,7 +70,7 @@ function seed(): DatabaseShape {
       preferredSkills: ["Next.js", "LLM tooling", "ATS integrations"],
       seniority: "Senior",
       remote: true,
-      atsExternalId: "claude_req_1001",
+      atsExternalId: "gina_req_1001",
       status: "open",
       createdAt: now,
     },
@@ -82,27 +86,29 @@ function seed(): DatabaseShape {
       preferredSkills: ["Epic", "Quality improvement"],
       seniority: "Manager",
       remote: false,
-      atsExternalId: "claude_req_1002",
+      atsExternalId: "gina_req_1002",
       status: "open",
       createdAt: now,
     },
   ];
 
+  const hasPassword = Boolean(process.env.GINA_ATS_APP_PASSWORD || process.env.GINA_ATS_API_KEY);
+
   const atsConnections: AtsConnection[] = [
     {
-      id: "ats_claude_primary",
+      id: "ats_gina_production",
       orgId,
-      provider: "claude_ats",
-      displayName: "Claude ATS Production",
-      baseUrl: "https://your-claude-ats.example.com/api/v1",
-      apiKeyConfigured: true,
+      provider: "gina_ats",
+      displayName: "Gina ATS Production",
+      baseUrl: GINA_DEFAULT_BASE_URL,
+      apiKeyConfigured: hasPassword,
       syncDirection: "bidirectional",
-      status: "connected",
-      lastSyncAt: now,
+      status: hasPassword ? "connected" : "pending",
+      lastSyncAt: hasPassword ? now : undefined,
       config: {
-        apiKey: "demo-key",
-        demoMode: "true",
-        webhookSecret: "whsec_demo",
+        apiKey: process.env.GINA_ATS_API_KEY ?? "",
+        appPassword: process.env.GINA_ATS_APP_PASSWORD ?? "",
+        demoMode: "false",
       },
     },
   ];
@@ -118,8 +124,9 @@ function seed(): DatabaseShape {
 }
 
 function db(): DatabaseShape {
-  if (!globalStore.__aiAtsStore) {
+  if (!globalStore.__aiAtsStore || globalStore.__aiAtsStoreVersion !== STORE_VERSION) {
     globalStore.__aiAtsStore = seed();
+    globalStore.__aiAtsStoreVersion = STORE_VERSION;
   }
   return globalStore.__aiAtsStore;
 }
@@ -169,11 +176,16 @@ export function upsertAtsConnection(
     status?: AtsConnection["status"];
   },
 ): AtsConnection {
+  const hasSecret = Boolean(input.config.apiKey || input.config.appPassword);
   const existing = input.id ? getAtsConnection(input.id) : undefined;
   if (existing) {
     Object.assign(existing, input, {
       status: input.status ?? "connected",
-      apiKeyConfigured: Boolean(input.config.apiKey) || existing.apiKeyConfigured,
+      apiKeyConfigured: hasSecret || existing.apiKeyConfigured,
+      config: {
+        ...existing.config,
+        ...input.config,
+      },
     });
     return existing;
   }
@@ -184,7 +196,7 @@ export function upsertAtsConnection(
     provider: input.provider,
     displayName: input.displayName,
     baseUrl: input.baseUrl,
-    apiKeyConfigured: Boolean(input.config.apiKey),
+    apiKeyConfigured: hasSecret,
     syncDirection: input.syncDirection,
     lastSyncAt: input.lastSyncAt,
     status: input.status ?? "connected",

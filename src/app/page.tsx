@@ -17,7 +17,7 @@ export default function HomePage() {
         </h1>
         <p className="animate-rise-delay mt-5 max-w-2xl text-lg text-ink-soft md:text-xl">
           Source passive talent across {coverage.total}+ platforms, rank with AI, and push
-          shortlists straight into your Claude-built ATS.
+          shortlists straight into Gina — the Lyday Talent Partners ATS.
         </p>
         <div className="animate-rise-delay mt-8 flex flex-wrap gap-3">
           <Link href="/dashboard" className="btn btn-primary">
@@ -33,8 +33,8 @@ export default function HomePage() {
             <p className="mt-1">Candidate platforms cataloged</p>
           </div>
           <div className="panel rounded-xl p-4">
-            <p className="display text-3xl font-bold text-ink">Claude ATS</p>
-            <p className="mt-1">First-class bidirectional sync adapter</p>
+            <p className="display text-3xl font-bold text-ink">Gina ATS</p>
+            <p className="mt-1">Wired to lyday-gina-backend on Railway</p>
           </div>
           <div className="panel rounded-xl p-4">
             <p className="display text-3xl font-bold text-ink">Multi-tenant</p>
