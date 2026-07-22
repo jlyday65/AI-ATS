@@ -49,6 +49,45 @@ Test connectivity:
 curl -s http://localhost:3000/api/ats/gina/test | jq
 ```
 
+## API authentication (RELAY_SECRET)
+
+Every `/api/*` route on SignalHire is protected by the same shared **`RELAY_SECRET`**
+so only trusted bots and integrations can reach it. Callers must send the secret
+as **either** header:
+
+```bash
+# X-Relay-Secret header
+curl -s http://localhost:3000/api/org -H "X-Relay-Secret: $RELAY_SECRET"
+
+# ...or Authorization: Bearer
+curl -s http://localhost:3000/api/org -H "Authorization: Bearer $RELAY_SECRET"
+```
+
+The value is compared against `process.env.RELAY_SECRET`. Requests with a missing
+or wrong secret get `401 Unauthorized`.
+
+- **No `RELAY_SECRET` set → auth is disabled.** This keeps local development and
+  the built-in dashboard/sourcing UI working without a secret. Set the variable
+  only when you want to lock the API down.
+- Use the **same** `RELAY_SECRET` value across Gina, SignalHire, and every bot.
+
+### Enable it locally
+
+```bash
+cp .env.example .env.local
+# set RELAY_SECRET=<same value as Railway Gina>
+npm run dev   # restart so the new env var is picked up
+```
+
+### Deploy on Railway
+
+1. Railway → SignalHire service → **Variables** → add `RELAY_SECRET=<value>`
+   (use the same value configured on the Gina service and every bot).
+2. **Redeploy** the SignalHire service so the middleware reads the new variable —
+   changing the variable without a redeploy will not take effect.
+3. Confirm it is live: a request **without** the secret should now return `401`,
+   and one **with** `X-Relay-Secret` / `Authorization: Bearer` should return `200`.
+
 ## Key API routes
 
 | Method | Path | Purpose |
