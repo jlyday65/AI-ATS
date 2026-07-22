@@ -18,6 +18,7 @@ const connectSchema = z.object({
   baseUrl: z.string().url(),
   apiKey: z.string().optional(),
   appPassword: z.string().optional(),
+  relaySecret: z.string().optional(),
   syncDirection: z.enum(["push", "pull", "bidirectional"]).default("bidirectional"),
   demoMode: z.boolean().optional(),
 });
@@ -44,10 +45,13 @@ export async function POST(request: Request) {
     displayName: parsed.data.displayName,
     baseUrl: parsed.data.baseUrl,
     syncDirection: parsed.data.syncDirection,
-    apiKeyConfigured: Boolean(parsed.data.apiKey || parsed.data.appPassword),
+    apiKeyConfigured: Boolean(
+      parsed.data.apiKey || parsed.data.appPassword || parsed.data.relaySecret,
+    ),
     config: {
       apiKey: parsed.data.apiKey ?? "",
       appPassword: parsed.data.appPassword ?? "",
+      relaySecret: parsed.data.relaySecret ?? "",
       demoMode: parsed.data.demoMode ? "true" : "false",
     },
   });

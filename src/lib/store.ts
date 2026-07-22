@@ -92,7 +92,12 @@ function seed(): DatabaseShape {
     },
   ];
 
-  const hasPassword = Boolean(process.env.GINA_ATS_APP_PASSWORD || process.env.GINA_ATS_API_KEY);
+  const hasSecret = Boolean(
+    process.env.RELAY_SECRET ||
+      process.env.GINA_RELAY_SECRET ||
+      process.env.GINA_ATS_APP_PASSWORD ||
+      process.env.GINA_ATS_API_KEY,
+  );
 
   const atsConnections: AtsConnection[] = [
     {
@@ -101,13 +106,14 @@ function seed(): DatabaseShape {
       provider: "gina_ats",
       displayName: "Gina ATS Production",
       baseUrl: GINA_DEFAULT_BASE_URL,
-      apiKeyConfigured: hasPassword,
+      apiKeyConfigured: hasSecret,
       syncDirection: "bidirectional",
-      status: hasPassword ? "connected" : "pending",
-      lastSyncAt: hasPassword ? now : undefined,
+      status: hasSecret ? "connected" : "pending",
+      lastSyncAt: hasSecret ? now : undefined,
       config: {
         apiKey: process.env.GINA_ATS_API_KEY ?? "",
         appPassword: process.env.GINA_ATS_APP_PASSWORD ?? "",
+        relaySecret: process.env.RELAY_SECRET || process.env.GINA_RELAY_SECRET || "",
         demoMode: "false",
       },
     },
@@ -176,7 +182,7 @@ export function upsertAtsConnection(
     status?: AtsConnection["status"];
   },
 ): AtsConnection {
-  const hasSecret = Boolean(input.config.apiKey || input.config.appPassword);
+  const hasSecret = Boolean(input.config.apiKey || input.config.appPassword || input.config.relaySecret);
   const existing = input.id ? getAtsConnection(input.id) : undefined;
   if (existing) {
     Object.assign(existing, input, {

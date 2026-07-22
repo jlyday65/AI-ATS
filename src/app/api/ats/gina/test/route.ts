@@ -6,6 +6,7 @@ const schema = z.object({
   baseUrl: z.string().url().optional(),
   appPassword: z.string().optional(),
   apiKey: z.string().optional(),
+  relaySecret: z.string().optional(),
 });
 
 export async function GET() {
@@ -13,6 +14,7 @@ export async function GET() {
     baseUrl: GINA_DEFAULT_BASE_URL,
     appPassword: process.env.GINA_ATS_APP_PASSWORD,
     apiKey: process.env.GINA_ATS_API_KEY,
+    relaySecret: process.env.RELAY_SECRET || process.env.GINA_RELAY_SECRET,
   });
   return NextResponse.json(result, { status: result.healthOk ? 200 : 503 });
 }
@@ -28,6 +30,10 @@ export async function POST(request: Request) {
     baseUrl: parsed.data.baseUrl || GINA_DEFAULT_BASE_URL,
     appPassword: parsed.data.appPassword || process.env.GINA_ATS_APP_PASSWORD,
     apiKey: parsed.data.apiKey || process.env.GINA_ATS_API_KEY,
+    relaySecret:
+      parsed.data.relaySecret ||
+      process.env.RELAY_SECRET ||
+      process.env.GINA_RELAY_SECRET,
   });
 
   return NextResponse.json(result, { status: result.healthOk ? 200 : 503 });

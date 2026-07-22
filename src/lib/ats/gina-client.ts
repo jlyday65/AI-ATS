@@ -8,6 +8,8 @@ export interface GinaCredentials {
   baseUrl?: string;
   appPassword?: string;
   apiKey?: string;
+  /** Shared bot secret used by Gina integrations (Railway RELAY_SECRET). */
+  relaySecret?: string;
 }
 
 export interface GinaConnectionTest {
@@ -101,6 +103,7 @@ type AuthAttempt = {
 function buildAuthAttempts(credentials: GinaCredentials, cookie?: string | null): AuthAttempt[] {
   const password = credentials.appPassword?.trim() || "";
   const apiKey = credentials.apiKey?.trim() || "";
+  const relaySecret = credentials.relaySecret?.trim() || "";
   const attempts: AuthAttempt[] = [];
 
   const baseHeaders = {
@@ -108,6 +111,33 @@ function buildAuthAttempts(credentials: GinaCredentials, cookie?: string | null)
     "Content-Type": "application/json",
     "X-SignalHire-Client": "ai-ats",
   };
+
+  // Gina bots historically authenticated with Railway RELAY_SECRET.
+  if (relaySecret) {
+    attempts.push({
+      strategy: "x-relay-secret",
+      headers: {
+        ...baseHeaders,
+        "X-Relay-Secret": relaySecret,
+        "X-RELAY-SECRET": relaySecret,
+        "Relay-Secret": relaySecret,
+      },
+    });
+    attempts.push({
+      strategy: "bearer-relay-secret",
+      headers: { ...baseHeaders, Authorization: `Bearer ${relaySecret}` },
+    });
+    attempts.push({
+      strategy: "relay-secret-api-key",
+      headers: {
+        ...baseHeaders,
+        Authorization: `Bearer ${relaySecret}`,
+        "X-API-Key": relaySecret,
+        "X-Bot-Secret": relaySecret,
+        "X-Webhook-Secret": relaySecret,
+      },
+    });
+  }
 
   if (cookie) {
     attempts.push({
@@ -157,6 +187,26 @@ function buildAuthAttempts(credentials: GinaCredentials, cookie?: string | null)
   }
 
   return attempts;
+}
+
+function resolveCredentials(credentials: GinaCredentials = {}): Required<
+  Pick<GinaCredentials, "baseUrl" | "appPassword" | "apiKey" | "relaySecret">
+> {
+  return {
+    baseUrl: credentials.baseUrl || GINA_DEFAULT_BASE_URL,
+    appPassword: (
+      credentials.appPassword ||
+      process.env.GINA_ATS_APP_PASSWORD ||
+      ""
+    ).trim(),
+    apiKey: (credentials.apiKey || process.env.GINA_ATS_API_KEY || "").trim(),
+    relaySecret: (
+      credentials.relaySecret ||
+      process.env.RELAY_SECRET ||
+      process.env.GINA_RELAY_SECRET ||
+      ""
+    ).trim(),
+  };
 }
 
 async function requestGina(
@@ -255,9 +305,9 @@ async function probeWithAttempts(
 export async function testGinaConnection(
   credentials: GinaCredentials = {},
 ): Promise<GinaConnectionTest> {
-  const baseUrl = normalizeBaseUrl(credentials.baseUrl || GINA_DEFAULT_BASE_URL);
-  const appPassword = (credentials.appPassword || process.env.GINA_ATS_APP_PASSWORD || "").trim();
-  const apiKey = (credentials.apiKey || process.env.GINA_ATS_API_KEY || "").trim();
+  const resolved = resolveCredentials(credentials);
+  const baseUrl = normalizeBaseUrl(resolved.baseUrl);
+  const { appPassword, apiKey, relaySecret } = resolved;
 
   let healthOk = false;
   try {
@@ -286,7 +336,7 @@ export async function testGinaConnection(
     loginLocation = login.location;
     cookie = login.cookie;
 
-    if (login.location.includes("error=1")) {
+    if (login.location.includes("error=1") && !relaySecret && !apiKey) {
       return {
         ok: false,
         healthOk,
@@ -297,14 +347,14 @@ export async function testGinaConnection(
         loginLocation,
         probedRoutes: [],
         message:
-          "Gina rejected the password (redirected to /?error=1). Use the exact password from the Gina web sign-in page.",
+          "Gina rejected the browser password (/?error=1). If your bots used RELAY_SECRET, that is the value SignalHire needs — not the web sign-in password.",
         nextStep:
-          "Open the Gina URL in Safari, sign in there first, then paste that same password into SignalHire and click Save connection.",
+          "In Railway → Gina → Variables, create a new RELAY_SECRET, redeploy Gina, then paste that same secret into SignalHire.",
       };
     }
   }
 
-  if (!appPassword && !apiKey) {
+  if (!appPassword && !apiKey && !relaySecret) {
     return {
       ok: healthOk,
       healthOk,
@@ -312,12 +362,14 @@ export async function testGinaConnection(
       cookieReceived: false,
       baseUrl,
       probedRoutes: [],
-      message: "Gina is online, but no password was provided to SignalHire.",
-      nextStep: "Enter the Gina sign-in password and click Save connection.",
+      message:
+        "Gina is online, but SignalHire has no RELAY_SECRET (or password) configured.",
+      nextStep:
+        "Set a new RELAY_SECRET in Railway Gina variables, redeploy, then enter it here and Save connection.",
     };
   }
 
-  const attempts = buildAuthAttempts({ appPassword, apiKey }, cookie);
+  const attempts = buildAuthAttempts({ appPassword, apiKey, relaySecret }, cookie);
   const probe = await probeWithAttempts(baseUrl, attempts);
 
   if (!probe.authenticated) {
@@ -331,10 +383,11 @@ export async function testGinaConnection(
       loginLocation,
       authStrategy: probe.authStrategy,
       probedRoutes: probe.probedRoutes,
-      message:
-        "Password was accepted by the login form, but /api/* still returned unauthorized. Gina may use a different auth header than the browser cookie gate.",
+      message: relaySecret
+        ? "RELAY_SECRET was sent, but Gina still returned unauthorized. The secret on Railway is likely rotated, missing, or no longer checked by Gina."
+        : "Could not authenticate to Gina /api routes. Bot integrations historically used RELAY_SECRET.",
       nextStep:
-        "In Railway → Gina service → Variables, check for an API key / token variable and paste that into the optional API key field.",
+        "Railway → Gina service → Variables: set RELAY_SECRET to a fresh value → Redeploy Gina → paste the same value into SignalHire’s RELAY_SECRET field → Test Gina.",
     };
   }
 
@@ -354,7 +407,7 @@ export async function testGinaConnection(
         ? `Connected to Gina via ${probe.authStrategy}. Found ${probe.jobsFound} job(s).`
         : `Connected to Gina via ${probe.authStrategy}.`,
     nextStep:
-      "Connection works. Go to /sourcing, run AI sourcing, and keep “Push top matches to ATS” checked.",
+      "Connection works. Go to /sourcing, run AI sourcing, and keep “Push top matches to ATS” checked. Update other bots to the same RELAY_SECRET.",
   };
 }
 
@@ -366,34 +419,34 @@ export async function pushCandidatesToGina(input: {
   job: JobRequisition;
   candidates: CandidateProfile[];
 }): Promise<GinaPushResult> {
-  const credentials = input.credentials ?? {};
-  const baseUrl = normalizeBaseUrl(credentials.baseUrl || GINA_DEFAULT_BASE_URL);
-  const appPassword = (credentials.appPassword || process.env.GINA_ATS_APP_PASSWORD || "").trim();
-  const apiKey = (credentials.apiKey || process.env.GINA_ATS_API_KEY || "").trim();
+  const resolved = resolveCredentials(input.credentials ?? {});
+  const baseUrl = normalizeBaseUrl(resolved.baseUrl);
+  const { appPassword, apiKey, relaySecret } = resolved;
 
-  if (!appPassword && !apiKey) {
+  if (!appPassword && !apiKey && !relaySecret) {
     return {
       ok: false,
       externalIds: [],
       message:
-        "Missing Gina credentials. Enter the sign-in password on /ats and click Save connection.",
+        "Missing Gina RELAY_SECRET. Set it on /ats (or as RELAY_SECRET in .env.local) and Save connection.",
     };
   }
 
   let cookie: string | null = null;
   if (appPassword) {
     const login = await loginWithAppPassword(baseUrl, appPassword);
-    if (login.location.includes("error=1")) {
+    if (login.location.includes("error=1") && !relaySecret && !apiKey) {
       return {
         ok: false,
         externalIds: [],
-        message: "Gina rejected the saved password during sync (/?error=1).",
+        message:
+          "Gina rejected the browser password during sync. Use RELAY_SECRET from Railway instead.",
       };
     }
     cookie = login.cookie;
   }
 
-  const attempts = buildAuthAttempts({ appPassword, apiKey }, cookie);
+  const attempts = buildAuthAttempts({ appPassword, apiKey, relaySecret }, cookie);
   const probe = await probeWithAttempts(baseUrl, attempts);
   if (!probe.authenticated || !probe.workingHeaders) {
     return {

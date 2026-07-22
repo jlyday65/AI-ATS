@@ -45,19 +45,19 @@ export default function AtsPage() {
       </div>
 
       <section className="panel mt-8 rounded-2xl p-6">
-        <h2 className="display text-2xl font-bold">Gina auth model</h2>
+        <h2 className="display text-2xl font-bold">Gina bot auth (RELAY_SECRET)</h2>
         <p className="mt-2 text-ink-soft">
-          Gina uses an app-password gate at <code className="text-ink">/auth/app-login</code>, then
-          cookie-authenticated <code className="text-ink">/api/*</code> routes. Set{" "}
-          <code className="text-ink">GINA_ATS_APP_PASSWORD</code> in the environment (or enter it in
-          the form) to unlock live sync.
+          Gina bot integrations (including SignalHire sync) authenticate with{" "}
+          <code className="text-ink">RELAY_SECRET</code> from Railway. If that secret was rotated or
+          removed, every bot breaks until you set a new shared value and redeploy Gina.
         </p>
         <pre className="mt-4 overflow-x-auto rounded-xl bg-ink px-4 py-4 text-sm text-mist">
-{`GINA_ATS_BASE_URL=${GINA_DEFAULT_BASE_URL}
-GINA_ATS_APP_PASSWORD=********
+{`# Railway → Gina service → Variables
+RELAY_SECRET=<generate-a-new-long-random-string>
 
-# Optional service key if enabled on Gina
-GINA_ATS_API_KEY=`}
+# Then in SignalHire (.env.local or ATS Connect form)
+RELAY_SECRET=<same-value>
+GINA_ATS_BASE_URL=${GINA_DEFAULT_BASE_URL}`}
         </pre>
       </section>
     </div>

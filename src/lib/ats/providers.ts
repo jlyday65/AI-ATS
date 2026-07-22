@@ -19,7 +19,7 @@ export const ATS_PROVIDERS: AtsProviderMeta[] = [
     id: "gina_ats",
     name: "Gina ATS (Lyday Talent Partners)",
     description:
-      "Production Claude-built ATS hosted on Railway. Uses app-password session auth plus optional API key.",
+      "Production Claude-built ATS on Railway. Bot integrations use RELAY_SECRET; browser gate uses app password.",
     defaultBaseUrl: GINA_DEFAULT_BASE_URL,
     authType: "app_password",
     supportsBidirectional: true,
@@ -124,6 +124,10 @@ export async function pushCandidatesToAts(payload: AtsSyncPayload): Promise<AtsS
         baseUrl: connection.baseUrl,
         apiKey: connection.config.apiKey,
         appPassword: connection.config.appPassword || process.env.GINA_ATS_APP_PASSWORD,
+        relaySecret:
+          connection.config.relaySecret ||
+          process.env.RELAY_SECRET ||
+          process.env.GINA_RELAY_SECRET,
       },
       job,
       candidates,
@@ -161,6 +165,10 @@ export async function probeAtsConnection(connection: AtsConnection) {
     baseUrl: connection.baseUrl,
     apiKey: connection.config.apiKey,
     appPassword: connection.config.appPassword || process.env.GINA_ATS_APP_PASSWORD,
+    relaySecret:
+      connection.config.relaySecret ||
+      process.env.RELAY_SECRET ||
+      process.env.GINA_RELAY_SECRET,
   });
 }
 

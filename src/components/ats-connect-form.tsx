@@ -25,6 +25,7 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
   const [baseUrl, setBaseUrl] = useState(
     selected?.defaultBaseUrl ?? "https://lyday-gina-backend-production.up.railway.app",
   );
+  const [relaySecret, setRelaySecret] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [appPassword, setAppPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -41,9 +42,16 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!appPassword.trim() && !apiKey.trim() && (provider === "gina_ats" || provider === "claude_ats")) {
-      setMessage("Enter the Gina sign-in password before saving.");
-      setNextStep("Use the same password that works at the Gina Railway URL in Safari.");
+    if (
+      !relaySecret.trim() &&
+      !appPassword.trim() &&
+      !apiKey.trim() &&
+      (provider === "gina_ats" || provider === "claude_ats")
+    ) {
+      setMessage("Enter RELAY_SECRET (preferred for bots) before saving.");
+      setNextStep(
+        "Create a new RELAY_SECRET in Railway Gina variables, redeploy Gina, then paste it here.",
+      );
       return;
     }
 
@@ -57,6 +65,7 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
         provider,
         displayName,
         baseUrl,
+        relaySecret: relaySecret || undefined,
         apiKey: apiKey || undefined,
         appPassword: appPassword || undefined,
         syncDirection: selected?.supportsBidirectional ? "bidirectional" : "push",
@@ -74,8 +83,8 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
   }
 
   async function testGina() {
-    if (!appPassword.trim() && !apiKey.trim()) {
-      setMessage("Enter the Gina sign-in password before testing.");
+    if (!relaySecret.trim() && !appPassword.trim() && !apiKey.trim()) {
+      setMessage("Enter RELAY_SECRET before testing.");
       return;
     }
     setPending(true);
@@ -86,6 +95,7 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         baseUrl,
+        relaySecret: relaySecret || undefined,
         appPassword: appPassword || undefined,
         apiKey: apiKey || undefined,
       }),
@@ -138,17 +148,30 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
         />
       </label>
       {(provider === "gina_ats" || provider === "claude_ats") && (
-        <label className="block text-sm">
-          <span className="font-medium text-ink">Gina app password</span>
-          <input
-            type="password"
-            className="mt-1 w-full rounded-lg border border-line bg-white px-3 py-2"
-            value={appPassword}
-            onChange={(event) => setAppPassword(event.target.value)}
-            placeholder="Exact password from Gina sign-in page"
-            autoComplete="current-password"
-          />
-        </label>
+        <>
+          <label className="block text-sm">
+            <span className="font-medium text-ink">RELAY_SECRET (required for bots)</span>
+            <input
+              type="password"
+              className="mt-1 w-full rounded-lg border border-line bg-white px-3 py-2"
+              value={relaySecret}
+              onChange={(event) => setRelaySecret(event.target.value)}
+              placeholder="Same secret Gina bots used in Railway"
+              autoComplete="off"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="font-medium text-ink">Browser app password (optional)</span>
+            <input
+              type="password"
+              className="mt-1 w-full rounded-lg border border-line bg-white px-3 py-2"
+              value={appPassword}
+              onChange={(event) => setAppPassword(event.target.value)}
+              placeholder="Only if you also use the Gina web login gate"
+              autoComplete="current-password"
+            />
+          </label>
+        </>
       )}
       <label className="block text-sm">
         <span className="font-medium text-ink">API key (optional)</span>
@@ -160,8 +183,8 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
         />
       </label>
       <p className="text-sm text-ink-soft">
-        Saving the password does not sync candidates by itself. After a successful test, go to{" "}
-        <strong>AI Sourcing</strong> and run a job with push enabled.
+        If the old RELAY_SECRET stopped working, set a <strong>new</strong> one in Railway Gina,
+        redeploy Gina, update every bot, then paste it here and click Save.
       </p>
       <div className="flex flex-wrap gap-3">
         <button type="submit" className="btn btn-primary" disabled={pending}>

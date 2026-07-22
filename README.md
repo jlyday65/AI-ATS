@@ -30,9 +30,17 @@ SignalHire is wired to the Lyday Talent Partners ATS (**Gina**) at:
 
 `https://lyday-gina-backend-production.up.railway.app`
 
+Bot integrations (including SignalHire) authenticate with **`RELAY_SECRET`**.
+
+If the old secret stopped working:
+
+1. Railway → Gina service → Variables → set a new `RELAY_SECRET`
+2. Redeploy Gina
+3. Update every bot + SignalHire to the same value
+
 ```bash
 cp .env.example .env.local
-# set GINA_ATS_APP_PASSWORD to the Gina sign-in gate password
+# set RELAY_SECRET=<same value as Railway Gina>
 ```
 
 Test connectivity:
@@ -40,11 +48,6 @@ Test connectivity:
 ```bash
 curl -s http://localhost:3000/api/ats/gina/test | jq
 ```
-
-Gina auth flow used by the connector:
-
-1. `POST /auth/app-login` with the app password (session cookie)
-2. Authenticated calls to `/api/jobs`, `/api/candidates`, `/api/candidates/import`, etc.
 
 ## Key API routes
 
