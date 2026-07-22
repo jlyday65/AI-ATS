@@ -1,0 +1,127 @@
+export type PlatformCategory =
+  | "professional"
+  | "developer"
+  | "design"
+  | "academic"
+  | "healthcare"
+  | "job_board"
+  | "social"
+  | "community"
+  | "identity";
+
+export type PlatformStatus = "live" | "beta" | "planned";
+
+export interface CandidatePlatform {
+  id: string;
+  name: string;
+  category: PlatformCategory;
+  status: PlatformStatus;
+  description: string;
+  homepage: string;
+  supportsSearch: boolean;
+  supportsEnrichment: boolean;
+}
+
+export interface CandidateProfile {
+  id: string;
+  fullName: string;
+  headline?: string;
+  location?: string;
+  email?: string;
+  skills: string[];
+  experienceYears?: number;
+  platforms: Array<{
+    platformId: string;
+    profileUrl: string;
+    handle?: string;
+  }>;
+  summary?: string;
+  sourceSignals: string[];
+}
+
+export interface JobRequisition {
+  id: string;
+  orgId: string;
+  title: string;
+  department?: string;
+  location?: string;
+  employmentType: "full_time" | "contract" | "part_time" | "internship";
+  description: string;
+  requiredSkills: string[];
+  preferredSkills: string[];
+  seniority?: string;
+  remote?: boolean;
+  atsExternalId?: string;
+  status: "open" | "paused" | "closed";
+  createdAt: string;
+}
+
+export interface MatchResult {
+  candidate: CandidateProfile;
+  score: number;
+  reasons: string[];
+  platformHits: string[];
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  industry?: string;
+  plan: "starter" | "growth" | "enterprise";
+  seats: number;
+  createdAt: string;
+}
+
+export interface OrgMember {
+  id: string;
+  orgId: string;
+  email: string;
+  name: string;
+  role: "owner" | "admin" | "recruiter" | "hiring_manager";
+}
+
+export type AtsProvider =
+  | "claude_ats"
+  | "greenhouse"
+  | "lever"
+  | "workday"
+  | "icims"
+  | "bullhorn"
+  | "custom_webhook";
+
+export interface AtsConnection {
+  id: string;
+  orgId: string;
+  provider: AtsProvider;
+  displayName: string;
+  baseUrl: string;
+  apiKeyConfigured: boolean;
+  syncDirection: "push" | "pull" | "bidirectional";
+  lastSyncAt?: string;
+  status: "connected" | "error" | "pending";
+  config: Record<string, string>;
+}
+
+export interface SourcingRun {
+  id: string;
+  orgId: string;
+  jobId: string;
+  status: "queued" | "running" | "completed" | "failed";
+  platformsQueried: string[];
+  candidateCount: number;
+  startedAt: string;
+  completedAt?: string;
+  matches: MatchResult[];
+}
+
+export interface SyncEvent {
+  id: string;
+  orgId: string;
+  atsConnectionId: string;
+  direction: "push" | "pull";
+  entityType: "candidate" | "job" | "application";
+  payloadSummary: string;
+  status: "success" | "failed";
+  createdAt: string;
+}
