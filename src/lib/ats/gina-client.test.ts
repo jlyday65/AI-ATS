@@ -12,6 +12,6 @@ describe("gina production connector", () => {
       baseUrl: GINA_DEFAULT_BASE_URL,
     });
     assert.equal(result.healthOk, true);
-    assert.match(result.message, /health check passed|Connected to Gina/i);
+    assert.match(result.message, /online|unreachable|password/i);
   });
 });

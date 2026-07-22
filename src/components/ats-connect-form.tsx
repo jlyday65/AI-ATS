@@ -4,6 +4,18 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { AtsProviderMeta } from "@/lib/ats/providers";
 
+interface ProbeResult {
+  ok?: boolean;
+  authenticated?: boolean;
+  message?: string;
+  nextStep?: string;
+  authStrategy?: string;
+  cookieReceived?: boolean;
+  loginStatus?: number;
+  loginLocation?: string;
+  probedRoutes?: Array<{ path: string; status: number; ok: boolean }>;
+}
+
 export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) {
   const router = useRouter();
   const defaultProvider = providers.find((item) => item.id === "gina_ats") ?? providers[0];
@@ -16,12 +28,28 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
   const [apiKey, setApiKey] = useState("");
   const [appPassword, setAppPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [nextStep, setNextStep] = useState<string | null>(null);
+  const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [pending, setPending] = useState(false);
+
+  function applyProbe(json: { probe?: ProbeResult; message?: string } & ProbeResult) {
+    const result = json.probe ?? json;
+    setProbe(result);
+    setMessage(result.message ?? json.message ?? "Done");
+    setNextStep(result.nextStep ?? null);
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (!appPassword.trim() && !apiKey.trim() && (provider === "gina_ats" || provider === "claude_ats")) {
+      setMessage("Enter the Gina sign-in password before saving.");
+      setNextStep("Use the same password that works at the Gina Railway URL in Safari.");
+      return;
+    }
+
     setPending(true);
     setMessage(null);
+    setNextStep(null);
     const response = await fetch("/api/ats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -41,13 +69,18 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
       setMessage("Could not save ATS connection.");
       return;
     }
-    setMessage(json.probe?.message ?? `Connected ${json.connection.displayName}`);
+    applyProbe(json);
     router.refresh();
   }
 
   async function testGina() {
+    if (!appPassword.trim() && !apiKey.trim()) {
+      setMessage("Enter the Gina sign-in password before testing.");
+      return;
+    }
     setPending(true);
     setMessage(null);
+    setNextStep(null);
     const response = await fetch("/api/ats/gina/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -59,7 +92,7 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
     });
     const json = await response.json();
     setPending(false);
-    setMessage(json.message ?? "Test complete");
+    applyProbe(json);
   }
 
   return (
@@ -112,7 +145,8 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
             className="mt-1 w-full rounded-lg border border-line bg-white px-3 py-2"
             value={appPassword}
             onChange={(event) => setAppPassword(event.target.value)}
-            placeholder="Password used on the Gina sign-in gate"
+            placeholder="Exact password from Gina sign-in page"
+            autoComplete="current-password"
           />
         </label>
       )}
@@ -122,12 +156,16 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
           className="mt-1 w-full rounded-lg border border-line bg-white px-3 py-2"
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
+          placeholder="Only if Railway has a separate API token"
         />
       </label>
-      <p className="text-sm text-ink-soft">{selected?.description}</p>
+      <p className="text-sm text-ink-soft">
+        Saving the password does not sync candidates by itself. After a successful test, go to{" "}
+        <strong>AI Sourcing</strong> and run a job with push enabled.
+      </p>
       <div className="flex flex-wrap gap-3">
         <button type="submit" className="btn btn-primary" disabled={pending}>
-          {pending ? "Saving..." : "Save connection"}
+          {pending ? "Working..." : "Save connection"}
         </button>
         {(provider === "gina_ats" || provider === "claude_ats") && (
           <button type="button" className="btn btn-secondary" disabled={pending} onClick={testGina}>
@@ -135,7 +173,25 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
           </button>
         )}
       </div>
-      {message ? <p className="text-sm font-medium text-signal-deep">{message}</p> : null}
+      {message ? <p className="text-sm font-medium text-ink">{message}</p> : null}
+      {nextStep ? <p className="text-sm text-signal-deep">{nextStep}</p> : null}
+      {probe?.probedRoutes?.length ? (
+        <div className="rounded-xl border border-line bg-white px-3 py-3 text-xs text-ink-soft">
+          <p className="font-semibold text-ink">Diagnostics</p>
+          <p className="mt-1">
+            strategy: {probe.authStrategy ?? "n/a"} · cookie:{" "}
+            {probe.cookieReceived ? "yes" : "no"} · login: {probe.loginStatus ?? "n/a"}{" "}
+            {probe.loginLocation ?? ""}
+          </p>
+          <ul className="mt-2 space-y-1">
+            {probe.probedRoutes.slice(0, 6).map((route) => (
+              <li key={route.path}>
+                {route.path}: {route.status} {route.ok ? "OK" : "FAIL"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </form>
   );
 }
