@@ -384,10 +384,10 @@ export async function testGinaConnection(
       authStrategy: probe.authStrategy,
       probedRoutes: probe.probedRoutes,
       message: relaySecret
-        ? "RELAY_SECRET was sent, but Gina still returned unauthorized. The secret on Railway is likely rotated, missing, or no longer checked by Gina."
+        ? "SignalHire sent RELAY_SECRET, but Gina /api/* still returned 401. Setting the Railway variable alone is not enough — Gina’s running code must check that secret."
         : "Could not authenticate to Gina /api routes. Bot integrations historically used RELAY_SECRET.",
       nextStep:
-        "Railway → Gina service → Variables: set RELAY_SECRET to a fresh value → Redeploy Gina → paste the same value into SignalHire’s RELAY_SECRET field → Test Gina.",
+        "In Gina’s backend source, confirm middleware compares X-Relay-Secret (or Bearer) to process.env.RELAY_SECRET, then redeploy Gina. Also verify the variable is on the production Gina service and a redeploy happened after saving it. If you share the Gina GitHub repo, we can patch that auth middleware.",
     };
   }
 

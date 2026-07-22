@@ -47,15 +47,21 @@ export default function AtsPage() {
       <section className="panel mt-8 rounded-2xl p-6">
         <h2 className="display text-2xl font-bold">Gina bot auth (RELAY_SECRET)</h2>
         <p className="mt-2 text-ink-soft">
-          Gina bot integrations (including SignalHire sync) authenticate with{" "}
-          <code className="text-ink">RELAY_SECRET</code> from Railway. If that secret was rotated or
-          removed, every bot breaks until you set a new shared value and redeploy Gina.
+          Gina bot integrations authenticate with{" "}
+          <code className="text-ink">RELAY_SECRET</code>. If Test Gina shows 401 after you paste a
+          fresh secret, the Railway variable is present but <strong>Gina’s code is not accepting
+          it</strong> (middleware missing, wrong header, or not redeployed).
         </p>
         <pre className="mt-4 overflow-x-auto rounded-xl bg-ink px-4 py-4 text-sm text-mist">
-{`# Railway → Gina service → Variables
-RELAY_SECRET=<generate-a-new-long-random-string>
+{`# Gina backend middleware must do something like:
+# req.get('x-relay-secret') === process.env.RELAY_SECRET
+# or Authorization: Bearer <RELAY_SECRET>
 
-# Then in SignalHire (.env.local or ATS Connect form)
+# Railway → Gina production service → Variables
+RELAY_SECRET=<new-long-random-string>
+# then Redeploy Gina
+
+# SignalHire (.env.local or ATS Connect)
 RELAY_SECRET=<same-value>
 GINA_ATS_BASE_URL=${GINA_DEFAULT_BASE_URL}`}
         </pre>
