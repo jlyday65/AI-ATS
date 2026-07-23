@@ -5,7 +5,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in sync error text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v3";
+export const GINA_CLIENT_VERSION = "ats-v4";
 
 export interface GinaCredentials {
   baseUrl?: string;
@@ -490,13 +490,28 @@ export async function pushCandidatesToGina(input: {
   };
 
   const endpoints = [
-    "/ats/candidates/import",
-    "/ats/candidates/bulk",
+    // Likely Gina ATS mounts (app.use("/ats", atsRoutes))
     "/ats/candidates",
-    "/ats/applications",
+    "/ats/candidate",
+    "/ats/jobs/candidates",
+    "/ats/job/candidates",
+    "/ats/pipeline/candidates",
+    "/ats/pipeline",
     "/ats/people",
+    "/ats/applications",
+    "/ats/applicants",
+    "/ats/import",
+    "/ats/import/candidates",
+    "/ats",
+    // Exempt webhook path from authApp.js EXEMPT_PATHS
+    "/webhooks/candidate",
+    "/webhooks/candidates",
+    // Maria sourcer hooks
     "/maria/candidates",
+    "/maria/candidate",
     "/maria/source",
+    "/maria/import",
+    "/maria",
   ];
 
   const errors: string[] = [];
@@ -524,11 +539,13 @@ export async function pushCandidatesToGina(input: {
       try {
         const json = JSON.parse(text) as {
           ids?: string[];
+          id?: string;
           candidates?: Array<{ id?: string }>;
           data?: Array<{ id?: string }>;
         };
         externalIds =
           json.ids ??
+          (json.id ? [String(json.id)] : undefined) ??
           json.candidates?.map((item) => item.id).filter(Boolean).map(String) ??
           json.data?.map((item) => item.id).filter(Boolean).map(String) ??
           [];
@@ -541,34 +558,55 @@ export async function pushCandidatesToGina(input: {
         externalIds,
         endpointUsed: endpoint,
         authStrategy: probe.authStrategy,
-        message: `Pushed ${input.candidates.length} candidate(s) to Gina via ${endpoint}.`,
+        message: `Pushed ${input.candidates.length} candidate(s) to Gina via ${endpoint} [${GINA_CLIENT_VERSION}].`,
       };
     } catch (error) {
       errors.push(`${endpoint} → ${error instanceof Error ? error.message : "network error"}`);
     }
   }
 
+  // Also try single-candidate payloads on the most likely create paths.
+  const singlePaths = [
+    "/ats/candidates",
+    "/ats/candidate",
+    "/webhooks/candidate",
+    "/maria/candidate",
+  ];
   const createdIds: string[] = [];
   for (const candidate of payload.candidates) {
-    try {
-      const response = await requestGina(baseUrl, "/ats/candidates", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          ...candidate,
-          jobId: payload.jobId,
-          jobTitle: payload.jobTitle,
-        }),
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        errors.push(`single /ats/candidates → ${response.status}: ${text.slice(0, 120)}`);
-        continue;
+    let created = false;
+    for (const path of singlePaths) {
+      try {
+        const response = await requestGina(baseUrl, path, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            ...candidate,
+            jobId: payload.jobId,
+            jobTitle: payload.jobTitle,
+            source: "signalhire",
+          }),
+        });
+        if (response.status === 404 || response.status === 405) {
+          continue;
+        }
+        if (!response.ok) {
+          const text = await response.text();
+          errors.push(`single ${path} → ${response.status}: ${text.slice(0, 120)}`);
+          continue;
+        }
+        const json = (await response.json().catch(() => null)) as { id?: string } | null;
+        createdIds.push(json?.id ?? candidate.email ?? candidate.fullName);
+        created = true;
+        break;
+      } catch (error) {
+        errors.push(
+          `single ${path} → ${error instanceof Error ? error.message : "single create failed"}`,
+        );
       }
-      const json = (await response.json().catch(() => null)) as { id?: string } | null;
-      createdIds.push(json?.id ?? candidate.email ?? candidate.fullName);
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : "single create failed");
+    }
+    if (!created) {
+      errors.push(`single create failed for ${candidate.fullName}`);
     }
   }
 
@@ -576,9 +614,9 @@ export async function pushCandidatesToGina(input: {
     return {
       ok: true,
       externalIds: createdIds,
-      endpointUsed: "/ats/candidates",
+      endpointUsed: singlePaths.join("|"),
       authStrategy: probe.authStrategy,
-      message: `Created ${createdIds.length}/${input.candidates.length} candidates in Gina.`,
+      message: `Created ${createdIds.length}/${input.candidates.length} candidates in Gina [${GINA_CLIENT_VERSION}].`,
     };
   }
 
@@ -586,6 +624,6 @@ export async function pushCandidatesToGina(input: {
     ok: false,
     externalIds: [],
     authStrategy: probe.authStrategy,
-    message: `Authenticated to Gina, but candidate create routes failed [${GINA_CLIENT_VERSION}]. ${errors.slice(0, 5).join(" | ")}`,
+    message: `Authenticated to Gina, but candidate create routes failed [${GINA_CLIENT_VERSION}]. Paste Gina routes/ats.js so we can map the real create endpoint. ${errors.slice(0, 6).join(" | ")}`,
   };
 }
