@@ -5,7 +5,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in sync error text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v5";
+export const GINA_CLIENT_VERSION = "ats-v6";
 
 export interface GinaCredentials {
   baseUrl?: string;
@@ -464,124 +464,136 @@ export async function pushCandidatesToGina(input: {
   }
 
   const headers = probe.workingHeaders;
-  const payload = {
+  const normalizedCandidates = input.candidates.map((candidate) => ({
+    name: candidate.fullName,
+    fullName: candidate.fullName,
+    email: candidate.email ?? "",
+    phone: "",
+    role: candidate.headline ?? "",
+    title: candidate.headline ?? "",
+    headline: candidate.headline ?? "",
+    location: candidate.location ?? "",
+    resumeText: candidate.summary ?? "",
+    summary: candidate.summary ?? "",
+    notes: candidate.summary ?? "",
+    skills: candidate.skills,
+    experienceYears: candidate.experienceYears,
+    linkedProfiles: candidate.platforms,
+    profiles: candidate.platforms,
+    source: "signalhire",
+    tags: ["signalhire", "ai-sourced", ...candidate.platforms.map((p) => p.platformId)],
+  }));
+
+  const importPayload = {
     source: "signalhire",
     jobId: input.job.atsExternalId ?? input.job.id,
     jobTitle: input.job.title,
-    candidates: input.candidates.map((candidate) => ({
-      name: candidate.fullName,
-      fullName: candidate.fullName,
-      email: candidate.email,
-      title: candidate.headline,
-      headline: candidate.headline,
-      location: candidate.location,
-      skills: candidate.skills,
-      experienceYears: candidate.experienceYears,
-      summary: candidate.summary,
-      notes: candidate.summary,
-      linkedProfiles: candidate.platforms,
-      source: "signalhire",
-      tags: ["signalhire", "ai-sourced", ...candidate.platforms.map((p) => p.platformId)],
-    })),
+    candidates: normalizedCandidates,
   };
 
-  const endpoints = [
-    // Real Gina create path (add route in routes/ats.js — see gina-express/ats-import-candidates.route.js)
-    "/ats/import-candidates",
-    // Existing Gina ATS helpers (parse only — may 400 without csv/pdf, not create)
-    "/ats/parse-csv",
-    "/webhooks/candidate",
-    "/webhooks/candidates",
-    "/maria/import",
-    "/maria/candidates",
-  ];
-
-  const errors: string[] = [];
-
-  for (const endpoint of endpoints) {
-    try {
-      let body: string;
-      if (endpoint === "/ats/parse-csv") {
-        // Fallback: send a minimal CSV Gina's Claude parser can turn into candidates.
-        // Note: parse-csv returns JSON candidates; it does not persist to ATS by itself.
-        const header = "name,email,phone,role,summary";
-        const rows = input.candidates.map((c) =>
-          [
-            c.fullName,
-            c.email ?? "",
-            "",
-            c.headline ?? "",
-            (c.summary ?? "").replace(/"/g, "'"),
-          ]
-            .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-            .join(","),
-        );
-        body = JSON.stringify({ csvText: [header, ...rows].join("\n") });
-      } else {
-        body = JSON.stringify(payload);
-      }
-
-      const response = await requestGina(baseUrl, endpoint, {
-        method: "POST",
-        headers,
-        body,
-      });
-      const text = await response.text();
-
-      if (response.status === 404 || response.status === 405) {
-        errors.push(`${endpoint} → ${response.status}`);
-        continue;
-      }
-
-      if (!response.ok) {
-        errors.push(`${endpoint} → ${response.status}: ${text.slice(0, 160)}`);
-        continue;
-      }
-
-      // parse-csv returns candidates but does not store them — treat as soft success only
-      // when import-candidates isn't deployed yet.
-      if (endpoint === "/ats/parse-csv") {
-        errors.push(
-          `${endpoint} → 200 (parse only; add /ats/import-candidates to persist into ats_actions)`,
-        );
-        continue;
-      }
-
+  // 1) Preferred: Gina ATS action queue
+  try {
+    const response = await requestGina(baseUrl, "/ats/import-candidates", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(importPayload),
+    });
+    const text = await response.text();
+    if (response.ok) {
       let externalIds: string[] = [];
       try {
-        const json = JSON.parse(text) as {
-          ids?: string[];
-          id?: string;
-          count?: number;
-          candidates?: Array<{ id?: string }>;
-          data?: Array<{ id?: string }>;
-        };
-        externalIds =
-          json.ids ??
-          (json.id ? [String(json.id)] : undefined) ??
-          json.candidates?.map((item) => item.id).filter(Boolean).map(String) ??
-          json.data?.map((item) => item.id).filter(Boolean).map(String) ??
-          input.candidates.map((candidate) => candidate.id);
+        const json = JSON.parse(text) as { ids?: string[] };
+        externalIds = json.ids ?? input.candidates.map((c) => c.id);
       } catch {
-        externalIds = input.candidates.map((candidate) => candidate.id);
+        externalIds = input.candidates.map((c) => c.id);
       }
-
       return {
         ok: true,
         externalIds,
-        endpointUsed: endpoint,
+        endpointUsed: "/ats/import-candidates",
         authStrategy: probe.authStrategy,
-        message: `Pushed ${input.candidates.length} candidate(s) to Gina via ${endpoint} [${GINA_CLIENT_VERSION}]. In Gina ATS, click “Check for actions” if using ats_actions.`,
+        message: `Queued ${input.candidates.length} named candidate(s) in Gina ats_actions via /ats/import-candidates [${GINA_CLIENT_VERSION}]. Click “Check for actions” in Gina ATS.`,
       };
-    } catch (error) {
-      errors.push(`${endpoint} → ${error instanceof Error ? error.message : "network error"}`);
     }
+    if (response.status !== 404 && response.status !== 405) {
+      return {
+        ok: false,
+        externalIds: [],
+        authStrategy: probe.authStrategy,
+        message: `/ats/import-candidates failed (${response.status}): ${text.slice(0, 200)} [${GINA_CLIENT_VERSION}]`,
+      };
+    }
+  } catch (error) {
+    // fall through to webhook per-candidate posts
+    void error;
+  }
+
+  // 2) Fallback: post ONE flat candidate at a time (webhook handlers often expect name/email/role, not a bulk wrapper)
+  const webhookPaths = ["/webhooks/candidate", "/webhooks/candidates"];
+  const createdIds: string[] = [];
+  const errors: string[] = [];
+
+  for (const candidate of normalizedCandidates) {
+    let created = false;
+    for (const path of webhookPaths) {
+      try {
+        const response = await requestGina(baseUrl, path, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            name: candidate.name,
+            fullName: candidate.name,
+            email: candidate.email,
+            phone: candidate.phone,
+            role: candidate.role,
+            title: candidate.role,
+            resumeText: candidate.resumeText,
+            summary: candidate.resumeText,
+            source: "signalhire",
+            jobTitle: input.job.title,
+            jobId: input.job.atsExternalId ?? input.job.id,
+          }),
+        });
+        const text = await response.text();
+        if (response.status === 404 || response.status === 405) {
+          continue;
+        }
+        if (!response.ok) {
+          errors.push(`${path} (${candidate.name}) → ${response.status}: ${text.slice(0, 100)}`);
+          continue;
+        }
+        const json = (await response.json().catch(() => null)) as { id?: string } | null;
+        createdIds.push(json?.id ?? candidate.name);
+        created = true;
+        break;
+      } catch (error) {
+        errors.push(
+          `${path} (${candidate.name}) → ${error instanceof Error ? error.message : "error"}`,
+        );
+      }
+    }
+    if (!created) {
+      errors.push(`no webhook accepted ${candidate.name}`);
+    }
+  }
+
+  if (createdIds.length) {
+    return {
+      ok: true,
+      externalIds: createdIds,
+      endpointUsed: "/webhooks/candidate*",
+      authStrategy: probe.authStrategy,
+      message: `Pushed ${createdIds.length}/${normalizedCandidates.length} named candidate(s) via webhook [${GINA_CLIENT_VERSION}]. Names sent: ${normalizedCandidates
+        .map((c) => c.name)
+        .slice(0, 5)
+        .join(", ")}.`,
+    };
   }
 
   return {
     ok: false,
     externalIds: [],
     authStrategy: probe.authStrategy,
-    message: `Authenticated to Gina, but no candidate persist route yet [${GINA_CLIENT_VERSION}]. Add POST /ats/import-candidates to Gina routes/ats.js (see AI-ATS gina-express/ats-import-candidates.route.js). ${errors.slice(0, 6).join(" | ")}`,
+    message: `Authenticated to Gina, but could not persist named candidates [${GINA_CLIENT_VERSION}]. Prefer /ats/import-candidates. ${errors.slice(0, 5).join(" | ")}`,
   };
 }
