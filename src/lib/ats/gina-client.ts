@@ -230,14 +230,19 @@ async function probeWithAttempts(
   jobsFound?: number;
   workingHeaders?: Record<string, string>;
 }> {
+  // Gina Express mounts ATS at /ats and bots at /maria, /michelle, etc.
+  // (Not Greenhouse-style /api/jobs.)
   const probePaths = [
-    "/api/jobs",
-    "/api/candidates",
-    "/api/requisitions",
-    "/api/positions",
-    "/api/applications",
-    "/api/clients",
-    "/api/companies",
+    "/ats",
+    "/ats/jobs",
+    "/ats/candidates",
+    "/ats/requisitions",
+    "/ats/positions",
+    "/ats/applications",
+    "/maria",
+    "/api/conversation",
+    "/api/approvals",
+    "/chat",
   ];
 
   for (const attempt of attempts) {
@@ -262,14 +267,16 @@ async function probeWithAttempts(
 
         if (ok) {
           authenticated = true;
-          if (path === "/api/jobs") {
+          if (path === "/ats/jobs" || path === "/ats" || path === "/ats/candidates") {
             try {
               const payload = JSON.parse(text) as
-                | { jobs?: unknown[]; data?: unknown[] }
+                | { jobs?: unknown[]; candidates?: unknown[]; data?: unknown[] }
                 | unknown[];
               if (Array.isArray(payload)) jobsFound = payload.length;
               else if (payload && Array.isArray(payload.jobs)) jobsFound = payload.jobs.length;
-              else if (payload && Array.isArray(payload.data)) jobsFound = payload.data.length;
+              else if (payload && Array.isArray(payload.candidates)) {
+                jobsFound = payload.candidates.length;
+              } else if (payload && Array.isArray(payload.data)) jobsFound = payload.data.length;
             } catch {
               // ignore parse errors
             }
@@ -384,10 +391,10 @@ export async function testGinaConnection(
       authStrategy: probe.authStrategy,
       probedRoutes: probe.probedRoutes,
       message: relaySecret
-        ? "SignalHire sent RELAY_SECRET, but Gina /api/* still returned 401. Setting the Railway variable alone is not enough — Gina’s running code must check that secret."
-        : "Could not authenticate to Gina /api routes. Bot integrations historically used RELAY_SECRET.",
+        ? "SignalHire sent RELAY_SECRET, but Gina requireAppAuth still returned 401. Chat bots can work while REST still blocks — update authApp.js to accept X-Relay-Secret / Bearer."
+        : "Could not authenticate to Gina routes (/ats, /maria). Bot REST access needs RELAY_SECRET support in requireAppAuth.",
       nextStep:
-        "In Gina’s backend source, confirm middleware compares X-Relay-Secret (or Bearer) to process.env.RELAY_SECRET, then redeploy Gina. Also verify the variable is on the production Gina service and a redeploy happened after saving it. If you share the Gina GitHub repo, we can patch that auth middleware.",
+        "In Gina authApp.js (requireAppAuth), allow requests when X-Relay-Secret or Authorization Bearer matches process.env.RELAY_SECRET, then redeploy Railway. SignalHire talks to /ats and /maria — not Greenhouse-style /api/jobs.",
     };
   }
 
@@ -453,7 +460,7 @@ export async function pushCandidatesToGina(input: {
       ok: false,
       externalIds: [],
       message:
-        "Could not authenticate to Gina /api routes with the saved password. Check Railway variables for a separate API token.",
+        "Could not authenticate to Gina (/ats). Update requireAppAuth to accept RELAY_SECRET, then redeploy.",
     };
   }
 
@@ -480,12 +487,13 @@ export async function pushCandidatesToGina(input: {
   };
 
   const endpoints = [
-    "/api/candidates/import",
-    "/api/candidates/bulk",
-    "/api/candidates",
-    "/api/applications",
-    "/api/people",
-    "/api/talent",
+    "/ats/candidates/import",
+    "/ats/candidates/bulk",
+    "/ats/candidates",
+    "/ats/applications",
+    "/ats/people",
+    "/maria/candidates",
+    "/maria/source",
   ];
 
   const errors: string[] = [];

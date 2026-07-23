@@ -1,23 +1,53 @@
-# Gina Express RELAY_SECRET middleware
+# Wire RELAY_SECRET into Gina (Express ESM)
 
-Production Gina on Railway is **Express** (`x-powered-by: Express`).  
-Next.js `src/middleware.ts` will **not** run there.
+Your `server.js` shows:
 
-## Install into Gina
+- Global auth: `app.use(requireAppAuth)` from `authApp.js`
+- ATS routes: `/ats` (not `/api/jobs`)
+- Bots: `/maria`, `/michelle`, `/kelly`, `/ashton`
+- Chat: `/chat`, Slack/Telegram/WhatsApp
 
-1. Copy `relay-auth.middleware.js` into your Gina backend repo (same folder as `server.js` / `index.js`, or adjust the require path).
-2. In Gina’s main server file, **before** API routes:
+Chat can work while SignalHire gets 401 because SignalHire calls REST with `RELAY_SECRET`, and `requireAppAuth` is rejecting it.
+
+## Fix (best): update `authApp.js`
+
+Inside `requireAppAuth`, before returning 401, allow relay secret:
 
 ```js
-const { relayAuth } = require("./relay-auth.middleware");
-app.use("/api", relayAuth);
+import crypto from "crypto";
+
+function hasValidRelaySecret(req) {
+  const secret = process.env.RELAY_SECRET;
+  if (!secret) return false;
+  const headerSecret = req.get("x-relay-secret") || "";
+  const bearer = (req.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  const provided = headerSecret || bearer;
+  if (!provided || provided.length !== secret.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(secret));
+}
+
+// inside requireAppAuth:
+if (hasValidRelaySecret(req)) return next();
 ```
 
-3. Commit + push Gina.
-4. Railway → Gina service → Variables → set `RELAY_SECRET` → **Redeploy**.
-5. SignalHire `/ats` → paste the same secret → **Test Gina**.
+Keep existing cookie / app-password logic for the UI.
 
-## Headers SignalHire sends
+## Optional: `server.js` note
 
-- `X-Relay-Secret: <secret>`
-- `Authorization: Bearer <secret>`
+Do **not** only add Next.js `src/middleware.ts`.  
+Do **not** expect `/api/jobs` — use `/ats/...`.
+
+If you add standalone middleware, use ESM:
+
+```js
+import { relayAuth } from "./relay-auth.middleware.mjs";
+// Only useful if it runs BEFORE requireAppAuth marks failure,
+// or if requireAppAuth is taught to honor RELAY_SECRET (preferred).
+```
+
+## Redeploy
+
+1. Push Gina
+2. Railway → `RELAY_SECRET` set → Redeploy
+3. SignalHire `/ats` → same secret → Test Gina  
+   Diagnostics should probe `/ats`, `/ats/jobs`, `/maria`, etc.
