@@ -548,7 +548,7 @@ export async function pushCandidatesToGina(input: {
   const createdIds: string[] = [];
   for (const candidate of payload.candidates) {
     try {
-      const response = await requestGina(baseUrl, "/api/candidates", {
+      const response = await requestGina(baseUrl, "/ats/candidates", {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -559,7 +559,7 @@ export async function pushCandidatesToGina(input: {
       });
       if (!response.ok) {
         const text = await response.text();
-        errors.push(`single /api/candidates → ${response.status}: ${text.slice(0, 120)}`);
+        errors.push(`single /ats/candidates → ${response.status}: ${text.slice(0, 120)}`);
         continue;
       }
       const json = (await response.json().catch(() => null)) as { id?: string } | null;
@@ -573,7 +573,7 @@ export async function pushCandidatesToGina(input: {
     return {
       ok: true,
       externalIds: createdIds,
-      endpointUsed: "/api/candidates",
+      endpointUsed: "/ats/candidates",
       authStrategy: probe.authStrategy,
       message: `Created ${createdIds.length}/${input.candidates.length} candidates in Gina.`,
     };
