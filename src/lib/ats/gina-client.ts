@@ -5,7 +5,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in sync error text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v6";
+export const GINA_CLIENT_VERSION = "ats-v7";
 
 export interface GinaCredentials {
   baseUrl?: string;
@@ -116,29 +116,30 @@ function buildAuthAttempts(credentials: GinaCredentials, cookie?: string | null)
   };
 
   // Gina bots historically authenticated with Railway RELAY_SECRET.
+  // routes/ats.js also uses requireRelaySecret from auth.js — send common variants.
   if (relaySecret) {
     attempts.push({
       strategy: "x-relay-secret",
       headers: {
         ...baseHeaders,
         "X-Relay-Secret": relaySecret,
+      },
+    });
+    attempts.push({
+      strategy: "relay-secret-all-headers",
+      headers: {
+        ...baseHeaders,
+        "X-Relay-Secret": relaySecret,
+        "x-relay-secret": relaySecret,
         "X-RELAY-SECRET": relaySecret,
         "Relay-Secret": relaySecret,
+        Authorization: `Bearer ${relaySecret}`,
+        "X-Api-Key": relaySecret,
       },
     });
     attempts.push({
       strategy: "bearer-relay-secret",
       headers: { ...baseHeaders, Authorization: `Bearer ${relaySecret}` },
-    });
-    attempts.push({
-      strategy: "relay-secret-api-key",
-      headers: {
-        ...baseHeaders,
-        Authorization: `Bearer ${relaySecret}`,
-        "X-API-Key": relaySecret,
-        "X-Bot-Secret": relaySecret,
-        "X-Webhook-Secret": relaySecret,
-      },
     });
   }
 
@@ -233,11 +234,10 @@ async function probeWithAttempts(
   jobsFound?: number;
   workingHeaders?: Record<string, string>;
 }> {
-  // Real Gina Express mounts from server.js + routes/ats.js
+  // Only probe routes that prove RELAY_SECRET / app auth — never /health.
   const probePaths = [
     "/ats/pending-actions",
-    "/health",
-    "/ats/summary",
+    "/ats/import-candidates",
     "/maria",
     "/chat",
     "/api/conversation",
