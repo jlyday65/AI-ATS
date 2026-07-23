@@ -5,7 +5,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in sync error text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v4";
+export const GINA_CLIENT_VERSION = "ats-v5";
 
 export interface GinaCredentials {
   baseUrl?: string;
@@ -233,19 +233,15 @@ async function probeWithAttempts(
   jobsFound?: number;
   workingHeaders?: Record<string, string>;
 }> {
-  // Gina Express mounts ATS at /ats and bots at /maria, /michelle, etc.
-  // (Not Greenhouse-style /api/jobs.)
+  // Real Gina Express mounts from server.js + routes/ats.js
   const probePaths = [
-    "/ats",
-    "/ats/jobs",
-    "/ats/candidates",
-    "/ats/requisitions",
-    "/ats/positions",
-    "/ats/applications",
+    "/ats/pending-actions",
+    "/health",
+    "/ats/summary",
     "/maria",
+    "/chat",
     "/api/conversation",
     "/api/approvals",
-    "/chat",
   ];
 
   for (const attempt of attempts) {
@@ -490,38 +486,45 @@ export async function pushCandidatesToGina(input: {
   };
 
   const endpoints = [
-    // Likely Gina ATS mounts (app.use("/ats", atsRoutes))
-    "/ats/candidates",
-    "/ats/candidate",
-    "/ats/jobs/candidates",
-    "/ats/job/candidates",
-    "/ats/pipeline/candidates",
-    "/ats/pipeline",
-    "/ats/people",
-    "/ats/applications",
-    "/ats/applicants",
-    "/ats/import",
-    "/ats/import/candidates",
-    "/ats",
-    // Exempt webhook path from authApp.js EXEMPT_PATHS
+    // Real Gina create path (add route in routes/ats.js — see gina-express/ats-import-candidates.route.js)
+    "/ats/import-candidates",
+    // Existing Gina ATS helpers (parse only — may 400 without csv/pdf, not create)
+    "/ats/parse-csv",
     "/webhooks/candidate",
     "/webhooks/candidates",
-    // Maria sourcer hooks
-    "/maria/candidates",
-    "/maria/candidate",
-    "/maria/source",
     "/maria/import",
-    "/maria",
+    "/maria/candidates",
   ];
 
   const errors: string[] = [];
 
   for (const endpoint of endpoints) {
     try {
+      let body: string;
+      if (endpoint === "/ats/parse-csv") {
+        // Fallback: send a minimal CSV Gina's Claude parser can turn into candidates.
+        // Note: parse-csv returns JSON candidates; it does not persist to ATS by itself.
+        const header = "name,email,phone,role,summary";
+        const rows = input.candidates.map((c) =>
+          [
+            c.fullName,
+            c.email ?? "",
+            "",
+            c.headline ?? "",
+            (c.summary ?? "").replace(/"/g, "'"),
+          ]
+            .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+            .join(","),
+        );
+        body = JSON.stringify({ csvText: [header, ...rows].join("\n") });
+      } else {
+        body = JSON.stringify(payload);
+      }
+
       const response = await requestGina(baseUrl, endpoint, {
         method: "POST",
         headers,
-        body: JSON.stringify(payload),
+        body,
       });
       const text = await response.text();
 
@@ -535,11 +538,21 @@ export async function pushCandidatesToGina(input: {
         continue;
       }
 
+      // parse-csv returns candidates but does not store them — treat as soft success only
+      // when import-candidates isn't deployed yet.
+      if (endpoint === "/ats/parse-csv") {
+        errors.push(
+          `${endpoint} → 200 (parse only; add /ats/import-candidates to persist into ats_actions)`,
+        );
+        continue;
+      }
+
       let externalIds: string[] = [];
       try {
         const json = JSON.parse(text) as {
           ids?: string[];
           id?: string;
+          count?: number;
           candidates?: Array<{ id?: string }>;
           data?: Array<{ id?: string }>;
         };
@@ -548,7 +561,7 @@ export async function pushCandidatesToGina(input: {
           (json.id ? [String(json.id)] : undefined) ??
           json.candidates?.map((item) => item.id).filter(Boolean).map(String) ??
           json.data?.map((item) => item.id).filter(Boolean).map(String) ??
-          [];
+          input.candidates.map((candidate) => candidate.id);
       } catch {
         externalIds = input.candidates.map((candidate) => candidate.id);
       }
@@ -558,72 +571,17 @@ export async function pushCandidatesToGina(input: {
         externalIds,
         endpointUsed: endpoint,
         authStrategy: probe.authStrategy,
-        message: `Pushed ${input.candidates.length} candidate(s) to Gina via ${endpoint} [${GINA_CLIENT_VERSION}].`,
+        message: `Pushed ${input.candidates.length} candidate(s) to Gina via ${endpoint} [${GINA_CLIENT_VERSION}]. In Gina ATS, click “Check for actions” if using ats_actions.`,
       };
     } catch (error) {
       errors.push(`${endpoint} → ${error instanceof Error ? error.message : "network error"}`);
     }
   }
 
-  // Also try single-candidate payloads on the most likely create paths.
-  const singlePaths = [
-    "/ats/candidates",
-    "/ats/candidate",
-    "/webhooks/candidate",
-    "/maria/candidate",
-  ];
-  const createdIds: string[] = [];
-  for (const candidate of payload.candidates) {
-    let created = false;
-    for (const path of singlePaths) {
-      try {
-        const response = await requestGina(baseUrl, path, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            ...candidate,
-            jobId: payload.jobId,
-            jobTitle: payload.jobTitle,
-            source: "signalhire",
-          }),
-        });
-        if (response.status === 404 || response.status === 405) {
-          continue;
-        }
-        if (!response.ok) {
-          const text = await response.text();
-          errors.push(`single ${path} → ${response.status}: ${text.slice(0, 120)}`);
-          continue;
-        }
-        const json = (await response.json().catch(() => null)) as { id?: string } | null;
-        createdIds.push(json?.id ?? candidate.email ?? candidate.fullName);
-        created = true;
-        break;
-      } catch (error) {
-        errors.push(
-          `single ${path} → ${error instanceof Error ? error.message : "single create failed"}`,
-        );
-      }
-    }
-    if (!created) {
-      errors.push(`single create failed for ${candidate.fullName}`);
-    }
-  }
-
-  if (createdIds.length) {
-    return {
-      ok: true,
-      externalIds: createdIds,
-      endpointUsed: singlePaths.join("|"),
-      authStrategy: probe.authStrategy,
-      message: `Created ${createdIds.length}/${input.candidates.length} candidates in Gina [${GINA_CLIENT_VERSION}].`,
-    };
-  }
-
   return {
     ok: false,
     externalIds: [],
     authStrategy: probe.authStrategy,
-    message: `Authenticated to Gina, but candidate create routes failed [${GINA_CLIENT_VERSION}]. Paste Gina routes/ats.js so we can map the real create endpoint. ${errors.slice(0, 6).join(" | ")}`,
+    message: `Authenticated to Gina, but no candidate persist route yet [${GINA_CLIENT_VERSION}]. Add POST /ats/import-candidates to Gina routes/ats.js (see AI-ATS gina-express/ats-import-candidates.route.js). ${errors.slice(0, 6).join(" | ")}`,
   };
 }
