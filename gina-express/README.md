@@ -9,28 +9,27 @@ Your `server.js` shows:
 
 Chat can work while SignalHire gets 401 because SignalHire calls REST with `RELAY_SECRET`, and `requireAppAuth` is rejecting it.
 
-## Fix (best): update `authApp.js`
+## Fix (required): replace `authApp.js`
 
-Inside `requireAppAuth`, before returning 401, allow relay secret:
+SignalHire ats-v9 already sends `X-Relay-Secret`. If you still see:
+
+```json
+{"error":"Not authenticated"}
+```
+
+that response is from **`requireAppAuth` in authApp.js**, not from `requireRelaySecret` in auth.js.
+
+Copy `gina-express/authApp.js` over Gina’s `authApp.js` (or `middleware/authApp.js`).
+
+The critical line inside `requireAppAuth` is:
 
 ```js
-import crypto from "crypto";
-
-function hasValidRelaySecret(req) {
-  const secret = process.env.RELAY_SECRET;
-  if (!secret) return false;
-  const headerSecret = req.get("x-relay-secret") || "";
-  const bearer = (req.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  const provided = headerSecret || bearer;
-  if (!provided || provided.length !== secret.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(secret));
-}
-
-// inside requireAppAuth:
 if (hasValidRelaySecret(req)) return next();
 ```
 
-Keep existing cookie / app-password logic for the UI.
+It must run **before** `res.status(401).json({ error: "Not authenticated" })`.
+
+Keep `auth.js` exporting `requireRelaySecret` separately (used by `/chat`, `/ats`, bots).
 
 ## Optional: `server.js` note
 
