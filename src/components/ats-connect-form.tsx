@@ -16,7 +16,13 @@ interface ProbeResult {
   probedRoutes?: Array<{ path: string; status: number; ok: boolean }>;
 }
 
-export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) {
+export function AtsConnectForm({
+  providers,
+  clientVersion,
+}: {
+  providers: AtsProviderMeta[];
+  clientVersion: string;
+}) {
   const router = useRouter();
   const defaultProvider = providers.find((item) => item.id === "gina_ats") ?? providers[0];
   const [provider, setProvider] = useState(defaultProvider?.id ?? "gina_ats");
@@ -185,6 +191,9 @@ export function AtsConnectForm({ providers }: { providers: AtsProviderMeta[] }) 
       <p className="text-sm text-ink-soft">
         If the old RELAY_SECRET stopped working, set a <strong>new</strong> one in Railway Gina,
         redeploy Gina, update every bot, then paste it here and click Save.
+      </p>
+      <p className="text-xs text-ink-soft">
+        SignalHire Gina client: <code className="text-ink">{clientVersion}</code>
       </p>
       <div className="flex flex-wrap gap-3">
         <button type="submit" className="btn btn-primary" disabled={pending}>

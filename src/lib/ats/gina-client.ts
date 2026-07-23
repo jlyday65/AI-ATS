@@ -4,8 +4,8 @@ export const GINA_DEFAULT_BASE_URL =
   process.env.GINA_ATS_BASE_URL ??
   "https://lyday-gina-backend-production.up.railway.app";
 
-/** Bump when push routes change — appears in sync error text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v7";
+/** Bump when push routes change — appears in UI + sync text so we can verify local pull. */
+export const GINA_CLIENT_VERSION = "ats-v9";
 
 export interface GinaCredentials {
   baseUrl?: string;

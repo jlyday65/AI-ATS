@@ -1,5 +1,5 @@
 import { AtsConnectForm } from "@/components/ats-connect-form";
-import { GINA_DEFAULT_BASE_URL } from "@/lib/ats/gina-client";
+import { GINA_CLIENT_VERSION, GINA_DEFAULT_BASE_URL } from "@/lib/ats/gina-client";
 import { ATS_PROVIDERS } from "@/lib/ats/providers";
 import { getDemoOrg, listAtsConnections } from "@/lib/store";
 
@@ -9,12 +9,13 @@ export default function AtsPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10">
-      <p className="chip">Integrations</p>
+      <p className="chip">Integrations · {GINA_CLIENT_VERSION}</p>
       <h1 className="display mt-3 text-4xl font-bold text-ink">Connect your ATS</h1>
       <p className="mt-3 max-w-3xl text-ink-soft">
         SignalHire syncs into{" "}
         <span className="font-semibold text-ink">Gina</span>, the Lyday Talent Partners ATS at{" "}
         <code className="text-ink">{GINA_DEFAULT_BASE_URL.replace("https://", "")}</code>.
+        Client build: <code className="text-ink">{GINA_CLIENT_VERSION}</code>.
       </p>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
@@ -40,7 +41,7 @@ export default function AtsPage() {
 
         <section className="panel rounded-2xl p-6">
           <h2 className="display text-2xl font-bold">Add connection</h2>
-          <AtsConnectForm providers={ATS_PROVIDERS} />
+          <AtsConnectForm providers={ATS_PROVIDERS} clientVersion={GINA_CLIENT_VERSION} />
         </section>
       </div>
 
