@@ -49,44 +49,42 @@ Test connectivity:
 curl -s http://localhost:3000/api/ats/gina/test | jq
 ```
 
-## API authentication (RELAY_SECRET)
+## API authentication (RELAY_SECRET) — Express on Gina
 
-Every `/api/*` route on SignalHire is protected by the same shared **`RELAY_SECRET`**
-so only trusted bots and integrations can reach it. Callers must send the secret
-as **either** header:
+SignalHire talks to Gina’s **Express** REST API. If SignalHire gets
+`401 {"error":"Not authenticated"}` on Gina `/api/*` while chat bots still work,
+Gina’s Express app is not accepting `RELAY_SECRET` on `/api`. A Next.js
+`middleware` / `proxy` in this repo cannot fix that.
 
-```bash
-# X-Relay-Secret header
-curl -s http://localhost:3000/api/org -H "X-Relay-Secret: $RELAY_SECRET"
+**Fix:** mount Express middleware on Gina `/api` that accepts either:
 
-# ...or Authorization: Bearer
-curl -s http://localhost:3000/api/org -H "Authorization: Bearer $RELAY_SECRET"
-```
+- `X-Relay-Secret: <RELAY_SECRET>`
+- `Authorization: Bearer <RELAY_SECRET>`
 
-The value is compared against `process.env.RELAY_SECRET`. Requests with a missing
-or wrong secret get `401 Unauthorized`.
+compared to `process.env.RELAY_SECRET` (auth skipped when unset).
 
-- **No `RELAY_SECRET` set → auth is disabled.** This keeps local development and
-  the built-in dashboard/sourcing UI working without a secret. Set the variable
-  only when you want to lock the API down.
-- Use the **same** `RELAY_SECRET` value across Gina, SignalHire, and every bot.
+Ready-to-copy middleware + wiring instructions:
 
-### Enable it locally
+→ [`gina-express/`](./gina-express/) (`relay-auth.middleware.js`)
 
 ```bash
-cp .env.example .env.local
-# set RELAY_SECRET=<same value as Railway Gina>
-npm run dev   # restart so the new env var is picked up
+# After Gina redeploy — expect 401 without secret
+curl -s https://lyday-gina-backend-production.up.railway.app/api/jobs
+
+# Expect non-auth success with the shared secret
+curl -s https://lyday-gina-backend-production.up.railway.app/api/jobs \
+  -H "X-Relay-Secret: $RELAY_SECRET"
+curl -s https://lyday-gina-backend-production.up.railway.app/api/jobs \
+  -H "Authorization: Bearer $RELAY_SECRET"
 ```
 
-### Deploy on Railway
+### Redeploy Gina on Railway
 
-1. Railway → SignalHire service → **Variables** → add `RELAY_SECRET=<value>`
-   (use the same value configured on the Gina service and every bot).
-2. **Redeploy** the SignalHire service so the `/api` proxy auth reads the new
-   variable — changing the variable without a redeploy will not take effect.
-3. Confirm it is live: a request **without** the secret should now return `401`,
-   and one **with** `X-Relay-Secret` / `Authorization: Bearer` should return `200`.
+1. Apply `gina-express/relay-auth.middleware.js` in **`lyday-gina-backend`**
+   (`app.use("/api", relayAuth)` before API routers) → commit → push.
+2. Railway → **Gina** service → Variables → set `RELAY_SECRET`.
+3. **Redeploy** Gina (required after code or variable changes).
+4. Set the same secret in SignalHire (`.env` / `/ats`) and every bot.
 
 ## Key API routes
 
