@@ -4,6 +4,9 @@ export const GINA_DEFAULT_BASE_URL =
   process.env.GINA_ATS_BASE_URL ??
   "https://lyday-gina-backend-production.up.railway.app";
 
+/** Bump when push routes change — appears in sync error text so we can verify local pull. */
+export const GINA_CLIENT_VERSION = "ats-v3";
+
 export interface GinaCredentials {
   baseUrl?: string;
   appPassword?: string;
@@ -583,6 +586,6 @@ export async function pushCandidatesToGina(input: {
     ok: false,
     externalIds: [],
     authStrategy: probe.authStrategy,
-    message: `Authenticated to Gina, but candidate create routes failed. ${errors.slice(0, 3).join(" | ")}`,
+    message: `Authenticated to Gina, but candidate create routes failed [${GINA_CLIENT_VERSION}]. ${errors.slice(0, 5).join(" | ")}`,
   };
 }
