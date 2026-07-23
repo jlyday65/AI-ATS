@@ -6,7 +6,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in UI + sync text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v12";
+export const GINA_CLIENT_VERSION = "ats-v13";
 
 /** Safe fingerprint for comparing secrets without printing them. */
 export function fingerprintSecret(secret: string | undefined | null): string {
@@ -126,23 +126,14 @@ function buildAuthAttempts(credentials: GinaCredentials, cookie?: string | null)
   // Gina bots historically authenticated with Railway RELAY_SECRET.
   // routes/ats.js also uses requireRelaySecret from auth.js — send common variants.
   if (relaySecret) {
+    // IMPORTANT: send X-Relay-Secret only once. Node fetch treats header names
+    // case-insensitively; setting x-relay-secret AND X-Relay-Secret joins them
+    // into "secret, secret" and Gina reports relay_secret_mismatch (len=32).
     attempts.push({
       strategy: "x-relay-secret",
       headers: {
         ...baseHeaders,
         "X-Relay-Secret": relaySecret,
-      },
-    });
-    attempts.push({
-      strategy: "relay-secret-all-headers",
-      headers: {
-        ...baseHeaders,
-        "X-Relay-Secret": relaySecret,
-        "x-relay-secret": relaySecret,
-        "X-RELAY-SECRET": relaySecret,
-        "Relay-Secret": relaySecret,
-        Authorization: `Bearer ${relaySecret}`,
-        "X-Api-Key": relaySecret,
       },
     });
     attempts.push({
@@ -496,9 +487,8 @@ export async function pushCandidatesToGina(input: {
         Accept: "application/json",
         "Content-Type": "application/json",
         "X-SignalHire-Client": "ai-ats",
+        // Single header only — duplicates become "secret, secret" in Express.
         "X-Relay-Secret": relaySecret,
-        "x-relay-secret": relaySecret,
-        Authorization: `Bearer ${relaySecret}`,
       },
     });
   }
@@ -510,12 +500,7 @@ export async function pushCandidatesToGina(input: {
         "Content-Type": "application/json",
         "X-SignalHire-Client": "ai-ats",
         Cookie: cookie,
-        ...(relaySecret
-          ? {
-              "X-Relay-Secret": relaySecret,
-              "x-relay-secret": relaySecret,
-            }
-          : {}),
+        ...(relaySecret ? { "X-Relay-Secret": relaySecret } : {}),
       },
     });
   }
