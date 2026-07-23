@@ -463,7 +463,16 @@ export async function pushCandidatesToGina(input: {
     };
   }
 
-  const headers = probe.workingHeaders;
+  const headers = {
+    ...probe.workingHeaders,
+    // routes/ats.js requireRelaySecret only checks x-relay-secret
+    ...(relaySecret
+      ? {
+          "X-Relay-Secret": relaySecret,
+          "x-relay-secret": relaySecret,
+        }
+      : {}),
+  };
   const normalizedCandidates = input.candidates.map((candidate) => ({
     name: candidate.fullName,
     fullName: candidate.fullName,
