@@ -6,7 +6,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in UI + sync text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v11";
+export const GINA_CLIENT_VERSION = "ats-v12";
 
 /** Safe fingerprint for comparing secrets without printing them. */
 export function fingerprintSecret(secret: string | undefined | null): string {
@@ -527,6 +527,9 @@ export async function pushCandidatesToGina(input: {
 
   // 1) Preferred: Gina ATS action queue — try each auth header set on POST
   const importErrors: string[] = [];
+  let serverFingerprint = "";
+  let clientFingerprint = "";
+  let authHint = "";
   for (const attempt of headerAttempts) {
     try {
       const response = await requestGina(baseUrl, "/ats/import-candidates", {
@@ -554,17 +557,20 @@ export async function pushCandidatesToGina(input: {
       if (response.status === 404 || response.status === 405) {
         break;
       }
-      let hint = "";
       try {
-        const json = JSON.parse(text) as { error?: string; hint?: string };
-        if (json.hint) hint = ` hint=${json.hint}`;
-        else if (json.error) hint = ` error=${json.error}`;
+        const json = JSON.parse(text) as {
+          error?: string;
+          hint?: string;
+          serverFingerprint?: string;
+          clientFingerprint?: string;
+        };
+        if (json.hint) authHint = json.hint;
+        if (json.serverFingerprint) serverFingerprint = json.serverFingerprint;
+        if (json.clientFingerprint) clientFingerprint = json.clientFingerprint;
+        importErrors.push(`${attempt.strategy}->${response.status} hint=${json.hint ?? json.error ?? "unknown"}`);
       } catch {
-        // keep raw text
+        importErrors.push(`${attempt.strategy}->${response.status}: ${text.slice(0, 160)}`);
       }
-      importErrors.push(
-        `${attempt.strategy}->${response.status}${hint}: ${text.slice(0, 120)}`,
-      );
     } catch (error) {
       importErrors.push(
         `${attempt.strategy}->network: ${error instanceof Error ? error.message : "error"}`,
@@ -581,11 +587,20 @@ export async function pushCandidatesToGina(input: {
       line.includes("relay_secret_"),
   );
   if (authBlocked) {
+    const localFp = fingerprintSecret(relaySecret);
+    const compare =
+      serverFingerprint && clientFingerprint
+        ? `Railway/server=${serverFingerprint} | SignalHire/client=${clientFingerprint}${
+            serverFingerprint === clientFingerprint
+              ? " (MATCH — unexpected 401, redeploy Gina)"
+              : " (DIFFERENT — copy Railway RELAY_SECRET into SignalHire /ats and Save)"
+          }`
+        : `SignalHire local=${localFp}. Deploy Gina authApp.js with serverFingerprint to compare.`;
     return {
       ok: false,
       externalIds: [],
       authStrategy: headerAttempts[0]?.strategy,
-      message: `/ats/import-candidates failed [${GINA_CLIENT_VERSION}]. ${importErrors.slice(0, 4).join(" | ")}. SignalHire sent relay fingerprint ${fingerprintSecret(relaySecret)}. Railway RELAY_SECRET must match this exact value (reset both sides).`,
+      message: `/ats/import-candidates 401 [${GINA_CLIENT_VERSION}] hint=${authHint || "unknown"}. ${compare}`,
     };
   }
 
