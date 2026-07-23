@@ -44,6 +44,13 @@ function parseCookies(req) {
   return out;
 }
 
+function fingerprintSecret(value) {
+  const secret = String(value || "").trim();
+  if (!secret) return "empty";
+  const hash = crypto.createHash("sha256").update(secret).digest("hex").slice(0, 8);
+  return `len=${secret.length},sha256_8=${hash}`;
+}
+
 function hasValidRelaySecret(req) {
   // Trim — Railway / pasted secrets often include trailing newlines.
   const secret = String(process.env.RELAY_SECRET || "").trim();
@@ -164,6 +171,14 @@ export function requireAppAuth(req, res, next) {
           req.headers["x-relay-secret"] ||
           req.headers.authorization,
       );
+      const provided = String(
+        req.get("x-relay-secret") ||
+          req.headers["x-relay-secret"] ||
+          String(req.get("authorization") || "")
+            .replace(/^Bearer\s+/i, "")
+            .trim() ||
+          "",
+      ).trim();
       return res.status(401).json({
         error: "Not authenticated",
         hint: !String(process.env.RELAY_SECRET || "").trim()
@@ -173,6 +188,9 @@ export function requireAppAuth(req, res, next) {
             : "relay_secret_header_missing",
         relayConfigured: Boolean(String(process.env.RELAY_SECRET || "").trim()),
         headerPresent,
+        // Compare these two — they must be identical. Never logs the raw secret.
+        serverFingerprint: fingerprintSecret(process.env.RELAY_SECRET),
+        clientFingerprint: fingerprintSecret(provided),
       });
     }
   }
