@@ -1,5 +1,9 @@
 import { AtsConnectForm } from "@/components/ats-connect-form";
-import { GINA_CLIENT_VERSION, GINA_DEFAULT_BASE_URL } from "@/lib/ats/gina-client";
+import {
+  fingerprintSecret,
+  GINA_CLIENT_VERSION,
+  GINA_DEFAULT_BASE_URL,
+} from "@/lib/ats/gina-client";
 import { ATS_PROVIDERS } from "@/lib/ats/providers";
 import { getDemoOrg, listAtsConnections } from "@/lib/store";
 
@@ -31,6 +35,12 @@ export default function AtsPage() {
                       {connection.provider} · {connection.syncDirection}
                     </p>
                     <p className="mt-1 break-all text-xs text-ink-soft">{connection.baseUrl}</p>
+                    <p className="mt-1 text-xs text-ink-soft">
+                      relay fingerprint:{" "}
+                      <code className="text-ink">
+                        {fingerprintSecret(connection.config.relaySecret)}
+                      </code>
+                    </p>
                   </div>
                   <span className="chip capitalize">{connection.status}</span>
                 </div>

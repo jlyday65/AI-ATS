@@ -18,7 +18,7 @@ interface DatabaseShape {
   syncEvents: SyncEvent[];
 }
 
-const STORE_VERSION = "gina-v1";
+const STORE_VERSION = "gina-v2-relay-secret";
 
 const globalStore = globalThis as typeof globalThis & {
   __aiAtsStore?: DatabaseShape;
@@ -92,13 +92,8 @@ function seed(): DatabaseShape {
     },
   ];
 
-  const hasSecret = Boolean(
-    process.env.RELAY_SECRET ||
-      process.env.GINA_RELAY_SECRET ||
-      process.env.GINA_ATS_APP_PASSWORD ||
-      process.env.GINA_ATS_API_KEY,
-  );
-
+  // Do not auto-load RELAY_SECRET from .env.local into the seeded connection.
+  // Stale env values were a common source of relay_secret_mismatch.
   const atsConnections: AtsConnection[] = [
     {
       id: "ats_gina_production",
@@ -106,14 +101,14 @@ function seed(): DatabaseShape {
       provider: "gina_ats",
       displayName: "Gina ATS Production",
       baseUrl: GINA_DEFAULT_BASE_URL,
-      apiKeyConfigured: hasSecret,
+      apiKeyConfigured: false,
       syncDirection: "bidirectional",
-      status: hasSecret ? "connected" : "pending",
-      lastSyncAt: hasSecret ? now : undefined,
+      status: "pending",
+      lastSyncAt: undefined,
       config: {
-        apiKey: process.env.GINA_ATS_API_KEY ?? "",
-        appPassword: process.env.GINA_ATS_APP_PASSWORD ?? "",
-        relaySecret: process.env.RELAY_SECRET || process.env.GINA_RELAY_SECRET || "",
+        apiKey: "",
+        appPassword: "",
+        relaySecret: "",
         demoMode: "false",
       },
     },

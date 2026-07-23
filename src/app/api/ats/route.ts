@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { fingerprintSecret } from "@/lib/ats/gina-client";
 import { ATS_PROVIDERS, probeAtsConnection } from "@/lib/ats/providers";
 import { getDemoOrg, getAtsConnection, listAtsConnections, upsertAtsConnection } from "@/lib/store";
 
@@ -39,7 +40,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  // Update the existing Gina connection in place so sourcing doesn't keep
+  // using a stale seeded connection with a different/empty RELAY_SECRET.
+  const existing = listAtsConnections(org.id).find(
+    (item) =>
+      item.provider === parsed.data.provider &&
+      (item.provider === "gina_ats" ||
+        item.provider === "claude_ats" ||
+        item.baseUrl === parsed.data.baseUrl),
+  );
+
   const connection = upsertAtsConnection({
+    id: existing?.id,
     orgId: org.id,
     provider: parsed.data.provider,
     displayName: parsed.data.displayName,
@@ -60,7 +72,15 @@ export async function POST(request: Request) {
   connection.status = probe.ok ? "connected" : "error";
   connection.lastSyncAt = probe.ok ? new Date().toISOString() : connection.lastSyncAt;
 
-  return NextResponse.json({ connection, probe }, { status: 201 });
+  return NextResponse.json(
+    {
+      connection,
+      probe,
+      relayFingerprint: fingerprintSecret(connection.config.relaySecret),
+      message: `Saved. Relay fingerprint ${fingerprintSecret(connection.config.relaySecret)}. Use this same secret in Railway RELAY_SECRET.`,
+    },
+    { status: 201 },
+  );
 }
 
 export async function PUT(request: Request) {

@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type { CandidateProfile, JobRequisition } from "@/lib/types";
 
 export const GINA_DEFAULT_BASE_URL =
@@ -5,8 +6,15 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in UI + sync text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v10";
+export const GINA_CLIENT_VERSION = "ats-v11";
 
+/** Safe fingerprint for comparing secrets without printing them. */
+export function fingerprintSecret(secret: string | undefined | null): string {
+  const value = String(secret || "").trim();
+  if (!value) return "empty";
+  const hash = createHash("sha256").update(value).digest("hex").slice(0, 8);
+  return `len=${value.length},sha256_8=${hash}`;
+}
 export interface GinaCredentials {
   baseUrl?: string;
   appPassword?: string;
@@ -577,7 +585,7 @@ export async function pushCandidatesToGina(input: {
       ok: false,
       externalIds: [],
       authStrategy: headerAttempts[0]?.strategy,
-      message: `/ats/import-candidates failed [${GINA_CLIENT_VERSION}]. ${importErrors.slice(0, 4).join(" | ")}. Fix Gina authApp.js hasValidRelaySecret (trim both sides) and ensure Railway RELAY_SECRET matches SignalHire exactly.`,
+      message: `/ats/import-candidates failed [${GINA_CLIENT_VERSION}]. ${importErrors.slice(0, 4).join(" | ")}. SignalHire sent relay fingerprint ${fingerprintSecret(relaySecret)}. Railway RELAY_SECRET must match this exact value (reset both sides).`,
     };
   }
 

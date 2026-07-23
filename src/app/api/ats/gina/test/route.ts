@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { GINA_DEFAULT_BASE_URL, testGinaConnection } from "@/lib/ats/gina-client";
+import {
+  fingerprintSecret,
+  GINA_DEFAULT_BASE_URL,
+  testGinaConnection,
+} from "@/lib/ats/gina-client";
 
 const schema = z.object({
   baseUrl: z.string().url().optional(),
@@ -26,15 +30,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  const relaySecret = (
+    parsed.data.relaySecret ||
+    process.env.RELAY_SECRET ||
+    process.env.GINA_RELAY_SECRET ||
+    ""
+  ).trim();
+
   const result = await testGinaConnection({
     baseUrl: parsed.data.baseUrl || GINA_DEFAULT_BASE_URL,
     appPassword: parsed.data.appPassword || process.env.GINA_ATS_APP_PASSWORD,
     apiKey: parsed.data.apiKey || process.env.GINA_ATS_API_KEY,
-    relaySecret:
-      parsed.data.relaySecret ||
-      process.env.RELAY_SECRET ||
-      process.env.GINA_RELAY_SECRET,
+    relaySecret,
   });
 
-  return NextResponse.json(result, { status: result.healthOk ? 200 : 503 });
+  return NextResponse.json(
+    {
+      ...result,
+      relayFingerprint: fingerprintSecret(relaySecret),
+    },
+    { status: result.healthOk ? 200 : 503 },
+  );
 }

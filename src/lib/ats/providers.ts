@@ -124,10 +124,14 @@ export async function pushCandidatesToAts(payload: AtsSyncPayload): Promise<AtsS
         baseUrl: connection.baseUrl,
         apiKey: connection.config.apiKey,
         appPassword: connection.config.appPassword || process.env.GINA_ATS_APP_PASSWORD,
-        relaySecret:
+        // Prefer the saved connection secret only — env fallback is last resort.
+        // Stale .env.local RELAY_SECRET was a common mismatch source.
+        relaySecret: (
           connection.config.relaySecret ||
           process.env.RELAY_SECRET ||
-          process.env.GINA_RELAY_SECRET,
+          process.env.GINA_RELAY_SECRET ||
+          ""
+        ).trim(),
       },
       job,
       candidates,

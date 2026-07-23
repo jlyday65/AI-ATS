@@ -194,6 +194,12 @@ export function AtsConnectForm({
       </p>
       <p className="text-xs text-ink-soft">
         SignalHire Gina client: <code className="text-ink">{clientVersion}</code>
+        {relaySecret.trim() ? (
+          <>
+            {" "}
+            · RELAY_SECRET length: <code className="text-ink">{relaySecret.trim().length}</code>
+          </>
+        ) : null}
       </p>
       <div className="flex flex-wrap gap-3">
         <button type="submit" className="btn btn-primary" disabled={pending}>

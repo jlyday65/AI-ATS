@@ -32,7 +32,9 @@ export function SourcingConsole({
     platforms.slice(0, 12).map((platform) => platform.id),
   );
   const [pushEnabled, setPushEnabled] = useState(true);
-  const [connectionId, setConnectionId] = useState(connections[0]?.id ?? "");
+  const preferredConnection =
+    connections.find((item) => Boolean(item.config.relaySecret?.trim())) ?? connections[0];
+  const [connectionId, setConnectionId] = useState(preferredConnection?.id ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SourcingResponse | null>(null);
