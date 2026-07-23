@@ -48,7 +48,7 @@ function extractProvidedSecrets(request: NextRequest): string[] {
   return provided;
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const secret = (process.env.RELAY_SECRET ?? "").trim();
 
   // Auth is disabled when no RELAY_SECRET is configured (local dev / demo).

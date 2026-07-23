@@ -83,8 +83,8 @@ npm run dev   # restart so the new env var is picked up
 
 1. Railway → SignalHire service → **Variables** → add `RELAY_SECRET=<value>`
    (use the same value configured on the Gina service and every bot).
-2. **Redeploy** the SignalHire service so the middleware reads the new variable —
-   changing the variable without a redeploy will not take effect.
+2. **Redeploy** the SignalHire service so the `/api` proxy auth reads the new
+   variable — changing the variable without a redeploy will not take effect.
 3. Confirm it is live: a request **without** the secret should now return `401`,
    and one **with** `X-Relay-Secret` / `Authorization: Bearer` should return `200`.
 
