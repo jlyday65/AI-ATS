@@ -49,6 +49,43 @@ Test connectivity:
 curl -s http://localhost:3000/api/ats/gina/test | jq
 ```
 
+## API authentication (RELAY_SECRET) — Express on Gina
+
+SignalHire talks to Gina’s **Express** REST API. If SignalHire gets
+`401 {"error":"Not authenticated"}` on Gina `/api/*` while chat bots still work,
+Gina’s Express app is not accepting `RELAY_SECRET` on `/api`. A Next.js
+`middleware` / `proxy` in this repo cannot fix that.
+
+**Fix:** mount Express middleware on Gina `/api` that accepts either:
+
+- `X-Relay-Secret: <RELAY_SECRET>`
+- `Authorization: Bearer <RELAY_SECRET>`
+
+compared to `process.env.RELAY_SECRET` (auth skipped when unset).
+
+Ready-to-copy middleware + wiring instructions:
+
+→ [`gina-express/`](./gina-express/) (`relay-auth.middleware.js`)
+
+```bash
+# After Gina redeploy — expect 401 without secret
+curl -s https://lyday-gina-backend-production.up.railway.app/api/jobs
+
+# Expect non-auth success with the shared secret
+curl -s https://lyday-gina-backend-production.up.railway.app/api/jobs \
+  -H "X-Relay-Secret: $RELAY_SECRET"
+curl -s https://lyday-gina-backend-production.up.railway.app/api/jobs \
+  -H "Authorization: Bearer $RELAY_SECRET"
+```
+
+### Redeploy Gina on Railway
+
+1. Apply `gina-express/relay-auth.middleware.js` in **`lyday-gina-backend`**
+   (`app.use("/api", relayAuth)` before API routers) → commit → push.
+2. Railway → **Gina** service → Variables → set `RELAY_SECRET`.
+3. **Redeploy** Gina (required after code or variable changes).
+4. Set the same secret in SignalHire (`.env` / `/ats`) and every bot.
+
 ## Key API routes
 
 | Method | Path | Purpose |

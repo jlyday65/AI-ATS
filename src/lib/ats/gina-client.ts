@@ -387,7 +387,7 @@ export async function testGinaConnection(
         ? "SignalHire sent RELAY_SECRET, but Gina /api/* still returned 401. Setting the Railway variable alone is not enough — Gina’s running code must check that secret."
         : "Could not authenticate to Gina /api routes. Bot integrations historically used RELAY_SECRET.",
       nextStep:
-        "In Gina’s backend source, confirm middleware compares X-Relay-Secret (or Bearer) to process.env.RELAY_SECRET, then redeploy Gina. Also verify the variable is on the production Gina service and a redeploy happened after saving it. If you share the Gina GitHub repo, we can patch that auth middleware.",
+        "Gina is Express (not Next.js). Mount gina-express/relay-auth.middleware.js with app.use('/api', relayAuth) so X-Relay-Secret or Authorization: Bearer matches process.env.RELAY_SECRET, then redeploy the Gina Railway service. Grant Cursor access to lydaytalentpartners/lyday-gina-backend to apply this in-repo.",
     };
   }
 
