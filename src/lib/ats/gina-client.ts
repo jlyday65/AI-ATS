@@ -5,7 +5,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in UI + sync text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v9";
+export const GINA_CLIENT_VERSION = "ats-v10";
 
 export interface GinaCredentials {
   baseUrl?: string;
@@ -452,27 +452,6 @@ export async function pushCandidatesToGina(input: {
     cookie = login.cookie;
   }
 
-  const attempts = buildAuthAttempts({ appPassword, apiKey, relaySecret }, cookie);
-  const probe = await probeWithAttempts(baseUrl, attempts);
-  if (!probe.authenticated || !probe.workingHeaders) {
-    return {
-      ok: false,
-      externalIds: [],
-      message:
-        "Could not authenticate to Gina (/ats). Update requireAppAuth to accept RELAY_SECRET, then redeploy.",
-    };
-  }
-
-  const headers = {
-    ...probe.workingHeaders,
-    // routes/ats.js requireRelaySecret only checks x-relay-secret
-    ...(relaySecret
-      ? {
-          "X-Relay-Secret": relaySecret,
-          "x-relay-secret": relaySecret,
-        }
-      : {}),
-  };
   const normalizedCandidates = input.candidates.map((candidate) => ({
     name: candidate.fullName,
     fullName: candidate.fullName,
@@ -500,47 +479,117 @@ export async function pushCandidatesToGina(input: {
     candidates: normalizedCandidates,
   };
 
-  // 1) Preferred: Gina ATS action queue
-  try {
-    const response = await requestGina(baseUrl, "/ats/import-candidates", {
-      method: "POST",
-      headers,
-      body: JSON.stringify(importPayload),
+  // Build header sets to try — relay secret first (do not trust GET probe alone).
+  const headerAttempts: AuthAttempt[] = [];
+  if (relaySecret) {
+    headerAttempts.push({
+      strategy: "x-relay-secret",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-SignalHire-Client": "ai-ats",
+        "X-Relay-Secret": relaySecret,
+        "x-relay-secret": relaySecret,
+        Authorization: `Bearer ${relaySecret}`,
+      },
     });
-    const text = await response.text();
-    if (response.ok) {
-      let externalIds: string[] = [];
-      try {
-        const json = JSON.parse(text) as { ids?: string[] };
-        externalIds = json.ids ?? input.candidates.map((c) => c.id);
-      } catch {
-        externalIds = input.candidates.map((c) => c.id);
+  }
+  if (cookie) {
+    headerAttempts.push({
+      strategy: "session-cookie",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-SignalHire-Client": "ai-ats",
+        Cookie: cookie,
+        ...(relaySecret
+          ? {
+              "X-Relay-Secret": relaySecret,
+              "x-relay-secret": relaySecret,
+            }
+          : {}),
+      },
+    });
+  }
+  if (!headerAttempts.length) {
+    headerAttempts.push(
+      ...buildAuthAttempts({ appPassword, apiKey, relaySecret }, cookie),
+    );
+  }
+
+  // 1) Preferred: Gina ATS action queue — try each auth header set on POST
+  const importErrors: string[] = [];
+  for (const attempt of headerAttempts) {
+    try {
+      const response = await requestGina(baseUrl, "/ats/import-candidates", {
+        method: "POST",
+        headers: attempt.headers,
+        body: JSON.stringify(importPayload),
+      });
+      const text = await response.text();
+      if (response.ok) {
+        let externalIds: string[] = [];
+        try {
+          const json = JSON.parse(text) as { ids?: string[] };
+          externalIds = json.ids ?? input.candidates.map((c) => c.id);
+        } catch {
+          externalIds = input.candidates.map((c) => c.id);
+        }
+        return {
+          ok: true,
+          externalIds,
+          endpointUsed: "/ats/import-candidates",
+          authStrategy: attempt.strategy,
+          message: `Queued ${input.candidates.length} named candidate(s) in Gina ats_actions via /ats/import-candidates [${GINA_CLIENT_VERSION}]. Click “Check for actions” in Gina ATS.`,
+        };
       }
-      return {
-        ok: true,
-        externalIds,
-        endpointUsed: "/ats/import-candidates",
-        authStrategy: probe.authStrategy,
-        message: `Queued ${input.candidates.length} named candidate(s) in Gina ats_actions via /ats/import-candidates [${GINA_CLIENT_VERSION}]. Click “Check for actions” in Gina ATS.`,
-      };
+      if (response.status === 404 || response.status === 405) {
+        break;
+      }
+      let hint = "";
+      try {
+        const json = JSON.parse(text) as { error?: string; hint?: string };
+        if (json.hint) hint = ` hint=${json.hint}`;
+        else if (json.error) hint = ` error=${json.error}`;
+      } catch {
+        // keep raw text
+      }
+      importErrors.push(
+        `${attempt.strategy}->${response.status}${hint}: ${text.slice(0, 120)}`,
+      );
+    } catch (error) {
+      importErrors.push(
+        `${attempt.strategy}->network: ${error instanceof Error ? error.message : "error"}`,
+      );
     }
-    if (response.status !== 404 && response.status !== 405) {
-      return {
-        ok: false,
-        externalIds: [],
-        authStrategy: probe.authStrategy,
-        message: `/ats/import-candidates failed (${response.status}): ${text.slice(0, 200)} [${GINA_CLIENT_VERSION}]`,
-      };
-    }
-  } catch (error) {
-    // fall through to webhook per-candidate posts
-    void error;
+  }
+
+  // Hard auth failures on /ats/import-candidates — stop and report (do not hide behind webhook fallback).
+  const authBlocked = importErrors.some(
+    (line) =>
+      line.includes("->401") ||
+      line.includes("Not authenticated") ||
+      line.includes("Unauthorized") ||
+      line.includes("relay_secret_"),
+  );
+  if (authBlocked) {
+    return {
+      ok: false,
+      externalIds: [],
+      authStrategy: headerAttempts[0]?.strategy,
+      message: `/ats/import-candidates failed [${GINA_CLIENT_VERSION}]. ${importErrors.slice(0, 4).join(" | ")}. Fix Gina authApp.js hasValidRelaySecret (trim both sides) and ensure Railway RELAY_SECRET matches SignalHire exactly.`,
+    };
   }
 
   // 2) Fallback: post ONE flat candidate at a time (webhook handlers often expect name/email/role, not a bulk wrapper)
   const webhookPaths = ["/webhooks/candidate", "/webhooks/candidates"];
   const createdIds: string[] = [];
-  const errors: string[] = [];
+  const errors: string[] = [...importErrors];
+  const webhookHeaders = headerAttempts[0]?.headers ?? {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  const authStrategy = headerAttempts[0]?.strategy;
 
   for (const candidate of normalizedCandidates) {
     let created = false;
@@ -548,7 +597,7 @@ export async function pushCandidatesToGina(input: {
       try {
         const response = await requestGina(baseUrl, path, {
           method: "POST",
-          headers,
+          headers: webhookHeaders,
           body: JSON.stringify({
             name: candidate.name,
             fullName: candidate.name,
@@ -571,8 +620,14 @@ export async function pushCandidatesToGina(input: {
           errors.push(`${path} (${candidate.name}) → ${response.status}: ${text.slice(0, 100)}`);
           continue;
         }
-        const json = (await response.json().catch(() => null)) as { id?: string } | null;
-        createdIds.push(json?.id ?? candidate.name);
+        let externalId = candidate.name;
+        try {
+          const json = JSON.parse(text) as { id?: string };
+          externalId = json.id ?? candidate.name;
+        } catch {
+          // keep name
+        }
+        createdIds.push(externalId);
         created = true;
         break;
       } catch (error) {
@@ -591,7 +646,7 @@ export async function pushCandidatesToGina(input: {
       ok: true,
       externalIds: createdIds,
       endpointUsed: "/webhooks/candidate*",
-      authStrategy: probe.authStrategy,
+      authStrategy,
       message: `Pushed ${createdIds.length}/${normalizedCandidates.length} named candidate(s) via webhook [${GINA_CLIENT_VERSION}]. Names sent: ${normalizedCandidates
         .map((c) => c.name)
         .slice(0, 5)
@@ -602,7 +657,7 @@ export async function pushCandidatesToGina(input: {
   return {
     ok: false,
     externalIds: [],
-    authStrategy: probe.authStrategy,
-    message: `Authenticated to Gina, but could not persist named candidates [${GINA_CLIENT_VERSION}]. Prefer /ats/import-candidates. ${errors.slice(0, 5).join(" | ")}`,
+    authStrategy,
+    message: `/ats/import-candidates failed [${GINA_CLIENT_VERSION}]. ${errors.slice(0, 6).join(" | ")}. If hint=relay_secret_mismatch, Railway RELAY_SECRET ≠ SignalHire secret. If hint=relay_secret_header_missing, Gina is not receiving X-Relay-Secret.`,
   };
 }
