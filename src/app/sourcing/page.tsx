@@ -14,7 +14,8 @@ export default function SourcingPage() {
       <h1 className="display mt-3 text-4xl font-bold text-ink">Multi-platform sourcing</h1>
       <p className="mt-3 max-w-3xl text-ink-soft">
         Select a requisition, choose platforms, and optionally push the top-ranked candidates into
-        your Claude ATS connection.
+        Gina. Results are <span className="font-semibold text-ink">demo profiles</span> until live
+        platform API keys are connected — useful for testing ranking and ATS import.
       </p>
       <SourcingConsole jobs={jobs} connections={connections} platforms={platforms} />
     </div>

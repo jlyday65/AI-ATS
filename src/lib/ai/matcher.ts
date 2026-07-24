@@ -76,6 +76,7 @@ export function buildSourcingBrief(job: JobRequisition): string {
     job.seniority ? `Seniority: ${job.seniority}` : null,
     skills.length ? `Skills focus: ${skills.join(", ")}` : null,
     "Strategy: rediscover ATS talent first, then fan out across developer, professional, and niche platforms.",
+    "Note: platform connectors currently return demo profiles for end-to-end testing.",
   ]
     .filter(Boolean)
     .join("\n");

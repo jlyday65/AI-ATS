@@ -23,6 +23,15 @@ const FIRST_NAMES = [
   "Priya",
   "Mateo",
   "Hana",
+  "Jordan",
+  "Riley",
+  "Samira",
+  "Diego",
+  "Elena",
+  "Marcus",
+  "Amara",
+  "Theo",
+  "Camille",
 ];
 
 const LAST_NAMES = [
@@ -41,6 +50,15 @@ const LAST_NAMES = [
   "Sato",
   "Diaz",
   "Foster",
+  "Hayes",
+  "Torres",
+  "Bennett",
+  "Coleman",
+  "Reed",
+  "Vargas",
+  "Keller",
+  "Morgan",
+  "Blake",
 ];
 
 const LOCATIONS = [
@@ -81,37 +99,50 @@ function buildSkills(job: JobRequisition, seed: number): string[] {
   return [...skills];
 }
 
-function synthesizeCandidate(
+/** Avoid "Senior Senior Full-Stack Engineer" when title already includes seniority. */
+export function buildHeadline(job: JobRequisition, skills: string[]): string {
+  const title = (job.title || "Professional").trim();
+  const seniority = (job.seniority || "").trim();
+  const skillBit = skills.slice(0, 2).join(" / ");
+  const titleAlreadyHasSeniority =
+    Boolean(seniority) && title.toLowerCase().startsWith(seniority.toLowerCase());
+  const roleLabel =
+    seniority && !titleAlreadyHasSeniority ? `${seniority} ${title}` : title;
+  return skillBit ? `${roleLabel} · ${skillBit}` : roleLabel;
+}
+
+function synthesizePerson(
   job: JobRequisition,
-  platformId: string,
-  index: number,
+  personIndex: number,
+  platformIds: string[],
 ): CandidateProfile {
-  const seed = hashSeed(`${job.id}:${platformId}:${index}`);
+  // Person-stable seed (not platform-based) so one person maps to one identity.
+  const seed = hashSeed(`${job.id}:person:${personIndex}`);
   const first = pick(FIRST_NAMES, seed, 1);
-  const last = pick(LAST_NAMES, seed, 4);
+  const last = pick(LAST_NAMES, seed, 7);
   const skills = buildSkills(job, seed);
-  const years = 2 + (seed % 12);
-  const platform = CANDIDATE_PLATFORMS.find((item) => item.id === platformId);
+  const years = 3 + (seed % 12);
   const handle = `${first}.${last}${seed % 97}`.toLowerCase();
 
   return {
-    id: `cand_${platformId}_${seed.toString(16)}`,
+    id: `cand_person_${seed.toString(16)}`,
     fullName: `${first} ${last}`,
-    headline: `${job.seniority ?? "Experienced"} ${job.title} · ${skills.slice(0, 2).join(" / ")}`,
-    location: pick(LOCATIONS, seed, 7),
+    headline: buildHeadline(job, skills),
+    location: pick(LOCATIONS, seed, 11),
     email: `${handle}@example.com`,
     skills,
     experienceYears: years,
-    platforms: [
-      {
+    platforms: platformIds.map((platformId) => {
+      const platform = CANDIDATE_PLATFORMS.find((item) => item.id === platformId);
+      return {
         platformId,
         profileUrl: `${platform?.homepage ?? "https://example.com"}/${handle}`,
         handle,
-      },
-    ],
-    summary: `Passive candidate discovered via ${platform?.name ?? platformId} with overlap on ${skills.join(", ")}.`,
+      };
+    }),
+    summary: `Demo candidate for ${job.title} with overlap on ${skills.join(", ")}. Found across ${platformIds.length} platform(s).`,
     sourceSignals: [
-      `${platform?.name ?? platformId} profile match`,
+      `${platformIds.length} platform hit(s)`,
       `${years}+ years relevant experience`,
       skills[0] ? `Strong signal: ${skills[0]}` : "Generalist fit",
     ],
@@ -119,8 +150,11 @@ function synthesizeCandidate(
 }
 
 /**
- * Searches enabled platforms. Live connectors currently return deterministic
- * demo profiles so teams can wire real API keys per platform later.
+ * Searches enabled platforms.
+ *
+ * Live API connectors are not wired yet — this returns deterministic demo
+ * profiles so the AI ranking + Gina push path can be tested end-to-end.
+ * Unique people are generated, then assigned to 1–3 platforms (merged hits).
  */
 export async function searchCandidatePlatforms(
   query: PlatformSearchQuery,
@@ -131,14 +165,21 @@ export async function searchCandidatePlatforms(
     : listLivePlatforms()
   ).filter((platform) => platform.supportsSearch && platform.status !== "planned");
 
-  const perPlatform = Math.max(1, Math.ceil(limit / Math.min(enabled.length, 12)));
   const selected = enabled.slice(0, 12);
+  if (!selected.length) return [];
+
+  const peopleCount = Math.min(limit, 18);
   const results: CandidateProfile[] = [];
 
-  for (const platform of selected) {
-    for (let i = 0; i < perPlatform && results.length < limit; i += 1) {
-      results.push(synthesizeCandidate(query.job, platform.id, i));
+  for (let personIndex = 0; personIndex < peopleCount; personIndex += 1) {
+    const seed = hashSeed(`${query.job.id}:person:${personIndex}`);
+    const platformCount = 1 + (seed % Math.min(3, selected.length));
+    const platformIds: string[] = [];
+    for (let p = 0; p < platformCount; p += 1) {
+      const platform = pick(selected, seed, p * 5);
+      if (!platformIds.includes(platform.id)) platformIds.push(platform.id);
     }
+    results.push(synthesizePerson(query.job, personIndex, platformIds));
   }
 
   return results;

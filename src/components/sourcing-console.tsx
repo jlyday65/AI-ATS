@@ -167,13 +167,18 @@ export function SourcingConsole({
         <h2 className="display text-2xl font-bold">Results</h2>
         {!result ? (
           <p className="mt-4 text-ink-soft">
-            Run the agent to generate a ranked shortlist from your selected platforms.
+            Run the agent to generate a ranked shortlist from your selected platforms (demo data
+            until live connectors are wired).
           </p>
         ) : (
           <div className="mt-4 space-y-4">
             <div className="rounded-xl border border-line bg-white px-4 py-3">
               <p className="text-sm font-semibold text-ink">Sourcing brief</p>
               <pre className="mt-2 whitespace-pre-wrap text-sm text-ink-soft">{result.brief}</pre>
+              <p className="mt-2 text-xs text-ink-soft">
+                Demo mode: names are synthetic. Platform chips show where that demo identity was
+                “found.”
+              </p>
             </div>
             {result.atsSync ? (
               <div className="rounded-xl border border-line bg-white px-4 py-3 text-sm">
