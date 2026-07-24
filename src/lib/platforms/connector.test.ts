@@ -40,6 +40,19 @@ describe("platform connector demo search", () => {
     assert.ok(candidates.length >= 10);
   });
 
+  it("does not give every candidate the same last name", async () => {
+    const candidates = await searchCandidatePlatforms({
+      job,
+      platforms: ["linkedin", "github", "stackoverflow", "devto", "kaggle"],
+      limit: 12,
+    });
+    const lastNames = new Set(candidates.map((c) => c.fullName.split(" ").at(-1)));
+    assert.ok(
+      lastNames.size >= 5,
+      `expected varied last names, got ${[...lastNames].join(", ")}`,
+    );
+  });
+
   it("can attach multiple platforms to one person", async () => {
     const candidates = await searchCandidatePlatforms({
       job,

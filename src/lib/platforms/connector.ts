@@ -112,20 +112,13 @@ export function buildHeadline(job: JobRequisition, skills: string[]): string {
 }
 
 function uniqueNameForIndex(personIndex: number): { first: string; last: string } {
-  // Pair first/last by index so names never collide within a batch
-  // (hashing alone can map two indices to the same Priya Coleman).
-  const first = FIRST_NAMES[personIndex % FIRST_NAMES.length];
-  const last =
-    LAST_NAMES[
-      Math.floor(personIndex / FIRST_NAMES.length) % LAST_NAMES.length
-    ];
-  // Rotate last names further when we wrap the first-name list so
-  // Ava Chen and Ava Chen+24 don't collide either.
-  const cycle = Math.floor(personIndex / (FIRST_NAMES.length * LAST_NAMES.length));
-  if (cycle === 0) return { first, last };
-  const rotatedLast =
-    LAST_NAMES[(LAST_NAMES.indexOf(last) + cycle) % LAST_NAMES.length];
-  return { first, last: rotatedLast };
+  // Walk the full first×last grid so we don't pin everyone to LAST_NAMES[0]
+  // (that bug produced Nina/Mia/Priya/Ethan/Jordan Chen as the top 5).
+  const grid = FIRST_NAMES.length * LAST_NAMES.length;
+  const pairIndex = personIndex % grid;
+  const first = FIRST_NAMES[Math.floor(pairIndex / LAST_NAMES.length)];
+  const last = LAST_NAMES[pairIndex % LAST_NAMES.length];
+  return { first, last };
 }
 
 function synthesizePerson(
