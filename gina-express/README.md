@@ -58,9 +58,14 @@ See [MARIA.md](./MARIA.md) and `maria-source.tool.js`.
 Maria (Gina) → `POST {SIGNALHIRE}/api/maria/source` with `X-Relay-Secret` →
 SignalHire sources → pushes to Gina `/ats/import-candidates`.
 
-## Resume intake
+## Resume intake (Gina ATS + SignalHire)
 
-See [RESUMES.md](./RESUMES.md) and `attach-resume.snippet.js`.
+See [RESUMES.md](./RESUMES.md).
 
-SignalHire `/resumes` uploads PDF/text → extracts `resumeText` → Gina
-`import_candidate` (optionally upsert by email).
+**Gina-native (recommended for ATS UI):**
+- `routes/resumes.js` + `lib/resumeExtract.js`
+- `frontend/ResumeUploadPanel.jsx`
+- `server.mount-resumes.snippet.js`
+- `npm install multer pdf-parse` then mount `app.use("/resumes", resumesRouter)`
+
+**SignalHire path:** `/resumes` → Gina `import_candidate` (optional upsert: `attach-resume.snippet.js`).
