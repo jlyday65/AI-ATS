@@ -112,12 +112,11 @@ export function buildHeadline(job: JobRequisition, skills: string[]): string {
 }
 
 function uniqueNameForIndex(personIndex: number): { first: string; last: string } {
-  // Walk the full first×last grid so we don't pin everyone to LAST_NAMES[0]
-  // (that bug produced Nina/Mia/Priya/Ethan/Jordan Chen as the top 5).
-  const grid = FIRST_NAMES.length * LAST_NAMES.length;
-  const pairIndex = personIndex % grid;
-  const first = FIRST_NAMES[Math.floor(pairIndex / LAST_NAMES.length)];
-  const last = LAST_NAMES[pairIndex % LAST_NAMES.length];
+  // Zip first/last on the same index so top results look like
+  // "Ava Chen", "Noah Patel", "Mia Nguyen" — not five Chens or five Avas.
+  // usedNames in searchCandidatePlatforms still guards rare wrap collisions.
+  const first = FIRST_NAMES[personIndex % FIRST_NAMES.length];
+  const last = LAST_NAMES[personIndex % LAST_NAMES.length];
   return { first, last };
 }
 
