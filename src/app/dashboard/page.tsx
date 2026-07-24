@@ -32,6 +32,9 @@ export default function DashboardPage() {
           <Link href="/sourcing" className="btn btn-primary">
             Run AI sourcing
           </Link>
+          <Link href="/maria" className="btn btn-secondary">
+            Maria
+          </Link>
           <Link href="/ats" className="btn btn-secondary">
             Manage ATS
           </Link>

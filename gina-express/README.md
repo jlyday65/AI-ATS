@@ -50,3 +50,10 @@ import { relayAuth } from "./relay-auth.middleware.mjs";
 2. Railway → `RELAY_SECRET` set → Redeploy
 3. SignalHire `/ats` → same secret → Test Gina  
    Diagnostics should probe `/ats`, `/ats/jobs`, `/maria`, etc.
+
+## Maria sourcing bridge
+
+See [MARIA.md](./MARIA.md) and `maria-source.tool.js`.
+
+Maria (Gina) → `POST {SIGNALHIRE}/api/maria/source` with `X-Relay-Secret` →
+SignalHire sources → pushes to Gina `/ats/import-candidates`.

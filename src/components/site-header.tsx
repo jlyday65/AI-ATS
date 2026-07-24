@@ -5,6 +5,7 @@ const links = [
   { href: "/platforms", label: "Platforms" },
   { href: "/ats", label: "ATS Connect" },
   { href: "/sourcing", label: "AI Sourcing" },
+  { href: "/maria", label: "Maria" },
 ];
 
 export function SiteHeader() {
