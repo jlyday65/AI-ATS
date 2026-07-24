@@ -6,7 +6,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in UI + sync text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v15";
+export const GINA_CLIENT_VERSION = "ats-v16";
 
 /** Safe fingerprint for comparing secrets without printing them. */
 export function fingerprintSecret(secret: string | undefined | null): string {
@@ -451,25 +451,32 @@ export async function pushCandidatesToGina(input: {
     cookie = login.cookie;
   }
 
-  const normalizedCandidates = input.candidates.map((candidate) => ({
-    name: candidate.fullName,
-    fullName: candidate.fullName,
-    email: candidate.email ?? "",
-    phone: "",
-    role: candidate.headline ?? "",
-    title: candidate.headline ?? "",
-    headline: candidate.headline ?? "",
-    location: candidate.location ?? "",
-    resumeText: candidate.summary ?? "",
-    summary: candidate.summary ?? "",
-    notes: candidate.summary ?? "",
-    skills: candidate.skills,
-    experienceYears: candidate.experienceYears,
-    linkedProfiles: candidate.platforms,
-    profiles: candidate.platforms,
-    source: "signalhire",
-    tags: ["signalhire", "ai-sourced", ...candidate.platforms.map((p) => p.platformId)],
-  }));
+  const normalizedCandidates = input.candidates.map((candidate) => {
+    const resumeText = (candidate.resumeText || candidate.summary || "").trim();
+    return {
+      name: candidate.fullName,
+      fullName: candidate.fullName,
+      email: candidate.email ?? "",
+      phone: candidate.phone ?? "",
+      role: candidate.headline ?? "",
+      title: candidate.headline ?? "",
+      headline: candidate.headline ?? "",
+      location: candidate.location ?? "",
+      resumeText,
+      summary: candidate.summary ?? resumeText.slice(0, 500),
+      notes: resumeText ? `Resume on file (${resumeText.length} chars)` : candidate.summary ?? "",
+      skills: candidate.skills,
+      experienceYears: candidate.experienceYears,
+      linkedProfiles: candidate.platforms,
+      profiles: candidate.platforms,
+      source: "signalhire",
+      tags: [
+        "signalhire",
+        resumeText ? "resume-upload" : "ai-sourced",
+        ...candidate.platforms.map((p) => p.platformId),
+      ],
+    };
+  });
 
   const importPayload = {
     source: "signalhire",

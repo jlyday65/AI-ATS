@@ -35,6 +35,9 @@ export default function DashboardPage() {
           <Link href="/maria" className="btn btn-secondary">
             Maria
           </Link>
+          <Link href="/resumes" className="btn btn-secondary">
+            Resumes
+          </Link>
           <Link href="/ats" className="btn btn-secondary">
             Manage ATS
           </Link>

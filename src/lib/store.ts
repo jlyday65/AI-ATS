@@ -7,6 +7,7 @@ import type {
   JobRequisition,
   Organization,
   OrgMember,
+  ResumeApplication,
   SourcingRun,
   SyncEvent,
 } from "@/lib/types";
@@ -18,9 +19,10 @@ interface DatabaseShape {
   atsConnections: AtsConnection[];
   sourcingRuns: SourcingRun[];
   syncEvents: SyncEvent[];
+  resumeApplications: ResumeApplication[];
 }
 
-const STORE_VERSION = "gina-v3-persist";
+const STORE_VERSION = "gina-v4-resumes";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const STORE_PATH = path.join(DATA_DIR, "ai-ats-store.json");
 
@@ -94,6 +96,30 @@ function seed(): DatabaseShape {
       status: "open",
       createdAt: now,
     },
+    {
+      id: "job_warehouse_manager",
+      orgId,
+      title: "Warehouse Manager",
+      department: "Operations",
+      location: "Charlotte, NC",
+      employmentType: "full_time",
+      description:
+        "Lead warehouse and distribution operations in Charlotte, NC — team leadership, inventory control, WMS, and OSHA-aligned safety.",
+      requiredSkills: [
+        "warehouse",
+        "inventory",
+        "WMS",
+        "OSHA",
+        "leadership",
+        "logistics",
+      ],
+      preferredSkills: ["lean", "forklift", "SAP", "supply chain"],
+      seniority: "Manager",
+      remote: false,
+      atsExternalId: "gina_req_1003",
+      status: "open",
+      createdAt: now,
+    },
   ];
 
   // Optional bootstrap from .env.local — only used when no persisted store exists yet.
@@ -125,6 +151,7 @@ function seed(): DatabaseShape {
     atsConnections,
     sourcingRuns: [],
     syncEvents: [],
+    resumeApplications: [],
   };
 }
 
@@ -134,7 +161,10 @@ function loadPersisted(): DatabaseShape | null {
     const raw = readFileSync(STORE_PATH, "utf8");
     const parsed = JSON.parse(raw) as DatabaseShape & { version?: string };
     if (!parsed?.atsConnections || !parsed?.organizations) return null;
-    return parsed;
+    return {
+      ...parsed,
+      resumeApplications: parsed.resumeApplications ?? [],
+    };
   } catch {
     return null;
   }
@@ -153,10 +183,23 @@ function persist(store: DatabaseShape): void {
   }
 }
 
+function ensureSeedJobs(store: DatabaseShape): void {
+  const seeded = seed().jobs;
+  for (const job of seeded) {
+    if (!store.jobs.some((item) => item.id === job.id)) {
+      store.jobs.push(job);
+    }
+  }
+}
+
 function db(): DatabaseShape {
   if (!globalStore.__aiAtsStore || globalStore.__aiAtsStoreVersion !== STORE_VERSION) {
     globalStore.__aiAtsStore = loadPersisted() ?? seed();
     globalStore.__aiAtsStoreVersion = STORE_VERSION;
+    ensureSeedJobs(globalStore.__aiAtsStore);
+    if (!globalStore.__aiAtsStore.resumeApplications) {
+      globalStore.__aiAtsStore.resumeApplications = [];
+    }
     // Ensure a first-run seed is written so Save is not the only persist path.
     persist(globalStore.__aiAtsStore);
   }
@@ -272,4 +315,14 @@ export function addSyncEvent(event: Omit<SyncEvent, "id" | "createdAt">): SyncEv
 
 export function listSyncEvents(orgId: string): SyncEvent[] {
   return db().syncEvents.filter((event) => event.orgId === orgId);
+}
+
+export function saveResumeApplication(application: ResumeApplication): ResumeApplication {
+  db().resumeApplications.unshift(application);
+  touch();
+  return application;
+}
+
+export function listResumeApplications(orgId: string): ResumeApplication[] {
+  return db().resumeApplications.filter((item) => item.orgId === orgId);
 }

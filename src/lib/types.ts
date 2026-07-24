@@ -28,6 +28,7 @@ export interface CandidateProfile {
   headline?: string;
   location?: string;
   email?: string;
+  phone?: string;
   skills: string[];
   experienceYears?: number;
   platforms: Array<{
@@ -36,7 +37,26 @@ export interface CandidateProfile {
     handle?: string;
   }>;
   summary?: string;
+  /** Full extracted resume text for Gina / Maria evaluation */
+  resumeText?: string;
   sourceSignals: string[];
+}
+
+export interface ResumeApplication {
+  id: string;
+  orgId: string;
+  jobId: string;
+  fileName: string;
+  candidateName: string;
+  candidateEmail?: string;
+  candidatePhone?: string;
+  resumeText: string;
+  extractedSkills: string[];
+  matchScore: number;
+  matchReasons: string[];
+  pushToGina: boolean;
+  atsSync?: { ok: boolean; message: string };
+  createdAt: string;
 }
 
 export interface JobRequisition {

@@ -54,6 +54,24 @@ export function rankCandidates(
         reasons.push("Multi-platform identity confirmed");
       }
 
+      const resumeBlob = `${candidate.resumeText || ""} ${candidate.summary || ""}`.toLowerCase();
+      if (resumeBlob.length > 80) {
+        const resumeRequiredHits = job.requiredSkills.filter((skill) =>
+          resumeBlob.includes(skill.toLowerCase()),
+        );
+        const resumePreferredHits = job.preferredSkills.filter((skill) =>
+          resumeBlob.includes(skill.toLowerCase()),
+        );
+        score += resumeRequiredHits.length * 6;
+        score += resumePreferredHits.length * 3;
+        if (resumeRequiredHits.length) {
+          reasons.push(`Resume mentions required: ${resumeRequiredHits.join(", ")}`);
+        }
+        if (candidate.resumeText && candidate.resumeText.length > 200) {
+          reasons.push("Full resume text attached");
+        }
+      }
+
       if (!reasons.length) {
         reasons.push("Partial keyword overlap with requisition");
       }

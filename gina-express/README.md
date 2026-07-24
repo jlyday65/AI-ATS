@@ -57,3 +57,10 @@ See [MARIA.md](./MARIA.md) and `maria-source.tool.js`.
 
 Maria (Gina) → `POST {SIGNALHIRE}/api/maria/source` with `X-Relay-Secret` →
 SignalHire sources → pushes to Gina `/ats/import-candidates`.
+
+## Resume intake
+
+See [RESUMES.md](./RESUMES.md) and `attach-resume.snippet.js`.
+
+SignalHire `/resumes` uploads PDF/text → extracts `resumeText` → Gina
+`import_candidate` (optionally upsert by email).
