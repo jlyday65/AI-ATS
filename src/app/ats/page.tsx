@@ -51,30 +51,34 @@ export default function AtsPage() {
 
         <section className="panel rounded-2xl p-6">
           <h2 className="display text-2xl font-bold">Add connection</h2>
-          <AtsConnectForm providers={ATS_PROVIDERS} clientVersion={GINA_CLIENT_VERSION} />
+          <AtsConnectForm
+            providers={ATS_PROVIDERS}
+            clientVersion={GINA_CLIENT_VERSION}
+            initialRelaySecret={connections[0]?.config.relaySecret || ""}
+            initialBaseUrl={connections[0]?.baseUrl}
+            initialDisplayName={connections[0]?.displayName}
+          />
         </section>
       </div>
 
       <section className="panel mt-8 rounded-2xl p-6">
         <h2 className="display text-2xl font-bold">Gina bot auth (RELAY_SECRET)</h2>
         <p className="mt-2 text-ink-soft">
-          Gina bot integrations authenticate with{" "}
-          <code className="text-ink">RELAY_SECRET</code>. If Test Gina shows 401 after you paste a
-          fresh secret, the Railway variable is present but <strong>Gina’s code is not accepting
-          it</strong> (middleware missing, wrong header, or not redeployed).
+          After you click <strong>Save connection</strong>, SignalHire keeps the secret in{" "}
+          <code className="text-ink">.data/ai-ats-store.json</code> so you do not re-type it every
+          restart. You can also lock it in <code className="text-ink">.env.local</code> (see below).
         </p>
         <pre className="mt-4 overflow-x-auto rounded-xl bg-ink px-4 py-4 text-sm text-mist">
-{`# Gina backend middleware must do something like:
-# req.get('x-relay-secret') === process.env.RELAY_SECRET
-# or Authorization: Bearer <RELAY_SECRET>
+{`# Option A — Save once on /ats (persists in .data/)
 
-# Railway → Gina production service → Variables
-RELAY_SECRET=<new-long-random-string>
-# then Redeploy Gina
+# Option B — lock into env (survives store resets):
+# create ~/AI-ATS/.env.local with:
+RELAY_SECRET=<same-value-as-Railway>
+GINA_ATS_BASE_URL=${GINA_DEFAULT_BASE_URL}
 
-# SignalHire (.env.local or ATS Connect)
+# Railway → Gina production → Variables must match
 RELAY_SECRET=<same-value>
-GINA_ATS_BASE_URL=${GINA_DEFAULT_BASE_URL}`}
+# then Redeploy Gina if you change it`}
         </pre>
       </section>
     </div>

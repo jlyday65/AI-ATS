@@ -19,22 +19,34 @@ interface ProbeResult {
 export function AtsConnectForm({
   providers,
   clientVersion,
+  initialRelaySecret = "",
+  initialBaseUrl,
+  initialDisplayName,
 }: {
   providers: AtsProviderMeta[];
   clientVersion: string;
+  initialRelaySecret?: string;
+  initialBaseUrl?: string;
+  initialDisplayName?: string;
 }) {
   const router = useRouter();
   const defaultProvider = providers.find((item) => item.id === "gina_ats") ?? providers[0];
   const [provider, setProvider] = useState(defaultProvider?.id ?? "gina_ats");
   const selected = providers.find((item) => item.id === provider) ?? defaultProvider;
-  const [displayName, setDisplayName] = useState("Gina ATS Production");
+  const [displayName, setDisplayName] = useState(initialDisplayName || "Gina ATS Production");
   const [baseUrl, setBaseUrl] = useState(
-    selected?.defaultBaseUrl ?? "https://lyday-gina-backend-production.up.railway.app",
+    initialBaseUrl ||
+      selected?.defaultBaseUrl ||
+      "https://lyday-gina-backend-production.up.railway.app",
   );
-  const [relaySecret, setRelaySecret] = useState("");
+  const [relaySecret, setRelaySecret] = useState(initialRelaySecret);
   const [apiKey, setApiKey] = useState("");
   const [appPassword, setAppPassword] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(
+    initialRelaySecret
+      ? "RELAY_SECRET is saved on this machine — you do not need to re-enter it unless it changes."
+      : null,
+  );
   const [nextStep, setNextStep] = useState<string | null>(null);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [pending, setPending] = useState(false);
@@ -198,6 +210,9 @@ export function AtsConnectForm({
           <>
             {" "}
             · RELAY_SECRET length: <code className="text-ink">{relaySecret.trim().length}</code>
+            {" "}
+            · saved locally in <code className="text-ink">.data/</code> and/or{" "}
+            <code className="text-ink">.env.local</code>
           </>
         ) : null}
       </p>

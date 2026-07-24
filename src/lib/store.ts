@@ -1,4 +1,6 @@
 import { randomUUID } from "crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import path from "path";
 import { GINA_DEFAULT_BASE_URL } from "@/lib/ats/gina-client";
 import type {
   AtsConnection,
@@ -18,7 +20,9 @@ interface DatabaseShape {
   syncEvents: SyncEvent[];
 }
 
-const STORE_VERSION = "gina-v2-relay-secret";
+const STORE_VERSION = "gina-v3-persist";
+const DATA_DIR = path.join(process.cwd(), ".data");
+const STORE_PATH = path.join(DATA_DIR, "ai-ats-store.json");
 
 const globalStore = globalThis as typeof globalThis & {
   __aiAtsStore?: DatabaseShape;
@@ -92,8 +96,8 @@ function seed(): DatabaseShape {
     },
   ];
 
-  // Do not auto-load RELAY_SECRET from .env.local into the seeded connection.
-  // Stale env values were a common source of relay_secret_mismatch.
+  // Optional bootstrap from .env.local — only used when no persisted store exists yet.
+  const envRelay = (process.env.RELAY_SECRET || process.env.GINA_RELAY_SECRET || "").trim();
   const atsConnections: AtsConnection[] = [
     {
       id: "ats_gina_production",
@@ -101,14 +105,14 @@ function seed(): DatabaseShape {
       provider: "gina_ats",
       displayName: "Gina ATS Production",
       baseUrl: GINA_DEFAULT_BASE_URL,
-      apiKeyConfigured: false,
+      apiKeyConfigured: Boolean(envRelay),
       syncDirection: "bidirectional",
-      status: "pending",
+      status: envRelay ? "connected" : "pending",
       lastSyncAt: undefined,
       config: {
         apiKey: "",
         appPassword: "",
-        relaySecret: "",
+        relaySecret: envRelay,
         demoMode: "false",
       },
     },
@@ -124,12 +128,43 @@ function seed(): DatabaseShape {
   };
 }
 
+function loadPersisted(): DatabaseShape | null {
+  try {
+    if (!existsSync(STORE_PATH)) return null;
+    const raw = readFileSync(STORE_PATH, "utf8");
+    const parsed = JSON.parse(raw) as DatabaseShape & { version?: string };
+    if (!parsed?.atsConnections || !parsed?.organizations) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persist(store: DatabaseShape): void {
+  try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(
+      STORE_PATH,
+      JSON.stringify({ version: STORE_VERSION, ...store }, null, 2),
+      "utf8",
+    );
+  } catch {
+    // Local file write can fail in some sandboxes — in-memory still works for the session.
+  }
+}
+
 function db(): DatabaseShape {
   if (!globalStore.__aiAtsStore || globalStore.__aiAtsStoreVersion !== STORE_VERSION) {
-    globalStore.__aiAtsStore = seed();
+    globalStore.__aiAtsStore = loadPersisted() ?? seed();
     globalStore.__aiAtsStoreVersion = STORE_VERSION;
+    // Ensure a first-run seed is written so Save is not the only persist path.
+    persist(globalStore.__aiAtsStore);
   }
   return globalStore.__aiAtsStore;
+}
+
+function touch(): void {
+  persist(db());
 }
 
 export function getDemoOrg(): Organization {
@@ -160,6 +195,7 @@ export function createJob(
     createdAt: new Date().toISOString(),
   };
   db().jobs.unshift(job);
+  touch();
   return job;
 }
 
@@ -188,6 +224,7 @@ export function upsertAtsConnection(
         ...input.config,
       },
     });
+    touch();
     return existing;
   }
 
@@ -204,11 +241,13 @@ export function upsertAtsConnection(
     config: input.config,
   };
   db().atsConnections.unshift(connection);
+  touch();
   return connection;
 }
 
 export function saveSourcingRun(run: SourcingRun): SourcingRun {
   db().sourcingRuns.unshift(run);
+  touch();
   return run;
 }
 
@@ -227,6 +266,7 @@ export function addSyncEvent(event: Omit<SyncEvent, "id" | "createdAt">): SyncEv
     createdAt: new Date().toISOString(),
   };
   db().syncEvents.unshift(record);
+  touch();
   return record;
 }
 
