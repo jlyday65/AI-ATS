@@ -111,21 +111,37 @@ export function buildHeadline(job: JobRequisition, skills: string[]): string {
   return skillBit ? `${roleLabel} · ${skillBit}` : roleLabel;
 }
 
+function uniqueNameForIndex(personIndex: number): { first: string; last: string } {
+  // Pair first/last by index so names never collide within a batch
+  // (hashing alone can map two indices to the same Priya Coleman).
+  const first = FIRST_NAMES[personIndex % FIRST_NAMES.length];
+  const last =
+    LAST_NAMES[
+      Math.floor(personIndex / FIRST_NAMES.length) % LAST_NAMES.length
+    ];
+  // Rotate last names further when we wrap the first-name list so
+  // Ava Chen and Ava Chen+24 don't collide either.
+  const cycle = Math.floor(personIndex / (FIRST_NAMES.length * LAST_NAMES.length));
+  if (cycle === 0) return { first, last };
+  const rotatedLast =
+    LAST_NAMES[(LAST_NAMES.indexOf(last) + cycle) % LAST_NAMES.length];
+  return { first, last: rotatedLast };
+}
+
 function synthesizePerson(
   job: JobRequisition,
   personIndex: number,
   platformIds: string[],
 ): CandidateProfile {
-  // Person-stable seed (not platform-based) so one person maps to one identity.
   const seed = hashSeed(`${job.id}:person:${personIndex}`);
-  const first = pick(FIRST_NAMES, seed, 1);
-  const last = pick(LAST_NAMES, seed, 7);
+  const { first, last } = uniqueNameForIndex(personIndex);
   const skills = buildSkills(job, seed);
   const years = 3 + (seed % 12);
-  const handle = `${first}.${last}${seed % 97}`.toLowerCase();
+  // Include personIndex in email so even rare name edge-cases stay unique.
+  const handle = `${first}.${last}.${personIndex}`.toLowerCase();
 
   return {
-    id: `cand_person_${seed.toString(16)}`,
+    id: `cand_person_${job.id}_${personIndex}`,
     fullName: `${first} ${last}`,
     headline: buildHeadline(job, skills),
     location: pick(LOCATIONS, seed, 11),
@@ -168,8 +184,10 @@ export async function searchCandidatePlatforms(
   const selected = enabled.slice(0, 12);
   if (!selected.length) return [];
 
-  const peopleCount = Math.min(limit, 18);
+  const maxUniqueNames = FIRST_NAMES.length * LAST_NAMES.length;
+  const peopleCount = Math.min(limit, 18, maxUniqueNames);
   const results: CandidateProfile[] = [];
+  const usedNames = new Set<string>();
 
   for (let personIndex = 0; personIndex < peopleCount; personIndex += 1) {
     const seed = hashSeed(`${query.job.id}:person:${personIndex}`);
@@ -179,7 +197,11 @@ export async function searchCandidatePlatforms(
       const platform = pick(selected, seed, p * 5);
       if (!platformIds.includes(platform.id)) platformIds.push(platform.id);
     }
-    results.push(synthesizePerson(query.job, personIndex, platformIds));
+    const person = synthesizePerson(query.job, personIndex, platformIds);
+    const nameKey = person.fullName.toLowerCase();
+    if (usedNames.has(nameKey)) continue;
+    usedNames.add(nameKey);
+    results.push(person);
   }
 
   return results;

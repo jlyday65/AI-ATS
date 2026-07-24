@@ -27,14 +27,17 @@ describe("platform connector demo search", () => {
     );
   });
 
-  it("returns unique people (no repeated full names)", async () => {
+  it("returns unique people (no repeated full names or emails)", async () => {
     const candidates = await searchCandidatePlatforms({
       job,
       platforms: ["linkedin", "github", "stackoverflow", "devto", "kaggle"],
       limit: 20,
     });
     const names = candidates.map((c) => c.fullName);
+    const emails = candidates.map((c) => c.email);
     assert.equal(names.length, new Set(names).size);
+    assert.equal(emails.length, new Set(emails).size);
+    assert.ok(candidates.length >= 10);
   });
 
   it("can attach multiple platforms to one person", async () => {
