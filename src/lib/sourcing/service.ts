@@ -71,7 +71,20 @@ export async function runSourcingAgent(input: RunSourcingInput): Promise<RunSour
     }
 
     const topN = input.pushTopN ?? 5;
-    const selected = matches.slice(0, topN).map((match) => match.candidate);
+    // Dedupe by email/name so Gina does not get Omar Sato × N from old multi-hit lists.
+    const seen = new Set<string>();
+    const selected = [];
+    for (const match of matches) {
+      if (selected.length >= topN) break;
+      const candidate = match.candidate;
+      const key = (
+        candidate.email?.trim().toLowerCase() ||
+        candidate.fullName.trim().toLowerCase()
+      );
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      selected.push(candidate);
+    }
     const result = await pushCandidatesToAts({
       connection,
       job,

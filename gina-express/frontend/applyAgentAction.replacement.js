@@ -3,6 +3,9 @@
  *
  * Find:  function applyAgentAction(action) {
  * Replace the ENTIRE function (through its closing `}`) with this:
+ *
+ * Skips import/create when email or exact name already exists, and still
+ * returns ok so "Check for actions" can ack/clear the queued duplicate.
  */
 
   function applyAgentAction(action) {
@@ -10,6 +13,21 @@
     try {
       if (type === "create_candidate" || type === "import_candidate") {
         if (!payload?.name) return { ok: false, reason: "Missing candidate name in payload." };
+
+        const email = (payload.email || "").trim().toLowerCase();
+        const name = (payload.name || "").trim().toLowerCase();
+        const existing = candidates.find((c) => {
+          if (email && c.email.trim().toLowerCase() === email) return true;
+          if (name && c.name.trim().toLowerCase() === name) return true;
+          return false;
+        });
+        if (existing) {
+          // ok:true so the action is acknowledged/cleared and not re-applied forever
+          return {
+            ok: true,
+            summary: `Skipped duplicate: ${payload.name} (already on board as ${existing.name})`,
+          };
+        }
 
         // Prefer matching a local job by title when SignalHire sends jobTitle
         let jobId = payload.jobId || null;
