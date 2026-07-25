@@ -1,153 +1,117 @@
 /**
  * Gina ATS UI — Resume upload panel
  *
- * In frontend/App.jsx:
- * 1. Paste this component (or import if you use a bundler that allows it).
- * 2. Render it on Candidates / a new "Resumes" tab, e.g.:
- *      <ResumeUploadPanel jobs={jobs} onDone={loadCandidates} />
+ * PASTE THIS FUNCTION into App.jsx ABOVE `function JobsView` (same level as
+ * ResumeTabPanel). Do NOT paste it inside `{view === "jobs" && (...)}`.
  *
- * Expects session cookies already work for authenticated fetch to /resumes/upload.
+ * Then render:
+ *   {view === "resumes" && (
+ *     <div style={{ padding: 18, overflowY: "auto", flex: 1 }}>
+ *       <ResumeUploadPanel jobs={jobs} onDone={...} />
+ *     </div>
+ *   )}
  */
 
 function ResumeUploadPanel({ jobs = [], onDone }) {
-  const [jobId, setJobId] = React.useState(jobs[0]?.id || "");
-  const [file, setFile] = React.useState(null);
-  const [resumeText, setResumeText] = React.useState("");
-  const [name, setName] = React.useState("");
-  const [email, setEmail] = React.useState("");
-  const [pending, setPending] = React.useState(false);
-  const [result, setResult] = React.useState(null);
-  const [error, setError] = React.useState("");
+  const [jobId, setJobId] = useState("");
+  const [file, setFile] = useState(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
 
-  React.useEffect(() => {
-    if (!jobId && jobs[0]?.id) setJobId(jobs[0].id);
-  }, [jobs, jobId]);
-
-  async function submit(event) {
-    event.preventDefault();
-    setPending(true);
-    setError("");
-    setResult(null);
-
-    const selected = jobs.find((job) => String(job.id) === String(jobId));
-    const form = new FormData();
-    if (jobId) form.set("jobId", String(jobId));
-    if (selected?.title) form.set("jobTitle", selected.title);
-    if (name.trim()) form.set("name", name.trim());
-    if (email.trim()) form.set("email", email.trim());
-    if (resumeText.trim()) form.set("resumeText", resumeText.trim());
-    if (file) form.set("file", file);
-
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg("");
+    setErr("");
     try {
-      const response = await fetch("/resumes/upload", {
+      const selected = jobs.find((j) => String(j.id) === String(jobId));
+      const fd = new FormData();
+      if (jobId) fd.append("jobId", jobId);
+      if (selected?.title) fd.append("jobTitle", selected.title);
+      if (file) fd.append("file", file);
+      if (text.trim()) fd.append("resumeText", text.trim());
+
+      const res = await fetch("/resumes/upload", {
         method: "POST",
-        body: form,
+        body: fd,
         credentials: "include",
       });
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setError(json.error || `Upload failed (${response.status})`);
-        setPending(false);
-        return;
-      }
-      setResult(json);
-      if (typeof onDone === "function") onDone(json);
-    } catch (err) {
-      setError(String(err?.message || err));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+
+      const name = data.candidate?.name || data.candidate?.full_name || "candidate";
+      const role = data.job?.title || data.candidate?.job_title || "";
+      setMsg(
+        `Saved ${name}` +
+          (role ? ` → ${role}` : "") +
+          (data.created ? " (created)" : " (updated)")
+      );
+      setFile(null);
+      setText("");
+      onDone?.(data);
+    } catch (e2) {
+      setErr(e2.message || "Upload failed");
+    } finally {
+      setBusy(false);
     }
-    setPending(false);
   }
 
   return (
-    <div className="panel" style={{ padding: 20, marginTop: 16 }}>
-      <h2 style={{ margin: 0 }}>Resume upload</h2>
-      <p style={{ opacity: 0.8, marginTop: 8 }}>
-        Attach a PDF or paste resume text to a job. Gina extracts text, matches by
-        email when possible, and stores it on the candidate for Maria to evaluate.
+    <div style={{ maxWidth: 720 }}>
+      <h2 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>
+        Resume intake
+      </h2>
+      <p style={{ margin: "0 0 18px", color: "#918D80", fontSize: 13, lineHeight: 1.5 }}>
+        Upload a PDF or paste resume text. Gina extracts the profile, matches a job, and saves the full resume on the candidate.
       </p>
 
-      <form onSubmit={submit} style={{ marginTop: 16, display: "grid", gap: 12 }}>
-        <label>
-          <div>Job</div>
+      <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
+        <label style={labelStyle}>
+          Job (optional — leave blank if none)
           <select
             value={jobId}
-            onChange={(event) => setJobId(event.target.value)}
-            style={{ width: "100%", padding: 8 }}
+            onChange={(e) => setJobId(e.target.value)}
+            style={{ ...inputStyle, marginTop: 6 }}
           >
-            {jobs.map((job) => (
-              <option key={job.id} value={job.id}>
-                {job.title || `Job ${job.id}`}
+            <option value="">No job selected</option>
+            {jobs.map((j) => (
+              <option key={j.id} value={j.id}>
+                {j.title || "Untitled role"}
               </option>
             ))}
           </select>
         </label>
 
-        <label>
-          <div>Resume PDF</div>
+        <label style={labelStyle}>
+          PDF resume
           <input
             type="file"
-            accept=".pdf,application/pdf,text/plain"
-            onChange={(event) => setFile(event.target.files?.[0] || null)}
+            accept="application/pdf,.pdf"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            style={{ marginTop: 6, fontSize: 12.5 }}
           />
         </label>
 
-        <label>
-          <div>Or paste resume text</div>
+        <label style={labelStyle}>
+          Or paste resume text
           <textarea
-            value={resumeText}
-            onChange={(event) => setResumeText(event.target.value)}
-            rows={8}
-            style={{ width: "100%", padding: 8 }}
-            placeholder="Paste resume text for scanned PDFs…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={10}
+            placeholder="Paste full resume text here…"
+            style={{ ...inputStyle, marginTop: 6, fontFamily: "inherit", resize: "vertical" }}
           />
         </label>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <label>
-            <div>Name override (optional)</div>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              style={{ width: "100%", padding: 8 }}
-            />
-          </label>
-          <label>
-            <div>Email override (optional)</div>
-            <input
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              style={{ width: "100%", padding: 8 }}
-            />
-          </label>
-        </div>
+        {err && <div style={{ color: "#A34A42", fontSize: 13 }}>{err}</div>}
+        {msg && <div style={{ color: "#3F7A4D", fontSize: 13 }}>{msg}</div>}
 
-        <button type="submit" disabled={pending || (!file && !resumeText.trim())}>
-          {pending ? "Uploading…" : "Upload resume to ATS"}
+        <button type="submit" disabled={busy || (!file && !text.trim())} style={primaryBtn}>
+          {busy ? "Uploading…" : "Upload resume"}
         </button>
       </form>
-
-      {error ? (
-        <p style={{ color: "#b42318", marginTop: 12 }}>{error}</p>
-      ) : null}
-
-      {result?.ok ? (
-        <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd" }}>
-          <strong>
-            {result.created ? "Created" : "Updated"} {result.candidate?.name}
-          </strong>
-          <div style={{ marginTop: 6, opacity: 0.85 }}>
-            {result.candidate?.email || "No email"} ·{" "}
-            {result.candidate?.resumeChars || 0} resume characters
-          </div>
-          <div style={{ marginTop: 6 }}>{result.nextStep}</div>
-        </div>
-      ) : null}
     </div>
   );
 }
-
-// If App.jsx is not using modules, copy the function body above into App.jsx
-// and ensure React is in scope. Then render:
-//   {tab === "resumes" && (
-//     <ResumeUploadPanel jobs={jobs} onDone={() => loadCandidates()} />
-//   )}
