@@ -32,16 +32,37 @@ app.use("/resumes", resumesRouter);
 ```
 
 ### 4. Add UI in `frontend/App.jsx`
-1. Paste `ResumeUploadPanel` from `frontend/ResumeUploadPanel.jsx` into `App.jsx` (or import it).
-2. Add a **Resumes** tab / section and render:
+**Important:** define `ResumeUploadPanel` as a **top-level function** (same level as `JobsView` / `ResumeTabPanel`).  
+Do **not** paste the function body inside `{view === "jobs" && ( ... )}` — that breaks the file.
+
+1. Paste the `function ResumeUploadPanel(...) { ... }` block **above** `function JobsView`.
+2. Keep the Jobs view clean:
 ```jsx
-<ResumeUploadPanel
-  jobs={jobs}
-  onDone={() => {
-    // call whatever you already use to refresh candidates
-    // e.g. loadCandidates();
-  }}
-/>
+{view === "jobs" && (
+  <JobsView
+    jobs={jobs}
+    candidates={candidates}
+    onAdd={() => setEditingJobId("new")}
+    onEdit={(id) => setEditingJobId(id)}
+    onViewCandidates={(id) => {
+      setJobFilter(id);
+      setView("board");
+    }}
+  />
+)}
+```
+3. Add a **Resumes** nav item + view:
+```jsx
+{view === "resumes" && (
+  <div style={{ padding: 18, overflowY: "auto", flex: 1 }}>
+    <ResumeUploadPanel
+      jobs={jobs}
+      onDone={(data) => {
+        // optional: addCandidate from data.candidate so the board updates
+      }}
+    />
+  </div>
+)}
 ```
 
 ### 5. Schema check
