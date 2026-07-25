@@ -1,4 +1,17 @@
-# Gina frontend fix for SignalHire imports
+# Gina frontend patches
+
+`App.jsx` is too large / easy to save to the wrong path in chat. Prefer Terminal.
+
+## Resume intake UI
+
+```bash
+node patch-app-resumes.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+grep -n "ResumeUploadPanel" ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx | head
+```
+
+See also `../RESUMES.md`.
+
+## SignalHire import handler
 
 `App.jsx` is too large to paste safely in chat. Do this instead:
 

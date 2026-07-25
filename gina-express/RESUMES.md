@@ -31,40 +31,27 @@ import resumesRouter from "./routes/resumes.js";
 app.use("/resumes", resumesRouter);
 ```
 
-### 4. Add UI in `frontend/App.jsx`
-**Important:** define `ResumeUploadPanel` as a **top-level function** (same level as `JobsView` / `ResumeTabPanel`).  
-Do **not** paste the function body inside `{view === "jobs" && ( ... )}` — that breaks the file.
+### 4. Add UI in `frontend/App.jsx` (preferred: Terminal patch)
 
-1. Paste the `function ResumeUploadPanel(...) { ... }` block **above** `function JobsView`.
-2. Keep the Jobs view clean:
-```jsx
-{view === "jobs" && (
-  <JobsView
-    jobs={jobs}
-    candidates={candidates}
-    onAdd={() => setEditingJobId("new")}
-    onEdit={(id) => setEditingJobId(id)}
-    onViewCandidates={(id) => {
-      setJobFilter(id);
-      setView("board");
-    }}
-  />
-)}
-```
-3. Add a **Resumes** nav item + view:
-```jsx
-{view === "resumes" && (
-  <div style={{ padding: 18, overflowY: "auto", flex: 1 }}>
-    <ResumeUploadPanel
-      jobs={jobs}
-      onDone={(data) => {
-        // optional: addCandidate from data.candidate so the board updates
-      }}
-    />
-  </div>
-)}
+Chat / Cursor often edits a **different** `App.jsx` (e.g. `gina-backend 4/...`). Confirm the real file first:
+
+```bash
+grep -n "ResumeUploadPanel" ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx | head
 ```
 
+If that prints nothing, **do not paste in Cursor**. Run the one-shot patcher instead:
+
+```bash
+# from AI-ATS repo (or copy patch-app-resumes.mjs onto your Mac)
+node gina-express/frontend/patch-app-resumes.mjs \
+  ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+
+grep -n "ResumeUploadPanel" ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx | head
+```
+
+That writes nav + `view === "resumes"` + top-level `function ResumeUploadPanel` (above `JobsView`), with a `.bak-resumes-*` backup beside `App.jsx`.
+
+**Manual paste (only if patcher fails):** define `ResumeUploadPanel` as a **top-level function** (same level as `JobsView`). Do **not** paste it inside `{view === "jobs" && ( ... )}`.
 ### 5. Schema check
 `candidates` should have (adjust names if yours differ):
 - `resume_text`
