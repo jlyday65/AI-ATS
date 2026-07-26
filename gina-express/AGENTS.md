@@ -24,6 +24,23 @@ node /tmp/inspect-and-fix-gina-js.mjs ~/lyday-gina-backend/gina-backend/gina.js
 
 Then commit/push **that** `gina-backend`, confirm Railway root dir matches, redeploy, and start a **new** chat.
 
+## Fix: “Skipped action: Unknown action type source_candidates_signalhire”
+
+Gina queued Maria correctly; Check for actions must handle that type via `/ats/run-command`.
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/frontend/patch-apply-command-actions.mjs" -o /tmp/patch-apply-command-actions.mjs
+node /tmp/patch-apply-command-actions.mjs /Users/jameslyday/lyday-gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend/gina-backend
+git add frontend/src/App.jsx routes/run-command.js agents server.js maria-source.tool.js
+git status   # review; do not add node_modules
+git commit -m "Handle source_candidates_signalhire in Check for actions"
+git push origin main
+```
+
+Railway: set `SIGNALHIRE_BASE_URL` + `RELAY_SECRET`. Redeploy, then Check for actions again (or re-queue).
+
 ## Fix: “Skipped action: No candidate found matching {name: Maria}”
 
 Gina queued a note/stage against bot name **Maria**. Check for actions must run
