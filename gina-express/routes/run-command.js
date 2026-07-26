@@ -11,7 +11,11 @@
 
 import { Router } from "express";
 import { commandAgent } from "../agents/command-agent.tool.js";
-import { mariaSourceViaSignalHire } from "../maria-source.tool.js";
+import {
+  extractLocationFromText,
+  extractRoleTitleFromText,
+  mariaSourceViaSignalHire,
+} from "../maria-source.tool.js";
 
 const router = Router();
 
@@ -27,11 +31,43 @@ function parsePayload(raw) {
   return raw;
 }
 
+function normalizeSourcePayload(payload = {}) {
+  const task =
+    payload.task ||
+    payload.instruction ||
+    payload.message ||
+    payload.description ||
+    payload.roleDescription ||
+    "";
+  const roleTitle =
+    payload.roleTitle ||
+    payload.title ||
+    payload.context?.roleTitle ||
+    extractRoleTitleFromText(task) ||
+    "";
+  const location =
+    payload.location ||
+    payload.context?.location ||
+    extractLocationFromText(task) ||
+    "";
+  return {
+    ...payload,
+    task,
+    roleTitle,
+    location,
+    roleDescription: payload.roleDescription || task,
+    resumesRequired:
+      payload.resumesRequired ??
+      payload.context?.resumesRequired ??
+      /resume/i.test(task),
+  };
+}
+
 router.post("/run-command", async (req, res) => {
   try {
     const body = req.body || {};
     const type = String(body.type || body.actionType || "command_agent");
-    const payload = parsePayload(body.payload || body);
+    const payload = normalizeSourcePayload(parsePayload(body.payload || body));
 
     if (type === "source_candidates_signalhire") {
       const result = await mariaSourceViaSignalHire(payload);

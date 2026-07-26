@@ -17,6 +17,33 @@ const SIGNALHIRE_BASE_URL = (
   "http://localhost:3000"
 ).replace(/\/$/, "");
 
+/** Pull role title from free-text task when queue payload omits roleTitle. */
+export function extractRoleTitleFromText(text = "") {
+  const t = String(text || "").trim();
+  if (!t) return "";
+  const patterns = [
+    /\bsource\s+(?:an?\s+|a\s+)?(.+?)\s+candidate/i,
+    /\bsource\s+(?:an?\s+|a\s+)?(.+?)(?:\s+in\s+|\s+for\s+|[.!]|$)/i,
+    /\b(?:find|recruit|hire)\s+(?:an?\s+|a\s+)?(.+?)(?:\s+candidate|\s+in\s+|\s+for\s+|[.!]|$)/i,
+    /\bfor\s+(?:the\s+)?(.+?)(?:\s+role|\s+in\s+|[.!]|$)/i,
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m?.[1]) {
+      return m[1]
+        .replace(/\b(with|that|who|all)\b.*$/i, "")
+        .replace(/[?.!,;:]+$/g, "")
+        .trim();
+    }
+  }
+  return "";
+}
+
+export function extractLocationFromText(text = "") {
+  const m = String(text || "").match(/\bin\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)/i);
+  return (m?.[1] || "").replace(/[?.!,;:]+$/g, "").trim();
+}
+
 /**
  * Ask SignalHire (as Maria) to source a role and optionally push to Gina.
  *
@@ -38,13 +65,38 @@ export async function mariaSourceViaSignalHire(input = {}) {
     throw new Error("Gina RELAY_SECRET is not set — cannot call SignalHire as Maria.");
   }
 
-  const roleTitle = String(input.roleTitle || input.title || "").trim();
+  const taskText =
+    input.task ||
+    input.instruction ||
+    input.message ||
+    input.description ||
+    input.roleDescription ||
+    "";
+
+  const roleTitle = String(
+    input.roleTitle ||
+      input.title ||
+      input.context?.roleTitle ||
+      extractRoleTitleFromText(taskText) ||
+      "",
+  ).trim();
   if (!roleTitle) {
-    throw new Error("Maria needs a roleTitle to source.");
+    throw new Error(
+      'Maria needs a roleTitle to source. Queue payload should include roleTitle or task like "source a Warehouse Mechanic in Atlanta".',
+    );
+  }
+
+  if (!input.location && !input.context?.location) {
+    const loc = extractLocationFromText(taskText);
+    if (loc) input = { ...input, location: loc };
+  } else if (!input.location && input.context?.location) {
+    input = { ...input, location: input.context.location };
   }
 
   const resumesRequired =
     input.resumesRequired === true ||
+    input.context?.resumesRequired === true ||
+    /resume/i.test(String(taskText)) ||
     /resume/i.test(String(input.roleDescription || "")) ||
     input.requireResume === true;
 
@@ -57,7 +109,7 @@ export async function mariaSourceViaSignalHire(input = {}) {
     },
     body: JSON.stringify({
       roleTitle,
-      roleDescription: input.roleDescription || input.description,
+      roleDescription: input.roleDescription || input.description || taskText || undefined,
       requiredSkills: input.requiredSkills,
       preferredSkills: input.preferredSkills,
       location: input.location,
@@ -66,7 +118,7 @@ export async function mariaSourceViaSignalHire(input = {}) {
       pushToGina: input.pushToGina !== false,
       pushTopN: input.pushTopN ?? 5,
       limit: input.limit ?? 24,
-      jobId: input.jobId,
+      jobId: input.jobId || input.context?.jobId,
       platformIds: input.platformIds,
     }),
   });
