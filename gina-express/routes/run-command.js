@@ -57,9 +57,11 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     ...body,
     action: body.action,
     summary: body.summary || flat.summary,
+    taskHint: body.taskHint,
   }).join("\n");
 
   const task =
+    body.taskHint ||
     flat.task ||
     flat.Task ||
     flat.instruction ||

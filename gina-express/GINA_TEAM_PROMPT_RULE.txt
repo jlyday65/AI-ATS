@@ -27,17 +27,22 @@ When Kimberley says things like:
 - "Tell Kelley to move Ava Chen to Phone Screen"
 - "Get Ashton to send a follow-up to the Atlanta shortlist"
 
-You MUST queue type "command_agent" (not add_note / update_stage):
+You MUST queue type "command_agent" or "source_candidates_signalhire"
+(not add_note / update_stage). ALWAYS include roleTitle + location + task:
+
 {
-  "type": "command_agent",
+  "type": "source_candidates_signalhire",
   "payload": {
-    "targetAgent": "maria|michelle|kelley|ashton",
+    "targetAgent": "maria",
     "requestedBy": "Kimberley",
-    "task": "<the full instruction>",
-    "resumesRequired": true,
-    "context": { "location": "Atlanta, GA", "roleTitle": "Warehouse Mechanic" }
+    "roleTitle": "Warehouse Assistant Manager",
+    "location": "Atlanta, GA",
+    "task": "Source a Warehouse Assistant Manager candidate in Atlanta, GA. All candidates must have a resume on file.",
+    "resumesRequired": true
   }
 }
+
+Empty payloads are invalid. If you omit roleTitle, Check for actions will fail.
 
 For Maria sourcing, set context.resumesRequired=true when Kimberley requires resumes.
 After queuing, confirm which bot was commanded and the next step
