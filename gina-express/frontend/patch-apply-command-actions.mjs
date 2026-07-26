@@ -88,17 +88,19 @@ const replacement = await fetchText("frontend/applyAgentAction.replacement.js", 
   path.join(__dirname, "applyAgentAction.replacement.js"),
 ]);
 
-// Extract function body from the snippet file (starts at "const BOT_NAMES" or "async function applyAgentAction")
-const fnStart = replacement.search(/const BOT_NAMES|async function applyAgentAction|function applyAgentAction/);
+// Extract ONLY executable code — never include the file header comments (` * Replace...`)
+const fnStart = replacement.search(/const BOT_NAMES\s*=\s*new Set|async function applyAgentAction/);
 if (fnStart < 0) {
-  console.error("replacement snippet missing applyAgentAction");
+  console.error("replacement snippet missing applyAgentAction executable block");
+  console.error("Use repair-app-jsx-apply-action.mjs instead if App.jsx is already broken.");
   process.exit(1);
 }
 let fnBlock = replacement.slice(fnStart).trim();
-// drop trailing comment-only lines noise — keep through last closing of function
-// Ensure we have a complete function: if snippet starts with const BOT_NAMES, wrap is already in file as nested in comment context
-if (!fnBlock.startsWith("function") && !fnBlock.startsWith("async function")) {
-  // snippet has const BOT_NAMES + async function — good as a block to insert before JobsView or replace old function
+// Strip any leading comment-only lines if present
+fnBlock = fnBlock.replace(/^(?:\s*\*[^\n]*\n)+/, "").trim();
+if (fnBlock.startsWith("*")) {
+  console.error("Refusing to patch: extracted block still looks like a comment. Use repair-app-jsx-apply-action.mjs");
+  process.exit(1);
 }
 
 let src = fs.readFileSync(appPath, "utf8");
