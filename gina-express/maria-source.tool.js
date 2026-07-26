@@ -65,24 +65,51 @@ export async function mariaSourceViaSignalHire(input = {}) {
     throw new Error("Gina RELAY_SECRET is not set — cannot call SignalHire as Maria.");
   }
 
+  // Flatten any nested strings — queued actions vary widely in shape.
+  const blobParts = [];
+  const walk = (v, d = 0) => {
+    if (v == null || d > 5) return;
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t) blobParts.push(t);
+      return;
+    }
+    if (Array.isArray(v)) return v.forEach((x) => walk(x, d + 1));
+    if (typeof v === "object") {
+      for (const [k, val] of Object.entries(v)) {
+        if (k.startsWith("_")) continue;
+        walk(val, d + 1);
+      }
+    }
+  };
+  walk(input);
+  const blob = blobParts.join("\n");
+
   const taskText =
     input.task ||
+    input.Task ||
     input.instruction ||
     input.message ||
     input.description ||
     input.roleDescription ||
-    "";
+    input.notes ||
+    input.text ||
+    blob;
 
   const roleTitle = String(
     input.roleTitle ||
+      input.role_title ||
       input.title ||
+      input.jobTitle ||
+      input.job_title ||
       input.context?.roleTitle ||
       extractRoleTitleFromText(taskText) ||
+      extractRoleTitleFromText(blob) ||
       "",
   ).trim();
   if (!roleTitle) {
     throw new Error(
-      'Maria needs a roleTitle to source. Queue payload should include roleTitle or task like "source a Warehouse Mechanic in Atlanta".',
+      'Maria needs a roleTitle to source. Could not infer from payload. Re-queue with roleTitle: "Warehouse Assistant Manager" or task containing "source a … candidate".',
     );
   }
 

@@ -4,9 +4,6 @@
  * Mount in server.js (after auth):
  *   import runCommandRouter from "./routes/run-command.js";
  *   app.use("/ats", runCommandRouter);
- *
- * Frontend "Check for actions" should POST here for command types instead of
- * treating "Maria" as a candidate name.
  */
 
 import { Router } from "express";
@@ -25,41 +22,85 @@ function parsePayload(raw) {
     try {
       return JSON.parse(raw);
     } catch {
-      return {};
+      return { task: raw };
     }
   }
   return raw;
 }
 
-function normalizeSourcePayload(payload = {}) {
+/** Gather every string in the queued action so we can infer roleTitle. */
+function collectText(value, out = [], depth = 0) {
+  if (value == null || depth > 5) return out;
+  if (typeof value === "string") {
+    const t = value.trim();
+    if (t) out.push(t);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectText(item, out, depth + 1);
+    return out;
+  }
+  if (typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      // skip huge/noisy keys
+      if (k === "password" || k === "secret" || k === "token") continue;
+      collectText(v, out, depth + 1);
+    }
+  }
+  return out;
+}
+
+function normalizeSourcePayload(payload = {}, body = {}) {
+  const flat = parsePayload(payload);
+  const blob = collectText({
+    ...flat,
+    ...body,
+    action: body.action,
+    summary: body.summary || flat.summary,
+  }).join("\n");
+
   const task =
-    payload.task ||
-    payload.instruction ||
-    payload.message ||
-    payload.description ||
-    payload.roleDescription ||
-    "";
+    flat.task ||
+    flat.Task ||
+    flat.instruction ||
+    flat.message ||
+    flat.description ||
+    flat.roleDescription ||
+    flat.notes ||
+    flat.text ||
+    blob;
+
   const roleTitle =
-    payload.roleTitle ||
-    payload.title ||
-    payload.context?.roleTitle ||
+    flat.roleTitle ||
+    flat.role_title ||
+    flat.title ||
+    flat.jobTitle ||
+    flat.job_title ||
+    flat.context?.roleTitle ||
     extractRoleTitleFromText(task) ||
+    extractRoleTitleFromText(blob) ||
     "";
+
   const location =
-    payload.location ||
-    payload.context?.location ||
+    flat.location ||
+    flat.Location ||
+    flat.context?.location ||
     extractLocationFromText(task) ||
+    extractLocationFromText(blob) ||
     "";
+
   return {
-    ...payload,
+    ...flat,
     task,
     roleTitle,
     location,
-    roleDescription: payload.roleDescription || task,
+    roleDescription: flat.roleDescription || task,
     resumesRequired:
-      payload.resumesRequired ??
-      payload.context?.resumesRequired ??
-      /resume/i.test(task),
+      flat.resumesRequired ??
+      flat.context?.resumesRequired ??
+      /resume/i.test(task) ||
+      /resume/i.test(blob),
+    _debugKeys: Object.keys(flat),
   };
 }
 
@@ -67,13 +108,27 @@ router.post("/run-command", async (req, res) => {
   try {
     const body = req.body || {};
     const type = String(body.type || body.actionType || "command_agent");
-    const payload = normalizeSourcePayload(parsePayload(body.payload || body));
+    const payload = normalizeSourcePayload(
+      body.payload ?? body.action?.payload ?? body,
+      body,
+    );
 
     if (type === "source_candidates_signalhire") {
+      if (!payload.roleTitle) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            'Maria needs a roleTitle to source. Could not infer one from the queued action. Re-queue with roleTitle or task like "source a Warehouse Assistant Manager candidate in Atlanta".',
+          debug: {
+            keys: payload._debugKeys,
+            taskPreview: String(payload.task || "").slice(0, 240),
+          },
+        });
+      }
       const result = await mariaSourceViaSignalHire(payload);
       return res.json({
         ok: true,
-        summary: `Maria sourced via SignalHire for ${payload.roleTitle || "role"}`,
+        summary: `Maria sourced via SignalHire for ${payload.roleTitle}`,
         result,
       });
     }
@@ -82,15 +137,11 @@ router.post("/run-command", async (req, res) => {
       const target =
         payload.targetAgent ||
         payload.assignedTo ||
+        payload.AssignedTo ||
         payload.agent ||
         payload.to ||
         "maria";
-      const task =
-        payload.task ||
-        payload.instruction ||
-        payload.message ||
-        payload.description ||
-        "";
+      const task = payload.task || "";
 
       const result = await commandAgent({
         targetAgent: target,
@@ -98,12 +149,9 @@ router.post("/run-command", async (req, res) => {
         requestedBy: payload.requestedBy || "Kimberley",
         context: {
           ...(payload.context || {}),
-          roleTitle: payload.roleTitle || payload.context?.roleTitle,
-          location: payload.location || payload.context?.location,
-          resumesRequired:
-            payload.resumesRequired ??
-            payload.context?.resumesRequired ??
-            /resume/i.test(task),
+          roleTitle: payload.roleTitle,
+          location: payload.location,
+          resumesRequired: payload.resumesRequired,
         },
       });
 

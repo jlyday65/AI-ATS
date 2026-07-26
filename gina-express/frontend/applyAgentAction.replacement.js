@@ -31,6 +31,8 @@
             type,
             actionId: action.id,
             payload: payload || {},
+            action, // full queued row — helps infer roleTitle from task text
+            summary: action.summary || action.detail || "",
           }),
         });
         const data = await res.json().catch(() => ({}));
