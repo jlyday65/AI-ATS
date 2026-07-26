@@ -133,6 +133,8 @@ export async function mariaSourceViaSignalHire(input = {}) {
       "Content-Type": "application/json",
       // Send ONE header only — Express joins duplicates into "secret, secret".
       "X-Relay-Secret": secret,
+      // ngrok free tier otherwise returns an interstitial HTML page to server fetches
+      "ngrok-skip-browser-warning": "true",
     },
     body: JSON.stringify({
       roleTitle,
