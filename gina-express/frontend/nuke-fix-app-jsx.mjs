@@ -289,10 +289,13 @@ src = removeApplyAgentActionBlocks(src);
 src = stripJunkLines(src); // again after removal
 src = insertClean(src);
 
-// await call sites
-if (/applyAgentAction\s*\(\s*action\s*\)/.test(src) && !/await\s+applyAgentAction\s*\(\s*action\s*\)/.test(src)) {
-  src = src.replace(/([^.\w])applyAgentAction\s*\(\s*action\s*\)/g, "$1await applyAgentAction(action)");
-}
+// await call sites — never rewrite the function declaration itself
+src = src.replace(/async\s+function\s+await\s+applyAgentAction/g, "async function applyAgentAction");
+src = src.replace(
+  /(?<!function\s)(?<!async\s+function\s)(?<!await\s)\bapplyAgentAction\s*\(\s*action\s*\)/g,
+  "await applyAgentAction(action)",
+);
+src = src.replace(/await\s+await\s+applyAgentAction/g, "await applyAgentAction");
 
 if (looksCorrupted(src)) {
   console.error("Still looks corrupted after nuke. Manual restore needed.");
