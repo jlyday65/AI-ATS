@@ -1,0 +1,59 @@
+# Gina team: Kimberley → Gina → Maria / Michelle / Kelley / Ashton
+
+| Person | Role | Route | What they do |
+|--------|------|-------|----------------|
+| **Kimberley** | Operator | — | Issues requests to Gina |
+| **Gina** | Orchestrator | `/chat` | Commands the four bots |
+| **Maria** | Sourcer | `/maria` | SignalHire sourcing + resume-on-file shortlists |
+| **Michelle** | Screener | `/michelle` | Resume/job screening, stage recommendations |
+| **Kelley** | Pipeline ops | `/kelly` | Stages, notes, ATS housekeeping (alias: Kelly) |
+| **Ashton** | Outreach | `/ashton` | Candidate/client outreach drafts + follow-ups |
+
+## Install on Gina (Terminal)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/frontend/patch-gina-team-commands.mjs \
+  -o /tmp/patch-gina-team-commands.mjs
+
+# also fetch the agents package (patcher can download, or):
+mkdir -p /tmp/gina-agents
+curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/agents/registry.js \
+  -o /tmp/gina-agents/registry.js
+curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/agents/command-agent.tool.js \
+  -o /tmp/gina-agents/command-agent.tool.js
+curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/maria-source.tool.js \
+  -o /tmp/maria-source.tool.js
+curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/GINA_TEAM_PROMPT_RULE.txt \
+  -o /tmp/GINA_TEAM_PROMPT_RULE.txt
+
+node /tmp/patch-gina-team-commands.mjs ~/lyday-gina-backend
+```
+
+Then commit/push Gina (not `node_modules`), set Railway:
+
+- `RELAY_SECRET` — shared with SignalHire  
+- `SIGNALHIRE_BASE_URL` — SignalHire public URL (for Maria)
+
+Redeploy Gina.
+
+## Example asks (Kimberley → Gina)
+
+```text
+Ask Maria to source a Warehouse Mechanic in Atlanta, GA. All candidates must have a resume on file.
+Have Michelle screen the Warehouse Mechanic candidates that just came in.
+Tell Kelley to move Ava Chen to Phone Screen and note "Kimberley requested".
+Get Ashton to draft a follow-up email to the Atlanta Mechanic shortlist.
+```
+
+Gina should queue `command_agent` for the named bot — not refuse.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `agents/registry.js` | Canonical bot list + aliases |
+| `agents/command-agent.tool.js` | `command_agent` tool / runner |
+| `GINA_TEAM_PROMPT_RULE.txt` | Paste into Gina system prompt |
+| `maria-source.tool.js` | Maria → SignalHire |
+| `frontend/patch-gina-team-commands.mjs` | One-shot disk patcher |
+| `MARIA.md` | Maria sourcing details |

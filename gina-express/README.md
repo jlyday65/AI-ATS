@@ -51,6 +51,16 @@ import { relayAuth } from "./relay-auth.middleware.mjs";
 3. SignalHire `/ats` → same secret → Test Gina  
    Diagnostics should probe `/ats`, `/ats/jobs`, `/maria`, etc.
 
+## Team commands (Kimberley → Gina → bots)
+
+Gina must be able to command **Maria, Michelle, Kelley, and Ashton** when Kimberley asks.
+
+See [AGENTS.md](./AGENTS.md), `agents/`, and `GINA_TEAM_PROMPT_RULE.txt`.
+
+```bash
+node frontend/patch-gina-team-commands.mjs ~/lyday-gina-backend
+```
+
 ## Maria sourcing bridge
 
 See [MARIA.md](./MARIA.md) and `maria-source.tool.js`.
