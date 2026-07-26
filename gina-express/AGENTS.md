@@ -9,6 +9,20 @@
 | **Kelley** | Pipeline ops | `/kelly` | Stages, notes, ATS housekeeping (alias: Kelly) |
 | **Ashton** | Outreach | `/ashton` | Candidate/client outreach drafts + follow-ups |
 
+## Fix: “Skipped action: No candidate found matching {name: Maria}”
+
+Gina queued a note/stage against bot name **Maria**. Check for actions must run
+`command_agent` via `/ats/run-command` instead.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/frontend/patch-apply-command-actions.mjs \
+  -o /tmp/patch-apply-command-actions.mjs
+node /tmp/patch-apply-command-actions.mjs ~/lyday-gina-backend
+```
+
+Then build frontend, push Gina, set `SIGNALHIRE_BASE_URL` + `RELAY_SECRET`, redeploy,
+**re-ask Gina** to queue Maria (do not reuse the bad action 80), then Check for actions.
+
 ## Install on Gina (Terminal)
 
 ```bash

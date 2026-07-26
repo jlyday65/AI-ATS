@@ -1,35 +1,109 @@
 /**
- * In Gina: frontend/App.jsx
+ * In Gina: frontend/src/App.jsx (or frontend/App.jsx)
  *
  * Find:  function applyAgentAction(action) {
- * Replace the ENTIRE function (through its closing `}`) with this:
+ * Replace the ENTIRE function (through its closing `}`) with this.
  *
- * Skips import/create when email or exact name already exists, and still
- * returns ok so "Check for actions" can ack/clear the queued duplicate.
+ * IMPORTANT: "Check for actions" must `await applyAgentAction(action)` —
+ * command_agent / Maria sourcing are async (call /ats/run-command).
+ *
+ * Fixes: Skipped action N: No candidate found matching {"name":"Maria"}
+ * (Maria is a bot, not a candidate.)
  */
 
-  function applyAgentAction(action) {
+  const BOT_NAMES = new Set(["maria", "michelle", "kelley", "kelly", "ashton", "gina"]);
+
+  function isBotMatch(match) {
+    const name = String(match?.name || match?.fullName || "").trim().toLowerCase();
+    return Boolean(name) && BOT_NAMES.has(name);
+  }
+
+  async function applyAgentAction(action) {
     const { type, payload } = action;
     try {
+      // --- Team commands (Kimberley → Gina → Maria/Michelle/Kelley/Ashton) ---
+      if (type === "command_agent" || type === "source_candidates_signalhire") {
+        const res = await fetch("/ats/run-command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            type,
+            actionId: action.id,
+            payload: payload || {},
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          return {
+            ok: false,
+            reason: data.error || data.reason || `Command failed (${res.status})`,
+          };
+        }
+        return {
+          ok: true,
+          summary: data.summary || "Team command executed",
+        };
+      }
+
+      // Mis-queued bot names as candidate match (legacy Gina chat behavior)
+      if (
+        (type === "update_stage" || type === "add_note") &&
+        isBotMatch(payload?.match)
+      ) {
+        const bot = String(payload.match.name || "").trim();
+        const task =
+          payload.text ||
+          payload.task ||
+          payload.note ||
+          `Command for ${bot}`;
+        const res = await fetch("/ats/run-command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            type: "command_agent",
+            actionId: action.id,
+            payload: {
+              targetAgent: bot,
+              task,
+              requestedBy: "Kimberley",
+              resumesRequired: /resume/i.test(String(task)),
+            },
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          return {
+            ok: false,
+            reason:
+              data.error ||
+              `Action looked like a command for bot ${bot}, but /ats/run-command failed. Mount routes/run-command.js and set SIGNALHIRE_BASE_URL.`,
+          };
+        }
+        return {
+          ok: true,
+          summary: data.summary || `Ran command for ${bot}`,
+        };
+      }
+
       if (type === "create_candidate" || type === "import_candidate") {
         if (!payload?.name) return { ok: false, reason: "Missing candidate name in payload." };
 
         const email = (payload.email || "").trim().toLowerCase();
         const name = (payload.name || "").trim().toLowerCase();
         const existing = candidates.find((c) => {
-          if (email && c.email.trim().toLowerCase() === email) return true;
-          if (name && c.name.trim().toLowerCase() === name) return true;
+          if (email && (c.email || "").trim().toLowerCase() === email) return true;
+          if (name && (c.name || "").trim().toLowerCase() === name) return true;
           return false;
         });
         if (existing) {
-          // ok:true so the action is acknowledged/cleared and not re-applied forever
           return {
             ok: true,
             summary: `Skipped duplicate: ${payload.name} (already on board as ${existing.name})`,
           };
         }
 
-        // Prefer matching a local job by title when SignalHire sends jobTitle
         let jobId = payload.jobId || null;
         if (!jobId && payload.jobTitle) {
           const job = jobs.find(
@@ -44,11 +118,12 @@
           email: payload.email || "",
           phone: payload.phone || "",
           source: payload.source || (type === "import_candidate" ? "SignalHire" : "Gina"),
-          resumeText: payload.resumeText || "",
+          resumeText: payload.resumeText || payload.resume_text || "",
           jobId,
         });
         return { ok: true, summary: `Created candidate: ${payload.name}` };
       }
+
       if (type === "update_stage") {
         const match = findCandidateByMatch(payload?.match);
         if (!match) return { ok: false, reason: `No candidate found matching ${JSON.stringify(payload?.match)}.` };
@@ -57,6 +132,7 @@
         setStage(match.id, payload.stage);
         return { ok: true, summary: `Moved ${match.name} to ${stageMeta(payload.stage).label}` };
       }
+
       if (type === "add_note") {
         const match = findCandidateByMatch(payload?.match);
         if (!match) return { ok: false, reason: `No candidate found matching ${JSON.stringify(payload?.match)}.` };
@@ -65,6 +141,7 @@
         addNote(match.id, payload.text);
         return { ok: true, summary: `Added a note to ${match.name}` };
       }
+
       return { ok: false, reason: `Unknown action type "${type}".` };
     } catch (e) {
       return { ok: false, reason: e.message || String(e) };

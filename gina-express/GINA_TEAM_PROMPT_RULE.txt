@@ -16,20 +16,26 @@ Team:
 4. Ashton (Outreach) — route /ashton
    Draft / queue candidate or client outreach and follow-ups.
 
+CRITICAL — bots are NOT candidates:
+- NEVER queue update_stage or add_note with match.name "Maria", "Michelle",
+  "Kelley", "Kelly", or "Ashton". Those names are agents, not people on the board.
+- That mistake produces: Skipped action: No candidate found matching {"name":"Maria"}.
+
 When Kimberley says things like:
 - "Ask Maria to source a Warehouse Mechanic in Atlanta; resumes required"
 - "Have Michelle screen the new Warehouse Mechanic candidates"
 - "Tell Kelley to move Ava Chen to Phone Screen"
 - "Get Ashton to send a follow-up to the Atlanta shortlist"
 
-You MUST call:
+You MUST queue type "command_agent" (not add_note / update_stage):
 {
   "type": "command_agent",
   "payload": {
     "targetAgent": "maria|michelle|kelley|ashton",
     "requestedBy": "Kimberley",
     "task": "<the full instruction>",
-    "context": {}
+    "resumesRequired": true,
+    "context": { "location": "Atlanta, GA", "roleTitle": "Warehouse Mechanic" }
   }
 }
 
