@@ -12,15 +12,17 @@
 ## Fix: Gina says she only has three ATS actions
 
 If Gina refuses Maria sourcing (“three specific actions” / “outside the scope”),
-patch the **chat system prompt / tool schema** (not only App.jsx):
+the prompt rule file may exist while **`gina.js` tool enum** still only lists three actions —
+or Railway may be deploying a duplicate folder (`gina-backend 4`, nested copy, etc.).
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/frontend/patch-gina-chat-tools.mjs \
-  -o /tmp/patch-gina-chat-tools.mjs
-node /tmp/patch-gina-chat-tools.mjs ~/lyday-gina-backend
+curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/frontend/inspect-and-fix-gina-js.mjs \
+  -o /tmp/inspect-and-fix-gina-js.mjs
+
+node /tmp/inspect-and-fix-gina-js.mjs ~/lyday-gina-backend/gina-backend/gina.js
 ```
 
-Commit/push/redeploy Gina, then start a **new** chat and re-ask. Old threads often keep the old refusal.
+Then commit/push **that** `gina-backend`, confirm Railway root dir matches, redeploy, and start a **new** chat.
 
 ## Fix: “Skipped action: No candidate found matching {name: Maria}”
 
