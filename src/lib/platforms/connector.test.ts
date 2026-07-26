@@ -61,4 +61,14 @@ describe("platform connector demo search", () => {
     });
     assert.ok(candidates.some((c) => c.platforms.length > 1));
   });
+
+  it("attaches resume text so Gina can keep resume on file", async () => {
+    const candidates = await searchCandidatePlatforms({
+      job: { ...job, title: "Warehouse Mechanic", location: "Atlanta, GA", remote: false },
+      platforms: ["linkedin", "indeed", "ziprecruiter"],
+      limit: 8,
+    });
+    assert.ok(candidates.every((c) => (c.resumeText || "").length >= 80));
+    assert.ok(candidates.some((c) => c.location?.includes("Atlanta")));
+  });
 });

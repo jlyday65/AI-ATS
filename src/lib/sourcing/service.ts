@@ -16,6 +16,8 @@ export interface RunSourcingInput {
   jobId: string;
   platformIds?: string[];
   limit?: number;
+  /** Skip candidates without resumeText when pushing to ATS */
+  resumesRequired?: boolean;
   pushToAtsConnectionId?: string;
   pushTopN?: number;
 }
@@ -77,6 +79,12 @@ export async function runSourcingAgent(input: RunSourcingInput): Promise<RunSour
     for (const match of matches) {
       if (selected.length >= topN) break;
       const candidate = match.candidate;
+      if (
+        input.resumesRequired &&
+        !(candidate.resumeText && candidate.resumeText.trim().length >= 80)
+      ) {
+        continue;
+      }
       const key = (
         candidate.email?.trim().toLowerCase() ||
         candidate.fullName.trim().toLowerCase()
@@ -84,6 +92,11 @@ export async function runSourcingAgent(input: RunSourcingInput): Promise<RunSour
       if (!key || seen.has(key)) continue;
       seen.add(key);
       selected.push(candidate);
+    }
+    if (input.resumesRequired && selected.length === 0) {
+      throw new Error(
+        "No candidates with resume text on file matched this search. Retry or widen the brief.",
+      );
     }
     const result = await pushCandidatesToAts({
       connection,

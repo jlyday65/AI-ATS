@@ -120,6 +120,38 @@ function uniqueNameForIndex(personIndex: number): { first: string; last: string 
   return { first, last };
 }
 
+/** Build full resume text so Gina can store "resume on file". */
+export function buildDemoResumeText(input: {
+  fullName: string;
+  headline: string;
+  location: string;
+  email: string;
+  skills: string[];
+  experienceYears: number;
+  jobTitle: string;
+}): string {
+  const skills = input.skills.length ? input.skills.join(", ") : "general operations";
+  return [
+    input.fullName,
+    input.headline,
+    input.location,
+    input.email,
+    "",
+    "SUMMARY",
+    `Experienced ${input.jobTitle} with ${input.experienceYears}+ years supporting operations. Strong overlap on ${skills}.`,
+    "",
+    "EXPERIENCE",
+    `${input.jobTitle} — ${input.location}`,
+    `${new Date().getFullYear() - input.experienceYears} – Present`,
+    `- Maintained equipment and workflows aligned to ${input.jobTitle} requirements`,
+    `- Collaborated across teams; documented procedures and safety checks`,
+    `- Skills applied: ${skills}`,
+    "",
+    "SKILLS",
+    skills,
+  ].join("\n");
+}
+
 function synthesizePerson(
   job: JobRequisition,
   personIndex: number,
@@ -131,12 +163,30 @@ function synthesizePerson(
   const years = 3 + (seed % 12);
   // Include personIndex in email so even rare name edge-cases stay unique.
   const handle = `${first}.${last}.${personIndex}`.toLowerCase();
+  const jobLocation = (job.location || "").trim();
+  // Bias ~half of demos toward the job city when a specific location is set.
+  const location =
+    jobLocation && !/remote/i.test(jobLocation) && seed % 2 === 0
+      ? jobLocation
+      : pick(LOCATIONS, seed, 11);
+  const fullName = `${first} ${last}`;
+  const headline = buildHeadline(job, skills);
+  const summary = `Demo candidate for ${job.title} with overlap on ${skills.join(", ")}. Found across ${platformIds.length} platform(s).`;
+  const resumeText = buildDemoResumeText({
+    fullName,
+    headline,
+    location,
+    email: `${handle}@example.com`,
+    skills,
+    experienceYears: years,
+    jobTitle: job.title,
+  });
 
   return {
     id: `cand_person_${job.id}_${personIndex}`,
-    fullName: `${first} ${last}`,
-    headline: buildHeadline(job, skills),
-    location: pick(LOCATIONS, seed, 11),
+    fullName,
+    headline,
+    location,
     email: `${handle}@example.com`,
     skills,
     experienceYears: years,
@@ -148,11 +198,13 @@ function synthesizePerson(
         handle,
       };
     }),
-    summary: `Demo candidate for ${job.title} with overlap on ${skills.join(", ")}. Found across ${platformIds.length} platform(s).`,
+    summary,
+    resumeText,
     sourceSignals: [
       `${platformIds.length} platform hit(s)`,
       `${years}+ years relevant experience`,
       skills[0] ? `Strong signal: ${skills[0]}` : "Generalist fit",
+      "Resume on file",
     ],
   };
 }

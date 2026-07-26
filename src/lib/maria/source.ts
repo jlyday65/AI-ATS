@@ -20,6 +20,8 @@ export interface MariaSourceRequest {
   seniority?: string;
   platformIds?: string[];
   limit?: number;
+  /** Only push candidates that have full resume text on file */
+  resumesRequired?: boolean;
   /** Push top matches into Gina via saved ATS connection */
   pushToGina?: boolean;
   pushTopN?: number;
@@ -80,11 +82,13 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
     );
   }
 
+  const resumesRequired = input.resumesRequired === true;
   const result = await runSourcingAgent({
     orgId: org.id,
     jobId: job.id,
     platformIds: input.platformIds,
     limit: input.limit ?? 24,
+    resumesRequired,
     pushToAtsConnectionId: pushToGina ? ginaConnection?.id : undefined,
     pushTopN: input.pushTopN ?? 5,
   });
@@ -94,7 +98,9 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
     job: {
       id: job.id,
       title: job.title,
+      location: job.location,
     },
+    resumesRequired,
     brief: result.brief,
     runId: result.run.id,
     candidateCount: result.matches.length,
@@ -102,6 +108,8 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
       name: match.candidate.fullName,
       email: match.candidate.email,
       headline: match.candidate.headline,
+      location: match.candidate.location,
+      resumeChars: (match.candidate.resumeText || "").length,
       score: match.score,
       platforms: match.platformHits,
       reasons: match.reasons,

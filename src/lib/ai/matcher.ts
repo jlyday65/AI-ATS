@@ -44,6 +44,17 @@ export function rankCandidates(
         reasons.push("Open to remote");
       }
 
+      const jobCity = (job.location || "").split(",")[0]?.trim().toLowerCase();
+      if (
+        jobCity &&
+        jobCity.length > 2 &&
+        !jobCity.includes("remote") &&
+        candidate.location?.toLowerCase().includes(jobCity)
+      ) {
+        score += 10;
+        reasons.push(`Location match: ${candidate.location}`);
+      }
+
       if ((candidate.experienceYears ?? 0) >= 5) {
         score += 5;
         reasons.push(`${candidate.experienceYears}+ years experience`);

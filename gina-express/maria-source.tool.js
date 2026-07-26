@@ -1,8 +1,9 @@
 /**
  * Gina Maria → SignalHire sourcing bridge
  *
- * Drop into Gina (e.g. routes/maria.js or tools used by the Maria bot).
- * Maria calls SignalHire; SignalHire sources + pushes candidates into Gina ATS.
+ * Drop into Gina (e.g. next to routes/maria.js). Wire `mariaSourceTool` into
+ * Maria's tool list AND paste MARIA_SOURCE_PROMPT_RULE.txt into her system prompt
+ * so she does not refuse sourcing with "only three ATS actions".
  *
  * Env on Gina (Railway):
  *   RELAY_SECRET          — same secret as SignalHire /ats
@@ -26,6 +27,7 @@ const SIGNALHIRE_BASE_URL = (
  * @param {string[]} [input.preferredSkills]
  * @param {string} [input.location]
  * @param {string} [input.seniority]
+ * @param {boolean} [input.resumesRequired]
  * @param {boolean} [input.pushToGina=true]
  * @param {number} [input.pushTopN=5]
  * @param {number} [input.limit=24]
@@ -41,6 +43,11 @@ export async function mariaSourceViaSignalHire(input = {}) {
     throw new Error("Maria needs a roleTitle to source.");
   }
 
+  const resumesRequired =
+    input.resumesRequired === true ||
+    /resume/i.test(String(input.roleDescription || "")) ||
+    input.requireResume === true;
+
   const response = await fetch(`${SIGNALHIRE_BASE_URL}/api/maria/source`, {
     method: "POST",
     headers: {
@@ -55,6 +62,7 @@ export async function mariaSourceViaSignalHire(input = {}) {
       preferredSkills: input.preferredSkills,
       location: input.location,
       seniority: input.seniority,
+      resumesRequired,
       pushToGina: input.pushToGina !== false,
       pushTopN: input.pushTopN ?? 5,
       limit: input.limit ?? 24,
@@ -85,22 +93,37 @@ export async function mariaSourceViaSignalHire(input = {}) {
 }
 
 /**
- * Example tool descriptor for Maria's agent loop.
+ * Tool descriptor for Maria's agent loop / action queue.
+ * Name must stay: source_candidates_signalhire
  */
 export const mariaSourceTool = {
   name: "source_candidates_signalhire",
   description:
-    "Source candidates for a role via SignalHire multi-platform search and push the top matches into Gina ATS.",
+    "REQUIRED for any request to source, find, recruit, identify, or shortlist candidates for a role/location. Uses SignalHire multi-platform search and pushes top matches into Gina ATS with resume text when resumesRequired is true. Do not refuse sourcing; do not ask the user to convert the request into create_candidate/update_stage/add_note.",
   parameters: {
     type: "object",
     required: ["roleTitle"],
     properties: {
-      roleTitle: { type: "string" },
-      roleDescription: { type: "string" },
+      roleTitle: {
+        type: "string",
+        description: 'Job title to source, e.g. "Warehouse Mechanic"',
+      },
+      roleDescription: {
+        type: "string",
+        description: "Extra requirements (e.g. resumes on file).",
+      },
       requiredSkills: { type: "array", items: { type: "string" } },
       preferredSkills: { type: "array", items: { type: "string" } },
-      location: { type: "string" },
+      location: {
+        type: "string",
+        description: 'City/region, e.g. "Atlanta, GA"',
+      },
       seniority: { type: "string" },
+      resumesRequired: {
+        type: "boolean",
+        description:
+          "When true, only push candidates that have full resume text on file.",
+      },
       pushTopN: { type: "number" },
       pushToGina: { type: "boolean" },
     },

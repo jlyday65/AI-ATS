@@ -18,6 +18,7 @@ const schema = z.object({
   seniority: z.string().optional(),
   platformIds: z.array(z.string()).optional(),
   limit: z.number().int().min(1).max(100).optional(),
+  resumesRequired: z.boolean().optional(),
   pushToGina: z.boolean().optional(),
   pushTopN: z.number().int().min(1).max(50).optional(),
 });
@@ -31,9 +32,11 @@ export async function GET() {
     relayConfigured: Boolean(expected),
     relayFingerprint: fingerprintSecret(expected),
     body: {
-      roleTitle: "Senior Full-Stack Engineer",
-      roleDescription: "optional",
-      requiredSkills: ["TypeScript", "React"],
+      roleTitle: "Warehouse Mechanic",
+      location: "Atlanta, GA",
+      roleDescription: "All candidates must have a resume on file.",
+      resumesRequired: true,
+      requiredSkills: ["hydraulics", "preventive maintenance"],
       pushToGina: true,
       pushTopN: 5,
     },
