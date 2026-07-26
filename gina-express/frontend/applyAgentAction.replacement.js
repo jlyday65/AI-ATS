@@ -116,12 +116,16 @@
 
         addCandidate({
           name: payload.name,
-          role: payload.role || payload.jobTitle || "",
+          // Board role = job title (not demo headline like "mid-senior X · skills")
+          role: payload.jobTitle || payload.role || "",
           email: payload.email || "",
           phone: payload.phone || "",
           source: payload.source || (type === "import_candidate" ? "SignalHire" : "Gina"),
           resumeText: payload.resumeText || payload.resume_text || "",
+          summary: payload.summary || "",
+          headline: payload.headline || "",
           jobId,
+          jobTitle: payload.jobTitle || "",
         });
         return { ok: true, summary: `Created candidate: ${payload.name}` };
       }

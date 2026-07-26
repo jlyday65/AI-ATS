@@ -453,14 +453,18 @@ export async function pushCandidatesToGina(input: {
 
   const normalizedCandidates = input.candidates.map((candidate) => {
     const resumeText = (candidate.resumeText || candidate.summary || "").trim();
+    // Board "role" should be the job requisition title, not the demo headline
+    // (e.g. "Warehouse Assistant Manager", not "mid-senior Warehouse Manager · WMS").
+    const jobTitle = input.job.title || "";
     return {
       name: candidate.fullName,
       fullName: candidate.fullName,
       email: candidate.email ?? "",
       phone: candidate.phone ?? "",
-      role: candidate.headline ?? "",
-      title: candidate.headline ?? "",
+      role: jobTitle || candidate.headline || "",
+      title: jobTitle || candidate.headline || "",
       headline: candidate.headline ?? "",
+      jobTitle,
       location: candidate.location ?? "",
       resumeText,
       summary: candidate.summary ?? resumeText.slice(0, 500),
