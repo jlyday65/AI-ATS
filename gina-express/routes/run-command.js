@@ -98,8 +98,7 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     resumesRequired:
       flat.resumesRequired ??
       flat.context?.resumesRequired ??
-      /resume/i.test(task) ||
-      /resume/i.test(blob),
+      (/resume/i.test(task) || /resume/i.test(blob)),
     _debugKeys: Object.keys(flat),
   };
 }
