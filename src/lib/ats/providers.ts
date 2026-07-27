@@ -3,6 +3,7 @@ import {
   pushCandidatesToGina,
   testGinaConnection,
 } from "@/lib/ats/gina-client";
+import { getAppSettings } from "@/lib/store";
 import type { AtsConnection, AtsProvider, CandidateProfile, JobRequisition } from "@/lib/types";
 
 export interface AtsProviderMeta {
@@ -135,6 +136,7 @@ export async function pushCandidatesToAts(payload: AtsSyncPayload): Promise<AtsS
       },
       job,
       candidates,
+      atsMode: getAppSettings().atsMode,
     });
   }
 

@@ -2,7 +2,13 @@ import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { GINA_DEFAULT_BASE_URL } from "@/lib/ats/gina-client";
+import {
+  DEFAULT_APP_SETTINGS,
+  normalizeAppSettings,
+  readAtsModeFromEnv,
+} from "@/lib/settings";
 import type {
+  AppSettings,
   AtsConnection,
   JobRequisition,
   Organization,
@@ -20,9 +26,10 @@ interface DatabaseShape {
   sourcingRuns: SourcingRun[];
   syncEvents: SyncEvent[];
   resumeApplications: ResumeApplication[];
+  settings: AppSettings;
 }
 
-const STORE_VERSION = "gina-v4-resumes";
+const STORE_VERSION = "gina-v5-ats-mode";
 const DATA_DIR = path.join(process.cwd(), ".data");
 const STORE_PATH = path.join(DATA_DIR, "ai-ats-store.json");
 
@@ -144,6 +151,7 @@ function seed(): DatabaseShape {
     },
   ];
 
+  const envMode = readAtsModeFromEnv();
   return {
     organizations: [organization],
     members,
@@ -152,6 +160,10 @@ function seed(): DatabaseShape {
     sourcingRuns: [],
     syncEvents: [],
     resumeApplications: [],
+    settings: normalizeAppSettings({
+      ...DEFAULT_APP_SETTINGS,
+      ...(envMode ? { atsMode: envMode } : {}),
+    }),
   };
 }
 
@@ -164,6 +176,7 @@ function loadPersisted(): DatabaseShape | null {
     return {
       ...parsed,
       resumeApplications: parsed.resumeApplications ?? [],
+      settings: normalizeAppSettings(parsed.settings ?? DEFAULT_APP_SETTINGS),
     };
   } catch {
     return null;
@@ -200,6 +213,9 @@ function db(): DatabaseShape {
     if (!globalStore.__aiAtsStore.resumeApplications) {
       globalStore.__aiAtsStore.resumeApplications = [];
     }
+    globalStore.__aiAtsStore.settings = normalizeAppSettings(
+      globalStore.__aiAtsStore.settings ?? DEFAULT_APP_SETTINGS,
+    );
     // Ensure a first-run seed is written so Save is not the only persist path.
     persist(globalStore.__aiAtsStore);
   }
@@ -325,4 +341,21 @@ export function saveResumeApplication(application: ResumeApplication): ResumeApp
 
 export function listResumeApplications(orgId: string): ResumeApplication[] {
   return db().resumeApplications.filter((item) => item.orgId === orgId);
+}
+
+export function getAppSettings(): AppSettings {
+  return normalizeAppSettings(db().settings);
+}
+
+export function updateAppSettings(
+  partial: Partial<AppSettings>,
+): AppSettings {
+  const next = normalizeAppSettings({
+    ...db().settings,
+    ...partial,
+    updatedAt: new Date().toISOString(),
+  });
+  db().settings = next;
+  touch();
+  return next;
 }

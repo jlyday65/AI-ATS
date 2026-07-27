@@ -146,3 +146,17 @@ export interface SyncEvent {
   status: "success" | "failed";
   createdAt: string;
 }
+
+/** SignalHire workspace operating mode. */
+export type AtsMode = "test" | "live";
+
+/** Idle minutes before live-mode password re-entry. */
+export type SessionTimeoutMinutes = 5 | 10 | 15;
+
+export interface AppSettings {
+  /** test = demo sourcing + ats-test tags; live = production labels + password gate */
+  atsMode: AtsMode;
+  /** Client-configurable session lockout in live mode */
+  sessionTimeoutMinutes: SessionTimeoutMinutes;
+  updatedAt?: string;
+}

@@ -1,6 +1,8 @@
 import { runSourcingAgent } from "@/lib/sourcing/service";
+import { modeTagForMode, sourceLabelForMode } from "@/lib/settings";
 import {
   createJob,
+  getAppSettings,
   getDemoOrg,
   getJob,
   listAtsConnections,
@@ -97,6 +99,7 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
   }
 
   const resumesRequired = input.resumesRequired === true;
+  const settings = getAppSettings();
   const result = await runSourcingAgent({
     orgId: org.id,
     jobId: job.id,
@@ -109,6 +112,9 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
 
   return {
     agent: "maria",
+    atsMode: settings.atsMode,
+    source: sourceLabelForMode(settings.atsMode),
+    modeTag: modeTagForMode(settings.atsMode),
     job: {
       id: job.id,
       title: job.title,
@@ -130,7 +136,7 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
     })),
     atsSync: result.atsSync,
     nextStep: result.atsSync?.ok
-      ? "In Gina ATS → Agent → Check for actions to import the shortlist."
+      ? `In Gina ATS → Agent → Check for actions to import the shortlist (${settings.atsMode} mode · ${sourceLabelForMode(settings.atsMode)}).`
       : "Review atsSync message; fix Gina RELAY_SECRET if push failed.",
   };
 }

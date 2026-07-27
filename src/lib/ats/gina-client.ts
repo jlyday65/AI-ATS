@@ -1,12 +1,13 @@
 import { createHash } from "crypto";
-import type { CandidateProfile, JobRequisition } from "@/lib/types";
+import { modeTagForMode, sourceLabelForMode } from "@/lib/settings";
+import type { AtsMode, CandidateProfile, JobRequisition } from "@/lib/types";
 
 export const GINA_DEFAULT_BASE_URL =
   process.env.GINA_ATS_BASE_URL ??
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in UI + sync text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v16";
+export const GINA_CLIENT_VERSION = "ats-v17";
 
 /** Safe fingerprint for comparing secrets without printing them. */
 export function fingerprintSecret(secret: string | undefined | null): string {
@@ -423,10 +424,15 @@ export async function pushCandidatesToGina(input: {
   credentials?: GinaCredentials;
   job: JobRequisition;
   candidates: CandidateProfile[];
+  /** test → signalhire-test / ats-test; live → signalhire / ats-live */
+  atsMode?: AtsMode;
 }): Promise<GinaPushResult> {
   const resolved = resolveCredentials(input.credentials ?? {});
   const baseUrl = normalizeBaseUrl(resolved.baseUrl);
   const { appPassword, apiKey, relaySecret } = resolved;
+  const atsMode: AtsMode = input.atsMode === "live" ? "live" : "test";
+  const source = sourceLabelForMode(atsMode);
+  const modeTag = modeTagForMode(atsMode);
 
   if (!appPassword && !apiKey && !relaySecret) {
     return {
@@ -473,9 +479,11 @@ export async function pushCandidatesToGina(input: {
       experienceYears: candidate.experienceYears,
       linkedProfiles: candidate.platforms,
       profiles: candidate.platforms,
-      source: "signalhire",
+      source,
+      atsMode,
       tags: [
         "signalhire",
+        modeTag,
         resumeText ? "resume-upload" : "ai-sourced",
         ...candidate.platforms.map((p) => p.platformId),
       ],
@@ -483,7 +491,8 @@ export async function pushCandidatesToGina(input: {
   });
 
   const importPayload = {
-    source: "signalhire",
+    source,
+    atsMode,
     jobId: input.job.atsExternalId ?? input.job.id,
     jobTitle: input.job.title,
     candidates: normalizedCandidates,
@@ -626,7 +635,8 @@ export async function pushCandidatesToGina(input: {
             title: candidate.role,
             resumeText: candidate.resumeText,
             summary: candidate.resumeText,
-            source: "signalhire",
+            source,
+            atsMode,
             jobTitle: input.job.title,
             jobId: input.job.atsExternalId ?? input.job.id,
           }),

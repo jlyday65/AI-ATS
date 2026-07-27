@@ -1,15 +1,18 @@
 import { AtsConnectForm } from "@/components/ats-connect-form";
+import { AtsModeSettings } from "@/components/ats-mode-settings";
 import {
   fingerprintSecret,
   GINA_CLIENT_VERSION,
   GINA_DEFAULT_BASE_URL,
 } from "@/lib/ats/gina-client";
 import { ATS_PROVIDERS } from "@/lib/ats/providers";
-import { getDemoOrg, listAtsConnections } from "@/lib/store";
+import { resolveAppPassword } from "@/lib/auth/session";
+import { getAppSettings, getDemoOrg, listAtsConnections } from "@/lib/store";
 
 export default function AtsPage() {
   const org = getDemoOrg();
   const connections = listAtsConnections(org.id);
+  const settings = getAppSettings();
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10">
@@ -21,6 +24,23 @@ export default function AtsPage() {
         <code className="text-ink">{GINA_DEFAULT_BASE_URL.replace("https://", "")}</code>.
         Client build: <code className="text-ink">{GINA_CLIENT_VERSION}</code>.
       </p>
+
+      <section className="panel mt-8 rounded-2xl p-6">
+        <h2 className="display text-2xl font-bold">ATS mode</h2>
+        <p className="mt-2 text-ink-soft">
+          Current mode:{" "}
+          <span className="font-semibold capitalize text-ink">{settings.atsMode}</span>
+          {settings.atsMode === "live"
+            ? ` · re-enter password after ${settings.sessionTimeoutMinutes} min idle`
+            : " · demo tags, no password gate"}
+          .
+        </p>
+        <AtsModeSettings
+          initialMode={settings.atsMode}
+          initialTimeout={settings.sessionTimeoutMinutes}
+          livePasswordConfigured={Boolean(resolveAppPassword())}
+        />
+      </section>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <section className="panel rounded-2xl p-6">
@@ -75,6 +95,8 @@ export default function AtsPage() {
 # create ~/AI-ATS/.env.local with:
 RELAY_SECRET=<same-value-as-Railway>
 GINA_ATS_BASE_URL=${GINA_DEFAULT_BASE_URL}
+ATS_MODE=test
+SIGNALHIRE_APP_PASSWORD=<for-live-mode-only>
 
 # Railway → Gina production → Variables must match
 RELAY_SECRET=<same-value>
