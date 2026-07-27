@@ -1,113 +1,160 @@
 #!/usr/bin/env node
 /**
- * Repair App.jsx after a bad Kimberley Notes inject broke AgentPanel JSX.
+ * Repair App.jsx after Kimberley Notes patch corruption.
  *
- * Broken (Vite: Expected "..." but found "view"):
- *   {view === "agent" && <AgentPanel applyAgentAction={applyAgentAction}
- *     {view === "kimberley" || tab === "kimberley" || activeView === "kimberley" ? <KimberleyNotesPanel /> : null} />}
+ * Fixes:
+ * 1) Nested inject inside <AgentPanel ...>
+ * 2) Escaped backticks (\`) / truncated KimberleyNotesPanel function
  *
- * Fixed:
- *   {view === "agent" && <AgentPanel applyAgentAction={applyAgentAction} />}
- *   {view === "kimberley" && <KimberleyNotesPanel />}
- *
- * Usage:
- *   node repair-kimberley-notes-jsx.mjs \
- *     ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+ * Usage (ONE line — do not put a backslash before the path):
+ *   node gina-express/frontend/repair-kimberley-notes-jsx.mjs /Users/jameslyday/lyday-gina-backend/gina-backend/frontend/src/App.jsx
  */
 
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const target = path.resolve(
-  String(process.argv[2] || "").replace(/^~/, process.env.HOME || ""),
+  String(process.argv[2] || "").replace(/^~/, process.env.HOME || "").trim(),
 );
 if (!target || !fs.existsSync(target)) {
   console.error(
-    "Usage: node repair-kimberley-notes-jsx.mjs /Users/.../frontend/src/App.jsx",
+    "Usage: node repair-kimberley-notes-jsx.mjs /Users/jameslyday/lyday-gina-backend/gina-backend/frontend/src/App.jsx",
   );
+  console.error("Do not put a backslash before the path.");
   process.exit(1);
 }
+
+const snippetPath = path.join(__dirname, "KimberleyNotesPanel.snippet.jsx");
+if (!fs.existsSync(snippetPath)) {
+  console.error("Missing snippet:", snippetPath);
+  process.exit(1);
+}
+const PANEL = fs.readFileSync(snippetPath, "utf8").trim() + "\n";
 
 let src = fs.readFileSync(target, "utf8");
 const bak = `${target}.bak-repair-kimberley-${Date.now()}`;
 fs.copyFileSync(target, bak);
 
-const KIMBERLEY = '{view === "kimberley" && <KimberleyNotesPanel />}';
 let fixed = 0;
 
 function replaceAll(re, replacer) {
   const next = src.replace(re, (...args) => {
     fixed += 1;
-    return replacer(...args);
+    return typeof replacer === "function" ? replacer(...args) : replacer;
   });
   if (next !== src) src = next;
 }
 
-// Multiline AgentPanel with nested kimberley ternary before self-close
+// --- 1) Replace any KimberleyNotesPanel function block (broken or not) ---
+const panelStart = src.search(/function\s+KimberleyNotesPanel\s*\(/);
+if (panelStart >= 0) {
+  // End at next top-level-ish function after the panel, or before ResumeUploadPanel / CandidateTracker
+  const after = src.slice(panelStart + 1);
+  const endRel = after.search(
+    /\nfunction\s+(ResumeUploadPanel|CandidateTracker|AgentPanel|MariaView|App|GinaBriefingCard)\b/,
+  );
+  if (endRel >= 0) {
+    const end = panelStart + 1 + endRel;
+    src = src.slice(0, panelStart) + PANEL + "\n" + src.slice(end);
+    fixed += 1;
+    console.log("Replaced KimberleyNotesPanel function with clean snippet");
+  } else {
+    // Brace-match from function start
+    const braceAt = src.indexOf("{", panelStart);
+    let depth = 0;
+    let end = -1;
+    for (let i = braceAt; i < src.length; i += 1) {
+      if (src[i] === "{") depth += 1;
+      else if (src[i] === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+    }
+    if (end > panelStart) {
+      src = src.slice(0, panelStart) + PANEL + "\n" + src.slice(end);
+      fixed += 1;
+      console.log("Replaced KimberleyNotesPanel via brace match");
+    }
+  }
+} else if (/\\`\?agent=|Kimberley's Notes/.test(src) || /\\\$\{encodeURIComponent/.test(src)) {
+  // Truncated mid-panel with no function end — find from "function KimberleyNotesPanel" OR orphaned load() fragment
+  const orphan = src.search(/const q = filter === "all"/);
+  const fn = src.search(/function\s+KimberleyNotesPanel/);
+  const start = fn >= 0 ? fn : orphan;
+  if (start >= 0) {
+    const endRel = src.slice(start).search(/\nfunction\s+\w+/);
+    const end = endRel >= 0 ? start + endRel : start;
+    // Walk backward to include function KimberleyNotesPanel if orphaned
+    let realStart = start;
+    const back = src.lastIndexOf("function KimberleyNotesPanel", start);
+    if (back >= 0 && start - back < 800) realStart = back;
+    src = src.slice(0, realStart) + PANEL + "\n" + src.slice(end > realStart ? end : realStart);
+    fixed += 1;
+    console.log("Repaired truncated/escaped KimberleyNotesPanel fragment");
+  }
+} else {
+  // Insert clean panel before ResumeUploadPanel / CandidateTracker
+  const anchor = src.search(
+    /function\s+(ResumeUploadPanel|CandidateTracker|App)\b/,
+  );
+  if (anchor >= 0) {
+    src = src.slice(0, anchor) + PANEL + "\n" + src.slice(anchor);
+    fixed += 1;
+    console.log("Inserted clean KimberleyNotesPanel");
+  }
+}
+
+// --- 2) Fix nested AgentPanel inject ---
 replaceAll(
-  /\{\s*view\s*===\s*"agent"\s*&&\s*<AgentPanel\b([^>\n]*)\r?\n\s*\{\s*view\s*===\s*"kimberley"\s*\|\|[\s\S]*?<KimberleyNotesPanel\s*\/>\s*:\s*null\s*\}\s*\/>\s*\}/g,
+  /\{\s*view\s*===\s*"agent"\s*&&\s*<AgentPanel\b([^>\n]*)\r?\n\s*\{\s*view\s*===\s*"kimberley"[\s\S]*?<KimberleyNotesPanel\s*\/>\s*:\s*null\s*\}\s*\/>\s*\}/g,
   (_, props) => {
     const p = String(props || "").trim();
     const propBit = p ? ` ${p}` : "";
-    return `{view === "agent" && <AgentPanel${propBit} />}\n        ${KIMBERLEY}`;
+    return `{view === "agent" && <AgentPanel${propBit} />}\n        {view === "kimberley" && <KimberleyNotesPanel />}`;
   },
 );
 
-// Single-line variant
-replaceAll(
-  /\{\s*view\s*===\s*"agent"\s*&&\s*<AgentPanel\b([^>]*)\{\s*view\s*===\s*"kimberley"[\s\S]*?<KimberleyNotesPanel\s*\/>\s*:\s*null\s*\}\s*\/>\s*\}/g,
-  (_, props) => {
-    const p = String(props || "").replace(/\s+$/, "").trim();
-    const propBit = p ? ` ${p}` : "";
-    return `{view === "agent" && <AgentPanel${propBit} />}\n        ${KIMBERLEY}`;
-  },
-);
-
-// Exact text from the user's build error (most reliable)
 const EXACT_BROKEN = `{view === "agent" && <AgentPanel applyAgentAction={applyAgentAction}
         {view === "kimberley" || tab === "kimberley" || activeView === "kimberley" ? <KimberleyNotesPanel /> : null} />}`;
 const EXACT_FIXED = `{view === "agent" && <AgentPanel applyAgentAction={applyAgentAction} />}
-        ${KIMBERLEY}`;
+        {view === "kimberley" && <KimberleyNotesPanel />}`;
 if (src.includes(EXACT_BROKEN)) {
   src = src.replace(EXACT_BROKEN, EXACT_FIXED);
   fixed += 1;
 }
 
-// Fix half-repaired agent line missing closing brace
+// Half-closed agent line
 replaceAll(
   /(\{\s*view\s*===\s*"agent"\s*&&\s*<AgentPanel\b[^>]*\/>)\s*\n(?!\s*\})/g,
   "$1}\n",
 );
 
-// Ensure kimberley sibling exists once
-if (!/\{\s*view\s*===\s*"kimberley"\s*&&\s*<KimberleyNotesPanel/.test(src)) {
+// Ensure kimberley view sibling
+if (!/\{\s*view\s*===\s*"kimberley"\s*&&\s*<KimberleyNotesPanel\s*\/>/.test(src)) {
   if (/\{\s*view\s*===\s*"agent"\s*&&\s*<AgentPanel\b[^>]*\/>\s*\}/.test(src)) {
     src = src.replace(
       /(\{\s*view\s*===\s*"agent"\s*&&\s*<AgentPanel\b[^>]*\/>\s*\})/,
-      `$1\n        ${KIMBERLEY}`,
+      `$1\n        {view === "kimberley" && <KimberleyNotesPanel />}`,
     );
     fixed += 1;
   } else if (/\{\s*view\s*===\s*"maria"\s*&&/.test(src)) {
     src = src.replace(
       /(\{\s*view\s*===\s*"maria"\s*&&)/,
-      `${KIMBERLEY}\n\n        $1`,
+      `{view === "kimberley" && <KimberleyNotesPanel />}\n\n        $1`,
     );
     fixed += 1;
   }
 }
 
-// Deduplicate
-const kimMatches =
-  src.match(/\{view === "kimberley" && <KimberleyNotesPanel \/>\}/g) || [];
-if (kimMatches.length > 1) {
-  let seen = 0;
-  src = src.replace(
-    /\{view === "kimberley" && <KimberleyNotesPanel \/>\}/g,
-    () => {
-      seen += 1;
-      return seen === 1 ? KIMBERLEY : "";
-    },
-  );
+// Strip leftover escaped-backtick lines if any remain
+if (/\\`/.test(src) && /KimberleyNotesPanel|encodeURIComponent\(filter\)/.test(src)) {
+  console.warn("WARNING: escaped backticks still present somewhere — search App.jsx for \\`");
 }
 
 if (/label:\s*["']Agent["']/.test(src) && !/id:\s*["']kimberley["']/.test(src)) {
@@ -118,18 +165,18 @@ if (/label:\s*["']Agent["']/.test(src) && !/id:\s*["']kimberley["']/.test(src)) 
   fixed += 1;
 }
 
-fs.writeFileSync(target, src, "utf8");
-console.log("Backup:", bak);
-console.log(fixed ? `Repaired App.jsx (${fixed} fix(es))` : "No known broken pattern matched");
-
-const lines = src.split("\n");
-for (let i = 0; i < lines.length; i += 1) {
-  if (/AgentPanel|kimberley/i.test(lines[i])) {
-    console.log(`${i + 1}: ${lines[i]}`);
-  }
+// Final sanity: panel must not contain literal \ `
+if (/function\s+KimberleyNotesPanel[\s\S]{0,400}\\`/.test(src)) {
+  console.error("FAILED: KimberleyNotesPanel still has escaped backticks");
+  process.exit(2);
 }
 
+fs.writeFileSync(target, src, "utf8");
+console.log("Backup:", bak);
+console.log(fixed ? `Repaired App.jsx (${fixed} fix(es))` : "No changes needed");
+console.log("Wrote:", target);
 console.log(`
-Next:
-  cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+Next (copy-paste these as separate commands):
+  cd ~/lyday-gina-backend/gina-backend/frontend
+  npm run build
 `);

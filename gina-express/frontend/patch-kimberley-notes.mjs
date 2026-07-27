@@ -37,14 +37,12 @@ if (!appPath) {
   process.exit(1);
 }
 
-const panelPath = path.join(__dirname, "KimberleyNotesPanel.jsx");
-let panelSrc = fs.readFileSync(panelPath, "utf8");
-const m = panelSrc.match(/export const KIMBERLEY_NOTES_PANEL_SOURCE = `([\s\S]*?)`;/);
-if (m) panelSrc = m[1];
-else if (!panelSrc.includes("function KimberleyNotesPanel")) {
-  console.error("KimberleyNotesPanel.jsx missing panel source");
+const panelPath = path.join(__dirname, "KimberleyNotesPanel.snippet.jsx");
+if (!fs.existsSync(panelPath)) {
+  console.error("Missing", panelPath);
   process.exit(1);
 }
+const panelSrc = fs.readFileSync(panelPath, "utf8").trim() + "\n";
 
 let app = fs.readFileSync(appPath, "utf8");
 
@@ -67,7 +65,21 @@ if (
 const bak = `${appPath}.bak-kimberley-${Date.now()}`;
 fs.copyFileSync(appPath, bak);
 
-if (!app.includes("function KimberleyNotesPanel")) {
+if (app.includes("function KimberleyNotesPanel")) {
+  // Replace existing (possibly broken/escaped) panel with clean snippet
+  const panelStart = app.search(/function\s+KimberleyNotesPanel\s*\(/);
+  const after = app.slice(panelStart + 1);
+  const endRel = after.search(
+    /\nfunction\s+(ResumeUploadPanel|CandidateTracker|AgentPanel|MariaView|App|GinaBriefingCard)\b/,
+  );
+  if (panelStart >= 0 && endRel >= 0) {
+    const end = panelStart + 1 + endRel;
+    app = app.slice(0, panelStart) + panelSrc + "\n" + app.slice(end);
+    console.log("Replaced existing KimberleyNotesPanel with clean snippet");
+  } else {
+    console.log("KimberleyNotesPanel already present (could not bound replace)");
+  }
+} else {
   const anchor =
     app.indexOf("function ResumeUploadPanel") >= 0
       ? app.indexOf("function ResumeUploadPanel")
@@ -78,8 +90,6 @@ if (!app.includes("function KimberleyNotesPanel")) {
   }
   app = app.slice(0, anchor) + "\n" + panelSrc + "\n" + app.slice(anchor);
   console.log("Inserted KimberleyNotesPanel function");
-} else {
-  console.log("KimberleyNotesPanel already present");
 }
 
 if (!/id:\s*["']kimberley["']/.test(app) && /label:\s*["']Agent["']/.test(app)) {
