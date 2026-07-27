@@ -155,7 +155,8 @@ async function runMariaFromTask(task, context = {}) {
     resumesRequired,
     pushToGina: true,
     pushTopN: context.pushTopN ?? 5,
-    jobId: context.jobId,
+    // Do not pass context.jobId when roleTitle is set — board selection is often
+    // a different open role (e.g. Senior Manager) than the sourced title.
     requiredSkills: context.requiredSkills,
   });
 }

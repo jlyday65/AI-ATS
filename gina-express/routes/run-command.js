@@ -71,15 +71,17 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     "";
   const task = primaryTask || body.taskHint || flat.notes || flat.text || blob;
 
-  // Explicit roleTitle always wins — never let an old "Senior Manager" in taskHint override.
+  // Explicit roleTitle / task inference beat board jobTitle — selected ATS jobs
+  // (e.g. Senior Manager) must not override "source an Operations Manager…".
   const roleTitle =
     flat.roleTitle ||
     flat.role_title ||
-    flat.jobTitle ||
-    flat.job_title ||
     flat.context?.roleTitle ||
     extractRoleTitleFromText(primaryTask) ||
     extractRoleTitleFromText(task) ||
+    flat.jobTitle ||
+    flat.job_title ||
+    flat.title ||
     "";
 
   const location =
@@ -126,9 +128,11 @@ router.post("/run-command", async (req, res) => {
         });
       }
       const result = await mariaSourceViaSignalHire(payload);
+      const sourcedTitle =
+        result?.job?.title || result?.result?.job?.title || payload.roleTitle;
       return res.json({
         ok: true,
-        summary: `Maria sourced via SignalHire for ${payload.roleTitle}`,
+        summary: `Maria sourced via SignalHire for ${sourcedTitle}`,
         result,
       });
     }

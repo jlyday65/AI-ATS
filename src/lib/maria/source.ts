@@ -27,25 +27,39 @@ export interface MariaSourceRequest {
   pushTopN?: number;
 }
 
-function resolveJob(input: MariaSourceRequest): JobRequisition {
+function titlesMatch(a: string, b: string) {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Resolve the requisition Maria should source against.
+ *
+ * roleTitle wins over a mismatched jobId. Gina often sends the board's
+ * currently selected job (e.g. Senior Manager) while Kimberley asked Maria
+ * to source a different role (e.g. Operations Manager). Using jobId alone
+ * produced demo resumes / board cards titled Senior Manager.
+ */
+export function resolveJob(input: MariaSourceRequest): JobRequisition {
   const org = getDemoOrg();
+  const title = (input.roleTitle || "").trim();
 
   if (input.jobId) {
     const existing = getJob(input.jobId);
     if (!existing || existing.orgId !== org.id) {
       throw new Error(`Unknown jobId: ${input.jobId}`);
     }
-    return existing;
+    // Only trust jobId when it matches the requested role (or no role given).
+    if (!title || titlesMatch(existing.title, title)) {
+      return existing;
+    }
+    // Fall through — match/create by roleTitle.
   }
 
-  const title = (input.roleTitle || "").trim();
   if (!title) {
     throw new Error("Provide jobId or roleTitle");
   }
 
-  const match = listJobs(org.id).find(
-    (job) => job.title.trim().toLowerCase() === title.toLowerCase(),
-  );
+  const match = listJobs(org.id).find((job) => titlesMatch(job.title, title));
   if (match) return match;
 
   return createJob({

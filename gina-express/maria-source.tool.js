@@ -22,19 +22,24 @@ export function extractRoleTitleFromText(text = "") {
   const t = String(text || "").trim();
   if (!t) return "";
   const patterns = [
-    /\bsource\s+(?:an?\s+|a\s+)?(.+?)\s+candidate/i,
-    /\bsource\s+(?:an?\s+|a\s+)?(.+?)(?:\s+in\s+|\s+for\s+|[.!]|$)/i,
-    /\b(?:find|recruit|hire)\s+(?:an?\s+|a\s+)?(.+?)(?:\s+candidate|\s+in\s+|\s+for\s+|[.!]|$)/i,
-    /\bfor\s+(?:the\s+)?(.+?)(?:\s+role|\s+in\s+|[.!]|$)/i,
+    /\bsource\s+(?:an?\s+|a\s+)?(.+?)\s+candidate/gi,
+    /\bsource\s+(?:an?\s+|a\s+)?(.+?)(?:\s+in\s+|\s+for\s+|[.!]|$)/gi,
+    /\b(?:find|recruit|hire)\s+(?:an?\s+|a\s+)?(.+?)(?:\s+candidate|\s+in\s+|\s+for\s+|[.!]|$)/gi,
   ];
+  // Prefer the LAST match — taskHint blobs often include older roles first.
+  let last = "";
   for (const re of patterns) {
-    const m = t.match(re);
-    if (m?.[1]) {
-      return m[1]
-        .replace(/\b(with|that|who|all)\b.*$/i, "")
-        .replace(/[?.!,;:]+$/g, "")
-        .trim();
+    let m;
+    re.lastIndex = 0;
+    while ((m = re.exec(t))) {
+      if (m[1]) {
+        last = m[1]
+          .replace(/\b(with|that|who|all)\b.*$/i, "")
+          .replace(/[?.!,;:]+$/g, "")
+          .trim();
+      }
     }
+    if (last) return last;
   }
   return "";
 }
@@ -96,15 +101,17 @@ export async function mariaSourceViaSignalHire(input = {}) {
     input.text ||
     blob;
 
+  // Explicit roleTitle / task inference beat board jobTitle/title — those often
+  // reflect the currently selected ATS job, not the role Kimberley asked for.
   const roleTitle = String(
     input.roleTitle ||
       input.role_title ||
-      input.title ||
-      input.jobTitle ||
-      input.job_title ||
       input.context?.roleTitle ||
       extractRoleTitleFromText(taskText) ||
       extractRoleTitleFromText(blob) ||
+      input.jobTitle ||
+      input.job_title ||
+      input.title ||
       "",
   ).trim();
   if (!roleTitle) {
@@ -127,6 +134,10 @@ export async function mariaSourceViaSignalHire(input = {}) {
     /resume/i.test(String(input.roleDescription || "")) ||
     input.requireResume === true;
 
+  // Prefer roleTitle over a stale board jobId (e.g. Senior Manager selected while
+  // Kimberley asked for Operations Manager). Only forward jobId when it is the
+  // sole selector or when no roleTitle was resolved.
+  const jobId = input.jobId || input.context?.jobId;
   const response = await fetch(`${SIGNALHIRE_BASE_URL}/api/maria/source`, {
     method: "POST",
     headers: {
@@ -147,7 +158,9 @@ export async function mariaSourceViaSignalHire(input = {}) {
       pushToGina: input.pushToGina !== false,
       pushTopN: input.pushTopN ?? 5,
       limit: input.limit ?? 24,
-      jobId: input.jobId || input.context?.jobId,
+      // roleTitle is authoritative when present — omit jobId so SignalHire
+      // cannot source the wrong open requisition from the ATS board selection.
+      ...(roleTitle ? {} : jobId ? { jobId } : {}),
       platformIds: input.platformIds,
     }),
   });
