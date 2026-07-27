@@ -3,7 +3,6 @@ function KimberleyNotesPanel() {
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [booted, setBooted] = useState(false);
 
   async function load(nextFilter) {
     const active = nextFilter != null ? nextFilter : filter;
@@ -25,14 +24,6 @@ function KimberleyNotesPanel() {
     } finally {
       setBusy(false);
     }
-  }
-
-  // Auto-load once on first paint — useState only (no useEffect required).
-  if (!booted) {
-    setBooted(true);
-    queueMicrotask(function () {
-      load("all");
-    });
   }
 
   async function markRead(id) {
@@ -85,7 +76,7 @@ function KimberleyNotesPanel() {
       </div>
       <p style={{ margin: "0 0 14px", color: "#918D80", fontSize: 13, lineHeight: 1.5 }}>
         Status updates from Maria, Michelle, Kelley, and Ashton. These also roll into Gina's morning{" "}
-        <strong>Pipeline Stage Counts</strong> briefing.
+        <strong>Pipeline Stage Counts</strong> briefing. Click <strong>Refresh</strong> to load.
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
         {agents.map(function (a) {
@@ -116,7 +107,7 @@ function KimberleyNotesPanel() {
       {!notes.length && !busy ? (
         <p style={{ color: "#918D80", fontSize: 13 }}>
           No team updates yet. Ask Gina to command Maria / Michelle / Kelley / Ashton, then Check for
-          actions.
+          actions — or click Refresh.
         </p>
       ) : null}
       <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 12 }}>
