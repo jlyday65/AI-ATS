@@ -100,6 +100,24 @@
           return false;
         });
         if (existing) {
+          // Merge resume/role onto the existing card (old imports often only had summary).
+          const resumeText =
+            payload.resumeText || payload.resume_text || payload.summary || "";
+          const role = payload.jobTitle || payload.role || existing.role || "";
+          if (typeof updateCandidate === "function") {
+            updateCandidate(existing.id, {
+              resumeText: resumeText || existing.resumeText || existing.resume_text || "",
+              summary: payload.summary || existing.summary || "",
+              headline: payload.headline || existing.headline || "",
+              role,
+              jobTitle: payload.jobTitle || existing.jobTitle || "",
+              source: existing.source || payload.source || "SignalHire",
+            });
+            return {
+              ok: true,
+              summary: `Updated ${existing.name} with resume/role from import`,
+            };
+          }
           return {
             ok: true,
             summary: `Skipped duplicate: ${payload.name} (already on board as ${existing.name})`,
