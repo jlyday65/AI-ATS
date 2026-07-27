@@ -39,9 +39,10 @@ describe("resolveJob", () => {
 
   it("reuses an existing job when roleTitle matches by title", () => {
     const org = getDemoOrg();
+    const title = `Unique Role ${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const created = createJob({
       orgId: org.id,
-      title: "Unique Role For Resolve Test",
+      title,
       department: "Sourcing",
       location: "Remote — US",
       employmentType: "full_time",
@@ -54,8 +55,9 @@ describe("resolveJob", () => {
 
     const job = resolveJob({
       jobId: stale.id,
-      roleTitle: "Unique Role For Resolve Test",
+      roleTitle: title,
     });
+    assert.equal(job.title, title);
     assert.equal(job.id, created.id);
   });
 });

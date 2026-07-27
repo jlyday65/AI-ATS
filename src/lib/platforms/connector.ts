@@ -111,13 +111,40 @@ export function buildHeadline(job: JobRequisition, skills: string[]): string {
   return skillBit ? `${roleLabel} · ${skillBit}` : roleLabel;
 }
 
-function uniqueNameForIndex(personIndex: number): { first: string; last: string } {
-  // Zip first/last on the same index so top results look like
-  // "Ava Chen", "Noah Patel", "Mia Nguyen" — not five Chens or five Avas.
-  // usedNames in searchCandidatePlatforms still guards rare wrap collisions.
-  const first = FIRST_NAMES[personIndex % FIRST_NAMES.length];
-  const last = LAST_NAMES[personIndex % LAST_NAMES.length];
-  return { first, last };
+/** Offset the name roster by role so re-sourcing Operations Manager
+ *  does not keep re-importing the same Ava Chen / Zoe Ali shortlist. */
+function nameIndicesForJob(
+  job: JobRequisition,
+  personIndex: number,
+): { firstIdx: number; lastIdx: number; emailTag: number } {
+  const firstBase = hashSeed(`first:${job.title || ""}:${job.id || ""}`);
+  const lastBase = hashSeed(`last:${job.title || ""}:${job.id || ""}`);
+  return {
+    firstIdx: (firstBase + personIndex) % FIRST_NAMES.length,
+    lastIdx: (lastBase + personIndex) % LAST_NAMES.length,
+    emailTag: (firstBase + lastBase + personIndex) % 100000,
+  };
+}
+
+function uniqueNameForIndex(
+  personIndex: number,
+  job?: JobRequisition,
+): { first: string; last: string; emailTag: number } {
+  // Zip first/last for the default roster; when a job is provided, hash the
+  // title separately for first vs last so different roles don't share shortlists.
+  if (!job) {
+    return {
+      first: FIRST_NAMES[personIndex % FIRST_NAMES.length],
+      last: LAST_NAMES[personIndex % LAST_NAMES.length],
+      emailTag: personIndex,
+    };
+  }
+  const { firstIdx, lastIdx, emailTag } = nameIndicesForJob(job, personIndex);
+  return {
+    first: FIRST_NAMES[firstIdx],
+    last: LAST_NAMES[lastIdx],
+    emailTag,
+  };
 }
 
 /** Build full resume text so Gina can store "resume on file". */
@@ -158,11 +185,11 @@ function synthesizePerson(
   platformIds: string[],
 ): CandidateProfile {
   const seed = hashSeed(`${job.id}:person:${personIndex}`);
-  const { first, last } = uniqueNameForIndex(personIndex);
+  const { first, last, emailTag } = uniqueNameForIndex(personIndex, job);
   const skills = buildSkills(job, seed);
   const years = 3 + (seed % 12);
-  // Include personIndex in email so even rare name edge-cases stay unique.
-  const handle = `${first}.${last}.${personIndex}`.toLowerCase();
+  // Include job-derived tag in email so roles don't collide on the board.
+  const handle = `${first}.${last}.${emailTag}`.toLowerCase();
   const jobLocation = (job.location || "").trim();
   // Bias ~half of demos toward the job city when a specific location is set.
   const location =

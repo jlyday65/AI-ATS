@@ -71,4 +71,24 @@ describe("platform connector demo search", () => {
     assert.ok(candidates.every((c) => (c.resumeText || "").length >= 80));
     assert.ok(candidates.some((c) => c.location?.includes("Atlanta")));
   });
+
+  it("varies top demo names by job title so re-sourcing does not collide", async () => {
+    const a = await searchCandidatePlatforms({
+      job: { ...job, id: "job_ops", title: "Operations Manager" },
+      platforms: ["linkedin", "indeed", "ziprecruiter"],
+      limit: 5,
+    });
+    const b = await searchCandidatePlatforms({
+      job: { ...job, id: "job_senior", title: "Senior Manager" },
+      platforms: ["linkedin", "indeed", "ziprecruiter"],
+      limit: 5,
+    });
+    const namesA = new Set(a.map((c) => c.fullName));
+    const overlap = b.filter((c) => namesA.has(c.fullName));
+    assert.equal(
+      overlap.length,
+      0,
+      `expected no name overlap across roles, got ${overlap.map((c) => c.fullName).join(", ")}`,
+    );
+  });
 });

@@ -88,7 +88,35 @@ const CLEAN = `
           return false;
         });
         if (existing) {
-          return { ok: true, summary: \`Skipped duplicate: \${payload.name} (already on board as \${existing.name})\` };
+          const resumeText =
+            payload.resumeText || payload.resume_text || payload.summary || "";
+          const role = payload.jobTitle || payload.role || existing.role || "";
+          const patch = {
+            resumeText: resumeText || existing.resumeText || existing.resume_text || "",
+            summary: payload.summary || existing.summary || "",
+            headline: payload.headline || existing.headline || "",
+            role,
+            jobTitle: payload.jobTitle || existing.jobTitle || "",
+            source: existing.source || payload.source || "SignalHire",
+          };
+          if (typeof updateCandidate === "function") {
+            updateCandidate(existing.id, patch);
+          } else if (typeof setCandidates === "function") {
+            setCandidates((prev) =>
+              (prev || []).map((c) =>
+                c.id === existing.id ? { ...c, ...patch } : c,
+              ),
+            );
+          } else {
+            return {
+              ok: false,
+              reason: \`Duplicate \${existing.name} found but board has no setCandidates/updateCandidate to merge resume.\`,
+            };
+          }
+          return {
+            ok: true,
+            summary: \`Updated \${existing.name} with resume/role from import\`,
+          };
         }
         let jobId = payload.jobId || null;
         if (!jobId && payload.jobTitle) {
@@ -99,12 +127,15 @@ const CLEAN = `
         }
         addCandidate({
           name: payload.name,
-          role: payload.role || payload.jobTitle || "",
+          role: payload.jobTitle || payload.role || "",
           email: payload.email || "",
           phone: payload.phone || "",
           source: payload.source || (type === "import_candidate" ? "SignalHire" : "Gina"),
           resumeText: payload.resumeText || payload.resume_text || "",
+          summary: payload.summary || "",
+          headline: payload.headline || "",
           jobId,
+          jobTitle: payload.jobTitle || "",
         });
         return { ok: true, summary: \`Created candidate: \${payload.name}\` };
       }
