@@ -2,9 +2,14 @@
 /**
  * Wire Kimberley's Note Panel into Gina App.jsx + mount API routes.
  *
+ * IMPORTANT: KimberleyNotesPanel must be a SIBLING of AgentPanel, never injected
+ * into the <AgentPanel ...> props (that breaks Vite/esbuild JSX).
+ *
  * Usage:
- *   node /tmp/patch-kimberley-notes.mjs \
- *     /Users/jameslyday/lyday-gina-backend/gina-backend
+ *   node gina-express/frontend/patch-kimberley-notes.mjs \
+ *     ~/lyday-gina-backend/gina-backend
+ *
+ * If App.jsx is already broken, run repair-kimberley-notes-jsx.mjs first.
  */
 
 import fs from "fs";
@@ -34,7 +39,6 @@ if (!appPath) {
 
 const panelPath = path.join(__dirname, "KimberleyNotesPanel.jsx");
 let panelSrc = fs.readFileSync(panelPath, "utf8");
-// Extract the function body from the template string export
 const m = panelSrc.match(/export const KIMBERLEY_NOTES_PANEL_SOURCE = `([\s\S]*?)`;/);
 if (m) panelSrc = m[1];
 else if (!panelSrc.includes("function KimberleyNotesPanel")) {
@@ -43,11 +47,27 @@ else if (!panelSrc.includes("function KimberleyNotesPanel")) {
 }
 
 let app = fs.readFileSync(appPath, "utf8");
+
+// Auto-repair nested inject before continuing
+if (
+  /<AgentPanel\b[\s\S]{0,300}\{\s*view\s*===\s*["']kimberley["']/.test(app) ||
+  /view === "kimberley" \|\| tab === "kimberley"/.test(app)
+) {
+  const exactRe =
+    /\{\s*view\s*===\s*"agent"\s*&&\s*<AgentPanel\b([^>\n]*)\n\s*\{\s*view\s*===\s*"kimberley"\s*\|\|\s*tab\s*===\s*"kimberley"\s*\|\|\s*activeView\s*===\s*"kimberley"\s*\?\s*<KimberleyNotesPanel\s*\/>\s*:\s*null\s*\}\s*\/>\s*\}/g;
+  if (exactRe.test(app)) {
+    app = app.replace(exactRe, (_, props) => {
+      const p = String(props || "").trim();
+      return `{view === "agent" && <AgentPanel ${p} />}\n        {view === "kimberley" && <KimberleyNotesPanel />}`;
+    });
+    console.log("Auto-repaired nested Kimberley inject inside AgentPanel");
+  }
+}
+
 const bak = `${appPath}.bak-kimberley-${Date.now()}`;
 fs.copyFileSync(appPath, bak);
 
 if (!app.includes("function KimberleyNotesPanel")) {
-  // Insert before export default / CandidateTracker return — after ResumeUploadPanel if present
   const anchor =
     app.indexOf("function ResumeUploadPanel") >= 0
       ? app.indexOf("function ResumeUploadPanel")
@@ -62,58 +82,49 @@ if (!app.includes("function KimberleyNotesPanel")) {
   console.log("KimberleyNotesPanel already present");
 }
 
-// Add nav tab if there is a tabs / views pattern
-if (!/kimberley|Kimberley's Notes/i.test(app) || !/view === ["']kimberley["']/.test(app)) {
-  // Try common nav arrays
-  if (/\{[^}]*href:[^}]*label:[^}]*Agent/i.test(app) || /label:\s*["']Agent["']/.test(app)) {
+if (!/id:\s*["']kimberley["']/.test(app) && /label:\s*["']Agent["']/.test(app)) {
+  app = app.replace(
+    /(label:\s*["']Agent["'][^}]*\})/,
+    '$1,\n  { id: "kimberley", label: "Kimberley\'s Notes" }',
+  );
+  console.log("Added kimberley nav id next to Agent");
+}
+
+const KIMBERLEY_VIEW = '{view === "kimberley" && <KimberleyNotesPanel />}';
+
+if (
+  /function KimberleyNotesPanel/.test(app) &&
+  !/\{\s*view\s*===\s*["']kimberley["']\s*&&\s*<KimberleyNotesPanel/.test(app)
+) {
+  const agentClosed =
+    /(\{\s*view\s*===\s*["']agent["']\s*&&\s*<AgentPanel\b[\s\S]*?\/>\s*\})/;
+  if (agentClosed.test(app)) {
+    app = app.replace(agentClosed, (block) => `${block}\n        ${KIMBERLEY_VIEW}`);
+    console.log("Wired kimberley view after closed AgentPanel block");
+  } else if (/\{view === "maria" &&/.test(app)) {
     app = app.replace(
-      /(label:\s*["']Agent["'][^}]*\})/,
-      '$1,\n  { id: "kimberley", label: "Kimberley\'s Notes" }',
+      /(\{\s*view\s*===\s*["']maria["']\s*&&)/,
+      `${KIMBERLEY_VIEW}\n\n        $1`,
+    );
+    console.log("Wired kimberley view before Maria view");
+  } else {
+    console.warn(
+      'Add manually after Agent panel: {view === "kimberley" && <KimberleyNotesPanel />}',
     );
   }
-  // Render panel when view/tab selected
-  if (!/KimberleyNotesPanel\s*\(/.test(app) || !/<KimberleyNotesPanel/.test(app)) {
-    const renderSnippets = [
-      /\{view === ["']agent["'][^}]*\}/,
-      /\{tab === ["']agent["'][^}]*\}/,
-      /\{activeView === ["']agent["'][^}]*\}/,
-    ];
-    let injected = false;
-    for (const re of renderSnippets) {
-      if (re.test(app)) {
-        app = app.replace(
-          re,
-          (match) =>
-            `${match}\n        {view === "kimberley" || tab === "kimberley" || activeView === "kimberley" ? <KimberleyNotesPanel /> : null}`,
-        );
-        injected = true;
-        break;
-      }
-    }
-    if (!injected) {
-      // Fallback: add a clearly marked mount point comment near AgentPanel
-      if (app.includes("AgentPanel") && !app.includes("<KimberleyNotesPanel")) {
-        app = app.replace(
-          /(<AgentPanel[\s\S]*?\/>)/,
-          '$1\n        {/* Kimberley notes: set view to "kimberley" or render below */}\n        <KimberleyNotesPanel />',
-        );
-        console.log("Mounted KimberleyNotesPanel near AgentPanel (always visible fallback)");
-      } else {
-        console.warn(
-          "Could not auto-wire nav — add view id \"kimberley\" and <KimberleyNotesPanel /> manually",
-        );
-      }
-    } else {
-      console.log("Wired kimberley view render");
-    }
-  }
+}
+
+if (/<AgentPanel\b[\s\S]{0,200}\{\s*view\s*===\s*["']kimberley["']/.test(app)) {
+  console.error(
+    "REFUSING TO WRITE: Kimberley inject still nested inside AgentPanel. Run repair-kimberley-notes-jsx.mjs",
+  );
+  process.exit(2);
 }
 
 fs.writeFileSync(appPath, app, "utf8");
 console.log("Backup:", bak);
 console.log("Patched:", appPath);
 
-// Copy backend files into Gina root
 function copyInto(srcRel, destRel) {
   const src = path.join(__dirname, "..", srcRel);
   const dest = path.join(root, destRel);
@@ -142,7 +153,6 @@ copyInto(
   path.relative(root, path.join(ginaRoot, "briefing/format-pipeline-stage-counts.js")),
 );
 
-// Patch server.js to mount router if possible
 const serverPath = path.join(ginaRoot, "server.js");
 if (fs.existsSync(serverPath)) {
   let server = fs.readFileSync(serverPath, "utf8");
@@ -159,15 +169,9 @@ if (fs.existsSync(serverPath)) {
     }
     if (/app\.use\(\s*["']\/ats["']/.test(server)) {
       server = server.replace(
-        /app\.use\(\s*["']\/ats["']\s*,\s*runCommandRouter\s*\)/,
-        'app.use("/ats", runCommandRouter);\napp.use("/ats", kimberleyNotesRouter)',
+        /(app\.use\(\s*["']\/ats["'][^)]*\))/,
+        '$1\napp.use("/ats", kimberleyNotesRouter)',
       );
-      if (!/kimberleyNotesRouter/.test(server.split("app.use")[1] || "")) {
-        server = server.replace(
-          /(app\.use\(\s*["']\/ats["'][^)]*\))/,
-          '$1\napp.use("/ats", kimberleyNotesRouter)',
-        );
-      }
     } else {
       server += `\napp.use("/ats", kimberleyNotesRouter);\n`;
     }
@@ -182,8 +186,6 @@ console.log(`
 Next:
   cd ${path.join(ginaRoot, "frontend")} && npm run build
   cd ${ginaRoot}
-  # optional Postgres:
-  # psql $DATABASE_URL -c "CREATE TABLE IF NOT EXISTS kimberley_notes (id SERIAL PRIMARY KEY, from_agent TEXT NOT NULL, agent_role TEXT, task TEXT NOT NULL, reply TEXT NOT NULL, action_id TEXT, requested_by TEXT DEFAULT 'Kimberley', status TEXT DEFAULT 'unread', include_in_briefing BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW());"
   git add -A
   git commit -m "Add Kimberley's Note Panel for team bot replies"
   git push origin main
