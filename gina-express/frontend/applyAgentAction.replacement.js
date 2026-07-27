@@ -44,7 +44,13 @@
         }
         return {
           ok: true,
-          summary: data.summary || "Team command executed",
+          summary:
+            data.summary ||
+            (data.reply
+              ? `${data.result?.agent || "Team"} replied — see Kimberley's Notes`
+              : "Team command executed"),
+          kimberleyNoteId: data.kimberleyNoteId || null,
+          reply: data.reply || null,
         };
       }
 

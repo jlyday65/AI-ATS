@@ -8,6 +8,9 @@
 
 import { Router } from "express";
 import { commandAgent } from "../agents/command-agent.tool.js";
+import { buildBotReply } from "../agents/bot-replies.js";
+import { resolveAgent } from "../agents/registry.js";
+import { kimberleyNotes } from "../lib/kimberley-notes.js";
 import {
   extractLocationFromText,
   extractRoleTitleFromText,
@@ -42,7 +45,6 @@ function collectText(value, out = [], depth = 0) {
   }
   if (typeof value === "object") {
     for (const [k, v] of Object.entries(value)) {
-      // skip huge/noisy keys
       if (k === "password" || k === "secret" || k === "token") continue;
       collectText(v, out, depth + 1);
     }
@@ -60,7 +62,6 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     taskHint: body.taskHint,
   }).join("\n");
 
-  // Prefer the explicit task string; only fall back to the giant taskHint/blob after.
   const primaryTask =
     flat.task ||
     flat.Task ||
@@ -71,8 +72,6 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     "";
   const task = primaryTask || body.taskHint || flat.notes || flat.text || blob;
 
-  // Explicit roleTitle / task inference beat board jobTitle — selected ATS jobs
-  // (e.g. Senior Manager) must not override "source an Operations Manager…".
   const roleTitle =
     flat.roleTitle ||
     flat.role_title ||
@@ -106,6 +105,28 @@ function normalizeSourcePayload(payload = {}, body = {}) {
   };
 }
 
+async function fileMariaNote({ task, roleTitle, result, actionId, requestedBy }) {
+  const agent = resolveAgent("maria");
+  const reply = buildBotReply({
+    agentId: "maria",
+    task: task || `Source ${roleTitle}`,
+    result,
+  });
+  try {
+    return await kimberleyNotes.insertNote({
+      fromAgent: agent?.displayName || "Maria",
+      agentRole: agent?.role || "Sourcer",
+      task: task || `Source ${roleTitle}`,
+      reply,
+      actionId: actionId || null,
+      requestedBy: requestedBy || "Kimberley",
+      includeInBriefing: true,
+    });
+  } catch {
+    return null;
+  }
+}
+
 router.post("/run-command", async (req, res) => {
   try {
     const body = req.body || {};
@@ -114,6 +135,7 @@ router.post("/run-command", async (req, res) => {
       body.payload ?? body.action?.payload ?? body,
       body,
     );
+    const actionId = body.actionId || body.action?.id || null;
 
     if (type === "source_candidates_signalhire") {
       if (!payload.roleTitle) {
@@ -130,9 +152,18 @@ router.post("/run-command", async (req, res) => {
       const result = await mariaSourceViaSignalHire(payload);
       const sourcedTitle =
         result?.job?.title || result?.result?.job?.title || payload.roleTitle;
+      const note = await fileMariaNote({
+        task: payload.task,
+        roleTitle: sourcedTitle,
+        result,
+        actionId,
+        requestedBy: payload.requestedBy,
+      });
       return res.json({
         ok: true,
-        summary: `Maria sourced via SignalHire for ${sourcedTitle}`,
+        summary: `Maria sourced via SignalHire for ${sourcedTitle} — filed in Kimberley's Notes`,
+        kimberleyNoteId: note?.id || null,
+        reply: note?.reply || null,
         result,
       });
     }
@@ -161,7 +192,11 @@ router.post("/run-command", async (req, res) => {
 
       return res.json({
         ok: true,
-        summary: result.message || `Commanded ${result.agent}`,
+        summary:
+          result.message ||
+          `${result.agent} update filed in Kimberley's Note Panel`,
+        kimberleyNoteId: result.kimberleyNoteId || null,
+        reply: result.reply || null,
         result,
       });
     }

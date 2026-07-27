@@ -6,10 +6,11 @@
  * "ask Maria to…" / "have Michelle…" / "tell Kelley…" / "get Ashton to…",
  * Gina queues a real command instead of refusing.
  *
- * Maria sourcing still uses maria-source.tool.js when the task is a source request.
+ * Replies are always written to Kimberley's Note Panel (and briefing roll-up).
  */
 
 import { listCommandableAgents, resolveAgent } from "./registry.js";
+import { buildBotReply } from "./bot-replies.js";
 
 async function loadMariaSource() {
   try {
@@ -23,35 +24,51 @@ async function loadMariaSource() {
   }
 }
 
+async function loadKimberleyNotes() {
+  try {
+    return await import("../lib/kimberley-notes.js");
+  } catch {
+    try {
+      return await import("./kimberley-notes.js");
+    } catch {
+      return null;
+    }
+  }
+}
+
 function looksLikeSourceTask(task = "") {
   return /\b(source|sourcing|find candidates|recruit|shortlist|pipeline of candidates)\b/i.test(
     task,
   );
 }
 
-function extractRoleTitle(task = "") {
-  const m =
-    task.match(
-      /\b(?:source|find|recruit|hire)\s+(?:an?\s+|a\s+)?(.+?)(?:\s+candidate|\s+in\s+|\s+for\s+|$)/i,
-    ) || task.match(/\bfor\s+(?:the\s+)?(.+?)(?:\s+role|\s+in\s+|$)/i);
-  return (m?.[1] || "").trim().replace(/[?.!]+$/, "");
-}
-
-function extractLocation(task = "") {
-  const m = task.match(/\bin\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)/i);
-  return (m?.[1] || "").trim().replace(/[?.!]+$/, "");
+async function persistKimberleyNote({
+  agent,
+  task,
+  reply,
+  actionId,
+  requestedBy,
+}) {
+  const mod = await loadKimberleyNotes();
+  const notes = mod?.kimberleyNotes || mod?.default;
+  if (!notes?.insertNote) return null;
+  try {
+    return await notes.insertNote({
+      fromAgent: agent.displayName,
+      agentRole: agent.role,
+      task,
+      reply,
+      actionId: actionId ?? null,
+      requestedBy: requestedBy || "Kimberley",
+      includeInBriefing: true,
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Queue or run a command for a team bot.
- *
- * @param {object} input
- * @param {string} input.targetAgent - maria | michelle | kelley | ashton
- * @param {string} input.task - natural language instruction
- * @param {string} [input.requestedBy=Kimberley]
- * @param {object} [input.context]
- * @param {Function} [input.queueAction] - optional (type, payload) => Promise<id>
- *   If provided, inserts into ats_actions. If omitted, runs Maria sourcing inline when applicable.
  */
 export async function commandAgent(input = {}) {
   const agent = resolveAgent(input.targetAgent || input.agent || input.to);
@@ -82,11 +99,21 @@ export async function commandAgent(input = {}) {
   // Prefer explicit queue into ats_actions when Gina provides queueAction.
   if (typeof input.queueAction === "function") {
     const id = await input.queueAction("command_agent", payload);
-    // Maria source tasks can also fan out immediately to SignalHire.
     let mariaResult = null;
+    let reply;
     if (agent.id === "maria" && looksLikeSourceTask(task)) {
       mariaResult = await runMariaFromTask(task, input.context || {});
+      reply = buildBotReply({ agentId: "maria", task, result: mariaResult });
+    } else {
+      reply = buildBotReply({ agentId: agent.id, task });
     }
+    const note = await persistKimberleyNote({
+      agent,
+      task,
+      reply,
+      actionId: id,
+      requestedBy,
+    });
     return {
       ok: true,
       queued: true,
@@ -96,13 +123,24 @@ export async function commandAgent(input = {}) {
       task,
       requestedBy,
       mariaResult,
-      message: `Queued command for ${agent.displayName} (${agent.role}): ${task}`,
+      reply,
+      kimberleyNoteId: note?.id || null,
+      message: `Queued for ${agent.displayName}. Reply filed in Kimberley's Note Panel${note?.id ? ` (#${note.id})` : ""}.`,
+      nextStep:
+        "Open Kimberley's Notes (or Agent → Check for actions). Replies also roll into Gina's morning Pipeline Stage Counts briefing.",
     };
   }
 
   // No queue helper — execute what we can now.
   if (agent.id === "maria" && looksLikeSourceTask(task)) {
     const mariaResult = await runMariaFromTask(task, input.context || {});
+    const reply = buildBotReply({ agentId: "maria", task, result: mariaResult });
+    const note = await persistKimberleyNote({
+      agent,
+      task,
+      reply,
+      requestedBy,
+    });
     return {
       ok: true,
       queued: false,
@@ -112,25 +150,37 @@ export async function commandAgent(input = {}) {
       task,
       requestedBy,
       mariaResult,
-      message: `Commanded ${agent.displayName} to source via SignalHire.`,
+      reply,
+      kimberleyNoteId: note?.id || null,
+      message: `Maria sourced via SignalHire. Update filed in Kimberley's Note Panel.`,
       nextStep:
-        "In Gina ATS → Agent → Check for actions to import the shortlist.",
+        "In Gina ATS → Agent → Check for actions to import the shortlist. Read Kimberley's Notes for Maria's status.",
     };
   }
 
-  // Michelle / Kelley / Ashton: acknowledge with a structured handoff payload
-  // (Gina can persist this via queueAction once wired).
+  const reply = buildBotReply({ agentId: agent.id, task });
+  const note = await persistKimberleyNote({
+    agent,
+    task,
+    reply,
+    requestedBy,
+  });
+
   return {
     ok: true,
     queued: false,
-    pendingWireUp: agent.id !== "maria",
+    executed: true,
     agent: agent.displayName,
     role: agent.role,
     route: agent.route,
     task,
     requestedBy,
     capabilities: agent.capabilities,
-    message: `Prepared command for ${agent.displayName} (${agent.role}) at ${agent.route}. Wire queueAction or the ${agent.route} bot handler to execute fully.`,
+    reply,
+    kimberleyNoteId: note?.id || null,
+    message: `${agent.displayName} responded. Filed in Kimberley's Note Panel${note?.id ? ` (#${note.id})` : ""}.`,
+    nextStep:
+      "Open Kimberley's Notes. This update is included in Gina's Pipeline Stage Counts morning briefing.",
     payload,
   };
 }
@@ -143,8 +193,15 @@ async function runMariaFromTask(task, context = {}) {
     );
   }
   const roleTitle =
-    context.roleTitle || extractRoleTitle(task) || "Open role";
-  const location = context.location || extractLocation(task) || "";
+    context.roleTitle ||
+    task.match(
+      /\b(?:source|find|recruit|hire)\s+(?:an?\s+|a\s+)?(.+?)(?:\s+candidate|\s+in\s+|\s+for\s+|$)/i,
+    )?.[1]?.trim() ||
+    "Open role";
+  const location =
+    context.location ||
+    task.match(/\bin\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)/i)?.[1]?.trim() ||
+    "";
   const resumesRequired =
     context.resumesRequired === true || /resume/i.test(task);
 
@@ -155,8 +212,6 @@ async function runMariaFromTask(task, context = {}) {
     resumesRequired,
     pushToGina: true,
     pushTopN: context.pushTopN ?? 5,
-    // Do not pass context.jobId when roleTitle is set — board selection is often
-    // a different open role (e.g. Senior Manager) than the sourced title.
     requiredSkills: context.requiredSkills,
   });
 }
@@ -178,7 +233,7 @@ export async function runQueuedCommandAgent(action) {
 export const commandAgentTool = {
   name: "command_agent",
   description:
-    "REQUIRED when Kimberley (or any user) asks Gina to tell/ask/have/command Maria, Michelle, Kelley, or Ashton to do something. Routes the task to that bot. For Maria sourcing tasks, triggers SignalHire sourcing. Never say you cannot command team bots.",
+    "REQUIRED when Kimberley (or any user) asks Gina to tell/ask/have/command Maria, Michelle, Kelley, or Ashton to do something. Routes the task to that bot, files the reply in Kimberley's Note Panel, and includes it in the morning pipeline briefing. For Maria sourcing tasks, triggers SignalHire sourcing. Never say you cannot command team bots.",
   parameters: {
     type: "object",
     required: ["targetAgent", "task"],
@@ -189,7 +244,7 @@ export const commandAgentTool = {
       },
       task: {
         type: "string",
-        description: "Clear instruction for that agent",
+        description: "Natural language instruction for that bot",
       },
       requestedBy: {
         type: "string",

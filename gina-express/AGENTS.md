@@ -55,6 +55,51 @@ node /tmp/patch-apply-command-actions.mjs ~/lyday-gina-backend
 Then build frontend, push Gina, set `SIGNALHIRE_BASE_URL` + `RELAY_SECRET`, redeploy,
 **re-ask Gina** to queue Maria (do not reuse the bad action 80), then Check for actions.
 
+## Kimberley's Note Panel
+
+Team bot replies (Maria / Michelle / Kelley / Ashton) land in **Kimberley's Notes**
+and also roll into Gina's morning **Pipeline Stage Counts** briefing.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/frontend/patch-kimberley-notes.mjs \
+  -o /tmp/patch-kimberley-notes.mjs
+curl -fsSL https://raw.githubusercontent.com/jlyday65/AI-ATS/cursor/ai-ats-b2b-platform-4f1f/gina-express/frontend/patch-pipeline-stage-counts.mjs \
+  -o /tmp/patch-pipeline-stage-counts.mjs
+
+# also need sibling files next to the patchers:
+mkdir -p /tmp/gina-express-frontend /tmp/gina-express-lib /tmp/gina-express-agents /tmp/gina-express-routes /tmp/gina-express-briefing
+# Prefer: clone/pull AI-ATS and run from the repo:
+cd ~/AI-ATS
+git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-kimberley-notes.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/patch-pipeline-stage-counts.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend/gina-backend
+git add -A && git commit -m "Kimberley Notes panel + Pipeline Stage Counts briefing" && git push
+```
+
+Where to read replies:
+1. Gina ATS → **Kimberley's Notes** (panel)
+2. Agent → **Check for actions** (summary line + note filed)
+3. Morning briefing / **Send Pipeline Stage Counts to Gina** (includes team updates)
+
+Optional Postgres table (file store works without it):
+
+```sql
+CREATE TABLE IF NOT EXISTS kimberley_notes (
+  id SERIAL PRIMARY KEY,
+  from_agent TEXT NOT NULL,
+  agent_role TEXT,
+  task TEXT NOT NULL,
+  reply TEXT NOT NULL,
+  action_id TEXT,
+  requested_by TEXT DEFAULT 'Kimberley',
+  status TEXT DEFAULT 'unread',
+  include_in_briefing BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
 ## Install on Gina (Terminal)
 
 ```bash

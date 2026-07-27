@@ -28,6 +28,8 @@ describe("gina team registry", () => {
     assert.equal(result.ok, true);
     assert.equal(result.agent, "Michelle");
     assert.match(result.message, /Michelle/);
+    assert.match(result.reply || "", /Michelle/);
+    assert.ok(result.kimberleyNoteId);
   });
 
   it("queues via queueAction helper", async () => {
@@ -43,5 +45,6 @@ describe("gina team registry", () => {
     });
     assert.equal(result.queued, true);
     assert.equal(result.actionId, "action_1");
+    assert.match(result.reply || "", /Ashton/);
   });
 });
