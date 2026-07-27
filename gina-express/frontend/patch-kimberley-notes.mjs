@@ -70,7 +70,7 @@ if (app.includes("function KimberleyNotesPanel")) {
   const panelStart = app.search(/function\s+KimberleyNotesPanel\s*\(/);
   const after = app.slice(panelStart + 1);
   const endRel = after.search(
-    /\nfunction\s+(ResumeUploadPanel|CandidateTracker|AgentPanel|MariaView|App|GinaBriefingCard)\b/,
+    /\n\s*function\s+(ResumeUploadPanel|CandidateTracker|AgentPanel|MariaView|App|GinaBriefingCard)\b/,
   );
   if (panelStart >= 0 && endRel >= 0) {
     const end = panelStart + 1 + endRel;

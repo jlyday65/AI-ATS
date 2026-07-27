@@ -54,7 +54,7 @@ if (panelStart >= 0) {
   // End at next top-level-ish function after the panel, or before ResumeUploadPanel / CandidateTracker
   const after = src.slice(panelStart + 1);
   const endRel = after.search(
-    /\nfunction\s+(ResumeUploadPanel|CandidateTracker|AgentPanel|MariaView|App|GinaBriefingCard)\b/,
+    /\n\s*function\s+(ResumeUploadPanel|CandidateTracker|AgentPanel|MariaView|App|GinaBriefingCard)\b/,
   );
   if (endRel >= 0) {
     const end = panelStart + 1 + endRel;
