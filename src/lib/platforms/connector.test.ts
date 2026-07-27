@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildHeadline, searchCandidatePlatforms } from "@/lib/platforms/connector";
+import {
+  buildDemoResumeText,
+  buildHeadline,
+  searchCandidatePlatforms,
+} from "@/lib/platforms/connector";
 import type { JobRequisition } from "@/lib/types";
 
 const job: JobRequisition = {
@@ -70,6 +74,29 @@ describe("platform connector demo search", () => {
     });
     assert.ok(candidates.every((c) => (c.resumeText || "").length >= 80));
     assert.ok(candidates.some((c) => c.location?.includes("Atlanta")));
+  });
+
+  it("includes Summary, Experience, Education, and Skills in resumeText", () => {
+    const text = buildDemoResumeText({
+      fullName: "Mateo Diaz",
+      headline: "Operations Manager · communication",
+      location: "Atlanta, GA",
+      email: "mateo.diaz@example.com",
+      skills: ["communication"],
+      experienceYears: 11,
+      jobTitle: "Operations Manager",
+      seed: 42,
+    });
+    const summaryAt = text.indexOf("SUMMARY");
+    const experienceAt = text.indexOf("EXPERIENCE");
+    const educationAt = text.indexOf("EDUCATION");
+    const skillsAt = text.indexOf("SKILLS");
+    assert.ok(summaryAt >= 0);
+    assert.ok(experienceAt > summaryAt);
+    assert.ok(educationAt > experienceAt);
+    assert.ok(skillsAt > educationAt);
+    assert.match(text, /B\.[AS]\. .+ — .+/);
+    assert.match(text, /Graduated \d{4}/);
   });
 
   it("varies top demo names by job title so re-sourcing does not collide", async () => {

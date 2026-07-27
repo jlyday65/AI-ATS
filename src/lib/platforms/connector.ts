@@ -147,6 +147,34 @@ function uniqueNameForIndex(
   };
 }
 
+const DEMO_SCHOOLS = [
+  "Georgia State University",
+  "University of Georgia",
+  "Georgia Tech",
+  "Emory University",
+  "University of North Carolina",
+  "Clemson University",
+  "Auburn University",
+  "University of South Carolina",
+];
+
+const DEMO_DEGREES = [
+  "B.S. Business Administration",
+  "B.S. Operations Management",
+  "B.A. Management",
+  "B.S. Industrial Engineering",
+  "B.S. Supply Chain Management",
+  "A.S. Applied Science",
+];
+
+/** Pick a deterministic school/degree for demo resumes. */
+export function buildDemoEducation(seed: number, experienceYears: number) {
+  const school = pick(DEMO_SCHOOLS, seed, 3);
+  const degree = pick(DEMO_DEGREES, seed, 7);
+  const gradYear = new Date().getFullYear() - experienceYears - 1 - (seed % 3);
+  return { school, degree, gradYear };
+}
+
 /** Build full resume text so Gina can store "resume on file". */
 export function buildDemoResumeText(input: {
   fullName: string;
@@ -156,8 +184,12 @@ export function buildDemoResumeText(input: {
   skills: string[];
   experienceYears: number;
   jobTitle: string;
+  /** Optional seed so education varies per candidate */
+  seed?: number;
 }): string {
   const skills = input.skills.length ? input.skills.join(", ") : "general operations";
+  const seed = input.seed ?? hashSeed(`${input.fullName}:${input.jobTitle}`);
+  const { school, degree, gradYear } = buildDemoEducation(seed, input.experienceYears);
   return [
     input.fullName,
     input.headline,
@@ -173,6 +205,10 @@ export function buildDemoResumeText(input: {
     `- Maintained equipment and workflows aligned to ${input.jobTitle} requirements`,
     `- Collaborated across teams; documented procedures and safety checks`,
     `- Skills applied: ${skills}`,
+    "",
+    "EDUCATION",
+    `${degree} — ${school}`,
+    `Graduated ${gradYear}`,
     "",
     "SKILLS",
     skills,
@@ -207,6 +243,7 @@ function synthesizePerson(
     skills,
     experienceYears: years,
     jobTitle: job.title,
+    seed,
   });
 
   return {
