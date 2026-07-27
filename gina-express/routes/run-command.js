@@ -60,27 +60,26 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     taskHint: body.taskHint,
   }).join("\n");
 
-  const task =
-    body.taskHint ||
+  // Prefer the explicit task string; only fall back to the giant taskHint/blob after.
+  const primaryTask =
     flat.task ||
     flat.Task ||
     flat.instruction ||
     flat.message ||
     flat.description ||
     flat.roleDescription ||
-    flat.notes ||
-    flat.text ||
-    blob;
+    "";
+  const task = primaryTask || body.taskHint || flat.notes || flat.text || blob;
 
+  // Explicit roleTitle always wins — never let an old "Senior Manager" in taskHint override.
   const roleTitle =
     flat.roleTitle ||
     flat.role_title ||
-    flat.title ||
     flat.jobTitle ||
     flat.job_title ||
     flat.context?.roleTitle ||
+    extractRoleTitleFromText(primaryTask) ||
     extractRoleTitleFromText(task) ||
-    extractRoleTitleFromText(blob) ||
     "";
 
   const location =
