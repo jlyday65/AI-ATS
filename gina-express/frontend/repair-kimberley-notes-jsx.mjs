@@ -171,12 +171,43 @@ if (/function\s+KimberleyNotesPanel[\s\S]{0,400}\\`/.test(src)) {
   process.exit(2);
 }
 
+// White-screen guard: panel must not use useEffect (App.jsx often only imports useState)
+if (/function\s+KimberleyNotesPanel[\s\S]*?\nfunction\s+\w+/.test(src)) {
+  const block = src.match(/function\s+KimberleyNotesPanel[\s\S]*?\n(?=function\s+\w+)/);
+  if (block && /\buseEffect\s*\(/.test(block[0])) {
+    console.warn("Panel still references useEffect — re-applying snippet");
+    const panelStart = src.search(/function\s+KimberleyNotesPanel\s*\(/);
+    const after = src.slice(panelStart + 1);
+    const endRel = after.search(
+      /\n\s*function\s+(ResumeUploadPanel|CandidateTracker|AgentPanel|MariaView|App|GinaBriefingCard)\b/,
+    );
+    if (panelStart >= 0 && endRel >= 0) {
+      const end = panelStart + 1 + endRel;
+      src = src.slice(0, panelStart) + PANEL + "\n" + src.slice(end);
+      fixed += 1;
+    }
+  }
+}
+
+// Don't leave an always-mounted panel (crashes whole ATS if it throws)
+replaceAll(
+  /(?<!view === "kimberley" && )(?<!view === 'kimberley' && )<KimberleyNotesPanel\s*\/>/g,
+  '{view === "kimberley" && <KimberleyNotesPanel />}',
+);
+
 fs.writeFileSync(target, src, "utf8");
 console.log("Backup:", bak);
 console.log(fixed ? `Repaired App.jsx (${fixed} fix(es))` : "No changes needed");
 console.log("Wrote:", target);
+console.log("Panel uses useEffect:", /\buseEffect\s*\(/.test(
+  (src.match(/function\s+KimberleyNotesPanel[\s\S]*?\n(?=function\s+\w+)/) || [""])[0],
+));
 console.log(`
 Next (copy-paste these as separate commands):
   cd ~/lyday-gina-backend/gina-backend/frontend
   npm run build
+  cd ~/lyday-gina-backend/gina-backend
+  git add frontend/src/App.jsx
+  git commit -m "Fix Kimberley Notes white screen (no useEffect)"
+  git push origin main
 `);

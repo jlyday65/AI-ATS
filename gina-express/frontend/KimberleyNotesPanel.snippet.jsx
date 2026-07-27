@@ -3,13 +3,15 @@ function KimberleyNotesPanel() {
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [booted, setBooted] = useState(false);
 
-  async function load() {
+  async function load(nextFilter) {
+    const active = nextFilter != null ? nextFilter : filter;
     setBusy(true);
     setErr("");
     try {
       const q =
-        filter === "all" ? "" : "?agent=" + encodeURIComponent(filter);
+        active === "all" ? "" : "?agent=" + encodeURIComponent(active);
       const res = await fetch("/ats/kimberley-notes" + q, {
         credentials: "include",
       });
@@ -25,9 +27,13 @@ function KimberleyNotesPanel() {
     }
   }
 
-  useEffect(() => {
-    load();
-  }, [filter]);
+  // Auto-load once on first paint — useState only (no useEffect required).
+  if (!booted) {
+    setBooted(true);
+    queueMicrotask(function () {
+      load("all");
+    });
+  }
 
   async function markRead(id) {
     await fetch("/ats/kimberley-notes/" + id + "/read", {
@@ -68,7 +74,9 @@ function KimberleyNotesPanel() {
         </h2>
         <button
           type="button"
-          onClick={load}
+          onClick={function () {
+            load();
+          }}
           disabled={busy}
           style={{ fontSize: 12, padding: "6px 10px" }}
         >
@@ -80,24 +88,29 @@ function KimberleyNotesPanel() {
         <strong>Pipeline Stage Counts</strong> briefing.
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-        {agents.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            onClick={() => setFilter(a.id)}
-            style={{
-              fontSize: 12,
-              padding: "6px 10px",
-              borderRadius: 999,
-              border: "1px solid #E6E2D6",
-              background: filter === a.id ? "#2C2A24" : "#fff",
-              color: filter === a.id ? "#fff" : "#2C2A24",
-              cursor: "pointer",
-            }}
-          >
-            {a.label}
-          </button>
-        ))}
+        {agents.map(function (a) {
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={function () {
+                setFilter(a.id);
+                load(a.id);
+              }}
+              style={{
+                fontSize: 12,
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid #E6E2D6",
+                background: filter === a.id ? "#2C2A24" : "#fff",
+                color: filter === a.id ? "#fff" : "#2C2A24",
+                cursor: "pointer",
+              }}
+            >
+              {a.label}
+            </button>
+          );
+        })}
       </div>
       {err ? <p style={{ color: "#9B2C2C", fontSize: 13 }}>{err}</p> : null}
       {!notes.length && !busy ? (
@@ -107,74 +120,78 @@ function KimberleyNotesPanel() {
         </p>
       ) : null}
       <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 12 }}>
-        {notes.map((n) => (
-          <li
-            key={n.id}
-            style={{
-              border: "1px solid #E6E2D6",
-              borderRadius: 12,
-              background: n.status === "unread" ? "#FFFdf7" : "#fff",
-              padding: 14,
-            }}
-          >
-            <div
+        {notes.map(function (n) {
+          return (
+            <li
+              key={n.id}
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 10,
-                marginBottom: 6,
+                border: "1px solid #E6E2D6",
+                borderRadius: 12,
+                background: n.status === "unread" ? "#FFFdf7" : "#fff",
+                padding: 14,
               }}
             >
-              <div>
-                <strong style={{ fontSize: 14 }}>{n.fromAgent}</strong>
-                {n.agentRole ? (
-                  <span style={{ marginLeft: 8, fontSize: 12, color: "#918D80" }}>
-                    {n.agentRole}
-                  </span>
-                ) : null}
-              </div>
-              <span style={{ fontSize: 11, color: "#918D80" }}>
-                {n.createdAt ? new Date(n.createdAt).toLocaleString() : ""}
-              </span>
-            </div>
-            <p style={{ margin: "0 0 8px", fontSize: 12, color: "#5C584C" }}>
-              <strong>Ask:</strong> {n.task}
-            </p>
-            <pre
-              style={{
-                margin: 0,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                fontSize: 12.5,
-                lineHeight: 1.45,
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                color: "#2C2A24",
-              }}
-            >
-              {n.reply}
-            </pre>
-            {n.status === "unread" ? (
-              <button
-                type="button"
-                onClick={() => markRead(n.id)}
-                style={{ marginTop: 10, fontSize: 12, padding: "5px 10px" }}
-              >
-                Mark read
-              </button>
-            ) : (
-              <span
+              <div
                 style={{
-                  display: "inline-block",
-                  marginTop: 10,
-                  fontSize: 11,
-                  color: "#918D80",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  marginBottom: 6,
                 }}
               >
-                Read
-              </span>
-            )}
-          </li>
-        ))}
+                <div>
+                  <strong style={{ fontSize: 14 }}>{n.fromAgent}</strong>
+                  {n.agentRole ? (
+                    <span style={{ marginLeft: 8, fontSize: 12, color: "#918D80" }}>
+                      {n.agentRole}
+                    </span>
+                  ) : null}
+                </div>
+                <span style={{ fontSize: 11, color: "#918D80" }}>
+                  {n.createdAt ? new Date(n.createdAt).toLocaleString() : ""}
+                </span>
+              </div>
+              <p style={{ margin: "0 0 8px", fontSize: 12, color: "#5C584C" }}>
+                <strong>Ask:</strong> {n.task}
+              </p>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  fontSize: 12.5,
+                  lineHeight: 1.45,
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  color: "#2C2A24",
+                }}
+              >
+                {n.reply}
+              </pre>
+              {n.status === "unread" ? (
+                <button
+                  type="button"
+                  onClick={function () {
+                    markRead(n.id);
+                  }}
+                  style={{ marginTop: 10, fontSize: 12, padding: "5px 10px" }}
+                >
+                  Mark read
+                </button>
+              ) : (
+                <span
+                  style={{
+                    display: "inline-block",
+                    marginTop: 10,
+                    fontSize: 11,
+                    color: "#918D80",
+                  }}
+                >
+                  Read
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
