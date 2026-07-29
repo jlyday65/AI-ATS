@@ -3,11 +3,64 @@
  * Notes sits WITH Add candidate (same className), never as a child of the <button>.
  */
 
+import path from "path";
+
+/**
+ * Resolve App.jsx path from CLI.
+ * Trim FIRST so a leading space from `\` line breaks does not block `~/` expansion.
+ */
+export function resolveAppJsxPath(argv = process.argv) {
+  const raw = argv
+    .slice(2)
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (!raw) return "";
+  const home = process.env.HOME || "";
+  let expanded = raw;
+  if (raw === "~") expanded = home;
+  else if (raw.startsWith("~/")) expanded = path.join(home, raw.slice(2));
+  else if (raw.startsWith("~")) {
+    expanded = path.join(home, raw.slice(1).replace(/^\//, ""));
+  }
+  return path.resolve(expanded);
+}
+
+/** Fix known broken Notes inserts before re-wrapping. */
+export function healBrokenNotesToolbar(src) {
+  let out = String(src);
+
+  // </a>/button>  (Vite: ">" is not valid inside a JSX element)
+  out = out.replace(/<\/a>\s*\/button>/gi, "</a></button>");
+  // Orphan /button> missing "<"
+  out = out.replace(/(^|[^<])\/button>/gi, "$1</button>");
+  // <<a → <a
+  out = out.replace(/<<+a\b/g, "<a");
+
+  const idx = out.search(/Add candidate/i);
+  if (idx >= 0) {
+    const needle = "Add candidate";
+    let after = out.slice(idx + needle.length);
+    // Drop any Notes <a>…</a> immediately after the label (inside the button)
+    after = after.replace(/^\s*<a\b[\s\S]*?<\/a>/i, "");
+    after = after.replace(/^\s*\/button>/i, "</button>");
+    if (!/^\s*<\/button>/i.test(after)) {
+      const soon = after.search(/<\/button>/i);
+      if (soon < 0 || soon > 80) {
+        after = "</button>" + after;
+      }
+    }
+    out = out.slice(0, idx + needle.length) + after;
+  }
+
+  return out;
+}
+
 export function extractAddCandidateButton(src) {
-  // Prefer Plus + "Add candidate" pattern (current ATS toolbar)
   const preferred =
     /<button\b([^>]*)>\s*<Plus\b[^>]*\/\s*>\s*Add candidate\s*<\/button>/i;
-  let m = src.match(preferred);
+  const m = src.match(preferred);
   if (m) {
     return {
       full: m[0],
@@ -17,16 +70,18 @@ export function extractAddCandidateButton(src) {
     };
   }
 
-  // Fallback: nearest <button>…</button> containing "Add candidate"
   const label = src.search(/Add candidate/i);
   if (label < 0) return null;
-  const openRel = src.slice(Math.max(0, label - 400), label).lastIndexOf("<button");
+  const openRel = src
+    .slice(Math.max(0, label - 500), label)
+    .lastIndexOf("<button");
   if (openRel < 0) return null;
-  const open = Math.max(0, label - 400) + openRel;
+  const open = Math.max(0, label - 500) + openRel;
   const closeRel = src.slice(label).search(/<\/button>/i);
   if (closeRel < 0) return null;
   const end = label + closeRel + "</button>".length;
   const full = src.slice(open, end);
+  if (/data-kimberley-notes-link=/i.test(full)) return null;
   const attrsMatch = full.match(/^<button\b([^>]*)>/i);
   return {
     full,
@@ -41,14 +96,12 @@ export function extractClassNameAttr(attrs) {
   return m ? m[0] : "";
 }
 
-/** Pull object-literal style={{ ... }} from a button opening tag / attrs. */
 export function extractStyleObjectBody(buttonHtml) {
   const m = String(buttonHtml).match(/\bstyle=\{\{([\s\S]*?)\}\}/);
   if (!m) return "";
   return m[1]
     .trim()
     .replace(/,\s*$/, "")
-    // Drop corners we inject only on the Add candidate half
     .replace(/\s*borderTopRightRadius\s*:\s*[^,}\n]+,?/g, "")
     .replace(/\s*borderBottomRightRadius\s*:\s*[^,}\n]+,?/g, "")
     .replace(/^\s*,\s*/, "")
@@ -56,7 +109,6 @@ export function extractStyleObjectBody(buttonHtml) {
     .trim();
 }
 
-/** Build Notes control that mirrors Add candidate chrome. */
 export function buildNotesLink({ classNameAttr = "", styleBody = "" } = {}) {
   const classLine = classNameAttr ? `\n          ${classNameAttr}` : "";
   const base = styleBody ? `${styleBody},` : "";
@@ -82,11 +134,9 @@ export function buildNotesLink({ classNameAttr = "", styleBody = "" } = {}) {
         </a>`;
 }
 
-/** Wrap Add candidate + Notes as one uniform control group. */
 export function buildAddCandidateGroup(buttonHtml, classNameAttr = "") {
   const styleBody = extractStyleObjectBody(buttonHtml);
   const notes = buildNotesLink({ classNameAttr, styleBody });
-  // Soften right corners on Add candidate so the pair reads as one control
   let btn = buttonHtml;
   if (!/borderTopRightRadius\s*:/.test(btn)) {
     if (/\bstyle=\{\{/.test(btn)) {
@@ -117,7 +167,6 @@ export function buildAddCandidateGroup(buttonHtml, classNameAttr = "") {
 
 export function stripExistingNotesToolbar(src) {
   let out = src;
-  // Unwrap prior groups: keep inner Add candidate button, drop Notes + wrapper
   out = out.replace(
     /\s*<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>\s*([\s\S]*?)\s*<\/span>/gi,
     (full, inner) => {
@@ -133,13 +182,19 @@ export function stripExistingNotesToolbar(src) {
     /\s*<a\b[^>]*data-kimberley-notes-link=["']1["'][^>]*>[\s\S]*?<\/a>/gi,
     "",
   );
-  // Strip accidental <<a from prior broken inserts
+  out = out.replace(
+    /\s*<a\b[^>]*href=["']\/notes["'][^>]*>\s*Kimberley Notes\s*<\/a>/gi,
+    "",
+  );
   out = out.replace(/<<+a\b/g, "<a");
   return out;
 }
 
 export function insertNotesWithAddCandidate(src) {
-  let out = stripExistingNotesToolbar(src);
+  let out = healBrokenNotesToolbar(src);
+  out = stripExistingNotesToolbar(out);
+  out = healBrokenNotesToolbar(out);
+
   const found = extractAddCandidateButton(out);
   if (!found) return { ok: false, reason: "add-candidate-missing", src: out };
 
@@ -150,6 +205,9 @@ export function insertNotesWithAddCandidate(src) {
   if (/<<a\b/.test(out)) {
     return { ok: false, reason: "double-lt-a", src: out };
   }
+  if (/<\/a>\s*\/button>/i.test(out) || /(^|[^<])\/button>/i.test(out)) {
+    return { ok: false, reason: "orphan-button-close", src: out };
+  }
   const n = (out.match(/data-kimberley-notes-link=/g) || []).length;
   if (n !== 1) {
     return { ok: false, reason: `notes-count-${n}`, src: out };
@@ -157,7 +215,6 @@ export function insertNotesWithAddCandidate(src) {
   if ((out.match(/data-kimberley-notes-group=/g) || []).length !== 1) {
     return { ok: false, reason: "group-count", src: out };
   }
-  // Must NOT nest Notes inside the Add candidate button element
   if (/Add candidate\s*<a\b[^>]*data-kimberley-notes-link/i.test(out)) {
     return { ok: false, reason: "notes-inside-button", src: out };
   }
