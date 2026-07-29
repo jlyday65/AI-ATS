@@ -218,5 +218,5 @@ Next:
   git push origin main
 
 Then Railway → Redeploy.
-In Gina ATS open the "Kimberley Notes" nav item and click Refresh.
+In Gina ATS open the "Kimberley's Notes" nav item and click Refresh.
 `);
