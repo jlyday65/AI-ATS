@@ -107,8 +107,9 @@ describe("Pipeline Stage Counts formatter", () => {
       ],
     });
     assert.match(brief, /Pipeline Stage Counts/);
-    assert.match(brief, /Team updates \(Kimberley's Notes\)/);
-    assert.match(brief, /Kelley:/);
+    assert.match(brief, /Team updates \(Kimberley Notes\)/);
+    assert.match(brief, /Kelley/);
+    assert.match(brief, /Reminders due/);
   });
 });
 
