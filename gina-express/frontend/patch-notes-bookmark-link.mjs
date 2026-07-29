@@ -10,13 +10,12 @@
 
 import fs from "fs";
 import path from "path";
+import { resolveAppJsxPath } from "./notes-toolbar-markup.mjs";
 
-const target = path.resolve(
-  String(process.argv[2] || "").replace(/^~/, process.env.HOME || "").trim(),
-);
+const target = resolveAppJsxPath(process.argv);
 if (!target || !fs.existsSync(target)) {
   console.error(
-    "Usage: node patch-notes-bookmark-link.mjs /Users/.../frontend/src/App.jsx",
+    "Usage (one line): node patch-notes-bookmark-link.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx",
   );
   process.exit(1);
 }
