@@ -38,21 +38,24 @@ export function healBrokenNotesToolbar(src) {
   // <<a → <a
   out = out.replace(/<<+a\b/g, "<a");
 
-  const idx = out.search(/Add candidate/i);
-  if (idx >= 0) {
-    const needle = "Add candidate";
-    let after = out.slice(idx + needle.length);
-    // Drop any Notes <a>…</a> immediately after the label (inside the button)
-    after = after.replace(/^\s*<a\b[\s\S]*?<\/a>/i, "");
-    after = after.replace(/^\s*\/button>/i, "</button>");
-    if (!/^\s*<\/button>/i.test(after)) {
-      const soon = after.search(/<\/button>/i);
-      if (soon < 0 || soon > 80) {
-        after = "</button>" + after;
-      }
-    }
-    out = out.slice(0, idx + needle.length) + after;
-  }
+  // Notes jammed inside Add candidate button → close button first, leave Notes sibling
+  out = out.replace(
+    /(Add candidate)\s*(<a\b[\s\S]*?<\/a>)\s*<\/button>/i,
+    "$1</button>$2",
+  );
+
+  // Exact Mac failure: </span></button> after Notes group
+  out = out.replace(
+    /(<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>[\s\S]*?<\/span>)\s*<\/button>/gi,
+    "$1",
+  );
+  out = out.replace(/<\/span>\s*<\/button>(\s*<\/div>)/gi, "</span>$1");
+
+  // Duplicate closes after a real Add candidate button
+  out = out.replace(
+    /(Add candidate\s*<\/button>)\s*<\/button>/gi,
+    "$1",
+  );
 
   return out;
 }
@@ -82,6 +85,7 @@ export function extractAddCandidateButton(src) {
   const end = label + closeRel + "</button>".length;
   const full = src.slice(open, end);
   if (/data-kimberley-notes-link=/i.test(full)) return null;
+  if (/<a\b/i.test(full) && /Kimberley Notes/i.test(full)) return null;
   const attrsMatch = full.match(/^<button\b([^>]*)>/i);
   return {
     full,
@@ -167,8 +171,9 @@ export function buildAddCandidateGroup(buttonHtml, classNameAttr = "") {
 
 export function stripExistingNotesToolbar(src) {
   let out = src;
+  // Unwrap prior groups; also swallow a stray </button> after </span>
   out = out.replace(
-    /\s*<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>\s*([\s\S]*?)\s*<\/span>/gi,
+    /\s*<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>\s*([\s\S]*?)\s*<\/span>\s*(?:<\/button>)?/gi,
     (full, inner) => {
       const btn =
         inner.match(
@@ -179,14 +184,28 @@ export function stripExistingNotesToolbar(src) {
     },
   );
   out = out.replace(
-    /\s*<a\b[^>]*data-kimberley-notes-link=["']1["'][^>]*>[\s\S]*?<\/a>/gi,
+    /\s*<a\b[^>]*data-kimberley-notes-link=["']1["'][^>]*>[\s\S]*?<\/a>\s*(?:<\/button>)?/gi,
     "",
   );
   out = out.replace(
-    /\s*<a\b[^>]*href=["']\/notes["'][^>]*>\s*Kimberley Notes\s*<\/a>/gi,
+    /\s*<a\b[^>]*href=["']\/notes["'][^>]*>\s*Kimberley Notes\s*<\/a>\s*(?:<\/button>)?/gi,
     "",
   );
   out = out.replace(/<<+a\b/g, "<a");
+  // Orphan </button> left after stripping Notes that had been </a></button>
+  out = out.replace(/(Add candidate\s*<\/button>)\s*<\/button>/gi, "$1");
+  out = out.replace(/<\/span>\s*<\/button>(\s*<\/div>)/gi, "</span>$1");
+  return out;
+}
+
+function finalizeToolbar(out) {
+  // Never leave </span></button> (Mac Vite: button does not match opening div)
+  out = out.replace(
+    /(<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>[\s\S]*?<\/span>)\s*<\/button>/gi,
+    "$1",
+  );
+  out = out.replace(/<\/span>\s*<\/button>(\s*<\/div>)/gi, "</span>$1");
+  out = out.replace(/(Add candidate\s*<\/button>)\s*<\/button>/gi, "$1");
   return out;
 }
 
@@ -201,12 +220,16 @@ export function insertNotesWithAddCandidate(src) {
   const classNameAttr = extractClassNameAttr(found.attrs);
   const group = buildAddCandidateGroup(found.full, classNameAttr);
   out = out.slice(0, found.index) + group + out.slice(found.end);
+  out = finalizeToolbar(out);
 
   if (/<<a\b/.test(out)) {
     return { ok: false, reason: "double-lt-a", src: out };
   }
   if (/<\/a>\s*\/button>/i.test(out) || /(^|[^<])\/button>/i.test(out)) {
     return { ok: false, reason: "orphan-button-close", src: out };
+  }
+  if (/<\/span>\s*<\/button>/i.test(out)) {
+    return { ok: false, reason: "span-button-mismatch", src: out };
   }
   const n = (out.match(/data-kimberley-notes-link=/g) || []).length;
   if (n !== 1) {
