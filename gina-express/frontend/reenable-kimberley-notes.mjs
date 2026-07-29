@@ -1,22 +1,28 @@
 #!/usr/bin/env node
 /**
- * Safely re-enable Kimberley's Notes after ATS is confirmed up.
+ * DEPRECATED for production Gina UI.
+ * Injecting a React panel/gate into App.jsx has repeatedly white-screened ATS.
  *
- * Guards:
- * - forces `import React` default (Gate uses React.Component — never bare Component)
- * - plain JSX snippet (no useEffect, no escaped backticks)
- * - panel is a SIBLING of AgentPanel (never nested in its props)
- * - Error boundary so Notes render errors can't kill the board
- * - refuses to write if post-checks fail
+ * Prefer:
+ *   node gina-express/frontend/reenable-kimberley-notes-iframe.mjs <App.jsx>
  *
- * Usage:
- *   node gina-express/frontend/reenable-kimberley-notes.mjs \
- *     /Users/jameslyday/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+ * This script remains for local experiments only. It refuses unless
+ * ALLOW_REACT_NOTES=1 is set.
  */
 
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+
+if (process.env.ALLOW_REACT_NOTES !== "1") {
+  console.error(`Refusing React Notes injection into App.jsx (causes white screens).
+
+Use the iframe approach instead:
+  node gina-express/frontend/reenable-kimberley-notes-iframe.mjs ${process.argv[2] || "<App.jsx>"}
+
+Or set ALLOW_REACT_NOTES=1 to override (not recommended).`);
+  process.exit(2);
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const target = path.resolve(
@@ -24,7 +30,7 @@ const target = path.resolve(
 );
 if (!target || !fs.existsSync(target)) {
   console.error(
-    "Usage: node reenable-kimberley-notes.mjs /Users/jameslyday/lyday-gina-backend/gina-backend/frontend/src/App.jsx",
+    "Usage: ALLOW_REACT_NOTES=1 node reenable-kimberley-notes.mjs /Users/.../frontend/src/App.jsx",
   );
   process.exit(1);
 }

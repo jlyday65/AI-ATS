@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kimberley Notes</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #2c2a24;
+        --muted: #918d80;
+        --line: #e6e2d6;
+        --bg: #f7f4ec;
+        --card: #fff;
+        --unread: #fffdf7;
+        --danger: #9b2c2c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+        color: var(--ink);
+        background: linear-gradient(180deg, #fbf8f1 0%, var(--bg) 100%);
+        min-height: 100vh;
+      }
+      main { max-width: 820px; margin: 0 auto; padding: 24px 16px 48px; }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+      h1 { margin: 0; font-size: 20px; font-weight: 650; }
+      p.lead { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+      button {
+        font: inherit;
+        font-size: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        cursor: pointer;
+      }
+      button.active { background: var(--ink); color: #fff; }
+      button:disabled { opacity: 0.6; cursor: default; }
+      .err { color: var(--danger); font-size: 13px; }
+      .empty { color: var(--muted); font-size: 13px; }
+      ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+      li {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--card);
+        padding: 14px;
+      }
+      li.unread { background: var(--unread); }
+      .meta { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+      .role { margin-left: 8px; font-size: 12px; color: var(--muted); }
+      .when { font-size: 11px; color: var(--muted); }
+      .ask { margin: 0 0 8px; font-size: 12px; color: #5c584c; }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 12.5px;
+        line-height: 1.45;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      a.back { font-size: 12px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Kimberley Notes</h1>
+        <div class="row" style="margin:0">
+          <button type="button" id="refreshBtn">Refresh</button>
+          <a class="back" href="/">Back to ATS</a>
+        </div>
+      </header>
+      <p class="lead">
+        Team handoffs from Maria, Michelle, Kelley, and Ashton. Ask Gina, then Check for actions,
+        then Refresh here.
+      </p>
+      <div class="row" id="filters"></div>
+      <p class="err" id="err" hidden></p>
+      <p class="empty" id="empty" hidden>No team updates yet.</p>
+      <ul id="list"></ul>
+    </main>
+    <script>
+      (function () {
+        var filter = "all";
+        var busy = false;
+        var agents = [
+          { id: "all", label: "All" },
+          { id: "Maria", label: "Maria" },
+          { id: "Michelle", label: "Michelle" },
+          { id: "Kelley", label: "Kelley" },
+          { id: "Ashton", label: "Ashton" },
+        ];
+
+        var filtersEl = document.getElementById("filters");
+        var listEl = document.getElementById("list");
+        var errEl = document.getElementById("err");
+        var emptyEl = document.getElementById("empty");
+        var refreshBtn = document.getElementById("refreshBtn");
+
+        function setErr(msg) {
+          if (!msg) {
+            errEl.hidden = true;
+            errEl.textContent = "";
+            return;
+          }
+          errEl.hidden = false;
+          errEl.textContent = msg;
+        }
+
+        function renderFilters() {
+          filtersEl.innerHTML = "";
+          agents.forEach(function (a) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.textContent = a.label;
+            if (a.id === filter) b.className = "active";
+            b.addEventListener("click", function () {
+              filter = a.id;
+              renderFilters();
+              load();
+            });
+            filtersEl.appendChild(b);
+          });
+        }
+
+        function renderNotes(notes) {
+          listEl.innerHTML = "";
+          emptyEl.hidden = notes.length > 0;
+          notes.forEach(function (n) {
+            var li = document.createElement("li");
+            if (n.status === "unread") li.className = "unread";
+            var meta = document.createElement("div");
+            meta.className = "meta";
+            var left = document.createElement("div");
+            var strong = document.createElement("strong");
+            strong.textContent = n.fromAgent || "Team";
+            left.appendChild(strong);
+            if (n.agentRole) {
+              var role = document.createElement("span");
+              role.className = "role";
+              role.textContent = n.agentRole;
+              left.appendChild(role);
+            }
+            var when = document.createElement("span");
+            when.className = "when";
+            when.textContent = n.createdAt ? new Date(n.createdAt).toLocaleString() : "";
+            meta.appendChild(left);
+            meta.appendChild(when);
+            var ask = document.createElement("p");
+            ask.className = "ask";
+            ask.innerHTML = "<strong>Ask:</strong> ";
+            ask.appendChild(document.createTextNode(n.task || ""));
+            var pre = document.createElement("pre");
+            pre.textContent = n.reply || "";
+            li.appendChild(meta);
+            li.appendChild(ask);
+            li.appendChild(pre);
+            if (n.status === "unread" && n.id) {
+              var mark = document.createElement("button");
+              mark.type = "button";
+              mark.textContent = "Mark read";
+              mark.style.marginTop = "10px";
+              mark.addEventListener("click", function () {
+                fetch("/ats/kimberley-notes/" + encodeURIComponent(n.id) + "/read", {
+                  method: "POST",
+                  credentials: "include",
+                }).then(function () { load(); });
+              });
+              li.appendChild(mark);
+            }
+            listEl.appendChild(li);
+          });
+        }
+
+        function load() {
+          if (busy) return;
+          busy = true;
+          refreshBtn.disabled = true;
+          refreshBtn.textContent = "Refreshing…";
+          setErr("");
+          var q = filter === "all" ? "" : "?agent=" + encodeURIComponent(filter);
+          fetch("/ats/kimberley-notes" + q, { credentials: "include" })
+            .then(function (res) {
+              return res.json().catch(function () { return {}; }).then(function (data) {
+                if (!res.ok) throw new Error(data.error || "Load failed (" + res.status + ")");
+                renderNotes(data.notes || []);
+              });
+            })
+            .catch(function (e) {
+              setErr(e.message || "Could not load notes");
+              renderNotes([]);
+            })
+            .finally(function () {
+              busy = false;
+              refreshBtn.disabled = false;
+              refreshBtn.textContent = "Refresh";
+            });
+        }
+
+        refreshBtn.addEventListener("click", load);
+        renderFilters();
+        load();
+      })();
+    </script>
+  </body>
+</html>
