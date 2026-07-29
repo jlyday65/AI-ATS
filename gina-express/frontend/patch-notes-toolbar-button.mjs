@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 /**
- * Place a "Kimberley Notes" control next to the main ATS toolbar
- * (Reminders / CSV / Import / Backup / Questions / Add candidate).
- *
- * Plain <a href="/notes"> — opens Notes (auto-loads). No React panel / iframe.
+ * Place "Kimberley Notes" AFTER the Add candidate </button>
+ * (never inside the button — that produced <<a and broke the build).
  *
  * Usage:
  *   node gina-express/frontend/patch-notes-toolbar-button.mjs \
@@ -12,7 +10,10 @@
 
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+import { spawnSync } from "child_process";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const target = path.resolve(
   String(process.argv[2] || "").replace(/^~/, process.env.HOME || "").trim(),
 );
@@ -23,11 +24,20 @@ if (!target || !fs.existsSync(target)) {
   process.exit(1);
 }
 
-let src = fs.readFileSync(target, "utf8");
+// If already broken from a prior run, repair first
+const cur = fs.readFileSync(target, "utf8");
+if (/<<a\b/.test(cur) || /Add candidate\s*<a\b[^>]*data-kimberley-notes-link/i.test(cur)) {
+  console.log("Detected broken Notes insert — running repair…");
+  const fix = path.join(__dirname, "fix-notes-toolbar-jsx.mjs");
+  const r = spawnSync(process.execPath, [fix, target], { stdio: "inherit" });
+  process.exit(r.status || 0);
+}
+
+let src = cur;
 const bak = `${target}.bak-notes-toolbar-${Date.now()}`;
 fs.copyFileSync(target, bak);
 
-// Remove prior floating / misplaced Notes links we may have added
+// Remove prior Notes links
 src = src.replace(
   /\s*<a\b[^>]*data-kimberley-notes-link=["']1["'][^>]*>[\s\S]*?<\/a>/g,
   "",
@@ -55,69 +65,33 @@ const BTN = `<a
           Kimberley Notes
         </a>`;
 
-let placed = false;
-
-// Prefer: after an "Add candidate" button/label
-const patterns = [
-  // JSX text node Add candidate inside button
-  /(>\s*Add candidate\s*<)/i,
-  /(>\s*Add Candidate\s*<)/i,
-  // Nearby toolbar labels
-  /(>\s*Questions\s*<)/i,
-  /(>\s*Reminders\s*<)/i,
-  /(>\s*Import CSV\s*<)/i,
-  /(>\s*Backup\s*<)/i,
-];
-
-for (const re of patterns) {
-  if (re.test(src)) {
-    src = src.replace(re, (m) => `${m}${BTN}`);
-    placed = true;
-    console.log("Inserted Kimberley Notes after", String(re));
-    break;
+const re =
+  /(<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate\s*<\/button>)/i;
+if (re.test(src)) {
+  src = src.replace(re, `$1\n              ${BTN}`);
+  console.log("Inserted Kimberley Notes after Add candidate </button>");
+} else {
+  const idx = src.search(/Add candidate/i);
+  if (idx < 0) {
+    console.error("Could not find Add candidate");
+    process.exit(2);
   }
-}
-
-// Fallback: after a button that contains addCandidate / setShowAdd
-if (!placed) {
-  const re =
-    /(<button\b[^>]*(?:addCandidate|Add candidate|setShowAdd|onAddCandidate)[^>]*>[\s\S]*?<\/button>)/i;
-  if (re.test(src)) {
-    src = src.replace(re, (m) => `${m}\n        ${BTN}`);
-    placed = true;
-    console.log("Inserted Kimberley Notes after Add-candidate-like button");
+  const closeRel = src.slice(idx, idx + 240).search(/<\/button>/i);
+  if (closeRel < 0) {
+    console.error("Could not find </button> after Add candidate");
+    process.exit(2);
   }
+  const at = idx + closeRel + "</button>".length;
+  src = src.slice(0, at) + `\n              ${BTN}` + src.slice(at);
+  console.log("Inserted Kimberley Notes after nearby </button>");
 }
 
-if (!placed) {
-  // Last resort: first toolbar-ish flex row containing Reminders
-  const idx = src.search(/>\s*Reminders\s*</);
-  if (idx >= 0) {
-    const close = src.indexOf("</", idx);
-    if (close > idx) {
-      const insertAt = src.indexOf(">", close) + 1;
-      src = src.slice(0, insertAt) + BTN + src.slice(insertAt);
-      placed = true;
-      console.log("Inserted Kimberley Notes near Reminders cluster");
-    }
-  }
-}
-
-if (!placed) {
-  console.error("Could not find Reminders/CSV/Add candidate toolbar");
-  console.error("Backup unused. Add manually near those buttons:\n", BTN);
-  process.exit(2);
-}
-
-if (/KimberleyNotes(Panel|Gate)/.test(src)) {
-  console.error("REFUSING: React Notes panel/gate present — keep using /notes link only");
+if (/<<a\b/.test(src)) {
+  console.error("REFUSING: would write <<a");
   process.exit(2);
 }
 if ((src.match(/data-kimberley-notes-link=/g) || []).length !== 1) {
-  console.error(
-    "REFUSING: expected exactly 1 Notes link, found",
-    (src.match(/data-kimberley-notes-link=/g) || []).length,
-  );
+  console.error("REFUSING: expected exactly 1 Notes link");
   process.exit(2);
 }
 
@@ -129,6 +103,6 @@ Next:
   cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
   cd ~/lyday-gina-backend
   git add gina-backend/frontend/src/App.jsx
-  git commit -m "Move Kimberley Notes button into main ATS toolbar"
+  git commit -m "Add Kimberley Notes next to Add candidate"
   git push origin main
 `);
