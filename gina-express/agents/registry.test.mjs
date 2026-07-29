@@ -32,7 +32,7 @@ describe("gina team registry", () => {
     assert.ok(result.kimberleyNoteId);
   });
 
-  it("queues via queueAction helper", async () => {
+  it("queues via queueAction helper without executing work", async () => {
     const result = await commandAgent({
       targetAgent: "ashton",
       task: "Draft follow-up to Atlanta shortlist",
@@ -44,7 +44,23 @@ describe("gina team registry", () => {
       },
     });
     assert.equal(result.queued, true);
+    assert.equal(result.executed, false);
     assert.equal(result.actionId, "action_1");
+    assert.match(result.reply || "", /queued/i);
     assert.match(result.reply || "", /Ashton/);
+  });
+
+  it("executeNow replaces queue ack with working Ashton reply", async () => {
+    const result = await commandAgent({
+      targetAgent: "ashton",
+      task: 'Draft follow-up to "Ava Chen"',
+      requestedBy: "Kimberley",
+      actionId: "action_exec_1",
+      executeNow: true,
+    });
+    assert.equal(result.executed, true);
+    assert.match(result.reply || "", /outreach update/i);
+    assert.match(result.reply || "", /Ava Chen/);
+    assert.match(result.reply || "", /Handoff/i);
   });
 });

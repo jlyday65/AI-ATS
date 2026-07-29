@@ -183,7 +183,69 @@ export function createKimberleyNotes(deps = {}) {
     return memory.find((r) => String(r.id) === String(id)) || null;
   }
 
-  return { insertNote, listNotes, markStatus };
+  /**
+   * Replace an ack note for the same ats_actions id, or insert if none.
+   * Keeps Kimberley's Notes to one working update per Check-for-actions run.
+   */
+  async function upsertByActionId(actionId, input = {}) {
+    const key = String(actionId || "").trim();
+    if (!key) return insertNote(input);
+
+    if (pool) {
+      try {
+        const existing = await pool.query(
+          `SELECT id FROM kimberley_notes WHERE action_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [key],
+        );
+        if (existing.rows[0]) {
+          const { rows } = await pool.query(
+            `UPDATE kimberley_notes
+               SET from_agent = $2, agent_role = $3, task = $4, reply = $5,
+                   requested_by = $6, status = 'unread', include_in_briefing = $7
+             WHERE id = $1
+             RETURNING id, from_agent, agent_role, task, reply, action_id, requested_by, status,
+                       include_in_briefing, created_at`,
+            [
+              existing.rows[0].id,
+              input.fromAgent || input.agent || "gina",
+              input.agentRole || input.role || "",
+              String(input.task || "").trim(),
+              String(input.reply || "").trim(),
+              input.requestedBy || "Kimberley",
+              input.includeInBriefing !== false,
+            ],
+          );
+          if (rows[0]) return normalizeRow(rows[0]);
+        }
+      } catch {
+        // fall through to file store
+      }
+    }
+
+    const idx = memory.findIndex((r) => String(r.actionId) === key);
+    if (idx >= 0) {
+      const updated = normalizeRow({
+        ...memory[idx],
+        fromAgent: input.fromAgent || input.agent || memory[idx].fromAgent,
+        agentRole: input.agentRole || input.role || memory[idx].agentRole,
+        task: String(input.task || "").trim() || memory[idx].task,
+        reply: String(input.reply || "").trim() || memory[idx].reply,
+        actionId: key,
+        requestedBy: input.requestedBy || memory[idx].requestedBy || "Kimberley",
+        status: "unread",
+        includeInBriefing: input.includeInBriefing !== false,
+        createdAt: memory[idx].createdAt,
+      });
+      memory = [...memory];
+      memory[idx] = updated;
+      saveFile(memory);
+      return updated;
+    }
+
+    return insertNote({ ...input, actionId: key });
+  }
+
+  return { insertNote, listNotes, markStatus, upsertByActionId };
 }
 
 /** Default singleton (file-backed). Gina can re-bind with pool. */

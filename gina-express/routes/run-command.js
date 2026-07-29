@@ -105,14 +105,26 @@ function normalizeSourcePayload(payload = {}, body = {}) {
   };
 }
 
-async function fileMariaNote({ task, roleTitle, result, actionId, requestedBy }) {
+async function fileMariaNote({ task, roleTitle, result, actionId, requestedBy, error }) {
   const agent = resolveAgent("maria");
   const reply = buildBotReply({
     agentId: "maria",
     task: task || `Source ${roleTitle}`,
     result,
+    error,
   });
   try {
+    if (actionId && typeof kimberleyNotes.upsertByActionId === "function") {
+      return await kimberleyNotes.upsertByActionId(actionId, {
+        fromAgent: agent?.displayName || "Maria",
+        agentRole: agent?.role || "Sourcer",
+        task: task || `Source ${roleTitle}`,
+        reply,
+        actionId,
+        requestedBy: requestedBy || "Kimberley",
+        includeInBriefing: true,
+      });
+    }
     return await kimberleyNotes.insertNote({
       fromAgent: agent?.displayName || "Maria",
       agentRole: agent?.role || "Sourcer",
@@ -149,23 +161,39 @@ router.post("/run-command", async (req, res) => {
           },
         });
       }
-      const result = await mariaSourceViaSignalHire(payload);
-      const sourcedTitle =
-        result?.job?.title || result?.result?.job?.title || payload.roleTitle;
-      const note = await fileMariaNote({
-        task: payload.task,
-        roleTitle: sourcedTitle,
-        result,
-        actionId,
-        requestedBy: payload.requestedBy,
-      });
-      return res.json({
-        ok: true,
-        summary: `Maria sourced via SignalHire for ${sourcedTitle} — filed in Kimberley's Notes`,
-        kimberleyNoteId: note?.id || null,
-        reply: note?.reply || null,
-        result,
-      });
+      try {
+        const result = await mariaSourceViaSignalHire(payload);
+        const sourcedTitle =
+          result?.job?.title || result?.result?.job?.title || payload.roleTitle;
+        const note = await fileMariaNote({
+          task: payload.task,
+          roleTitle: sourcedTitle,
+          result,
+          actionId,
+          requestedBy: payload.requestedBy,
+        });
+        return res.json({
+          ok: true,
+          summary: `Maria sourced via SignalHire for ${sourcedTitle} — filed in Kimberley's Notes`,
+          kimberleyNoteId: note?.id || null,
+          reply: note?.reply || null,
+          result,
+        });
+      } catch (err) {
+        const note = await fileMariaNote({
+          task: payload.task,
+          roleTitle: payload.roleTitle,
+          actionId,
+          requestedBy: payload.requestedBy,
+          error: String(err?.message || err),
+        });
+        return res.status(500).json({
+          ok: false,
+          error: String(err?.message || err),
+          kimberleyNoteId: note?.id || null,
+          reply: note?.reply || null,
+        });
+      }
     }
 
     if (type === "command_agent") {
@@ -175,13 +203,28 @@ router.post("/run-command", async (req, res) => {
         payload.AssignedTo ||
         payload.agent ||
         payload.to ||
-        "maria";
+        "";
+      if (!String(target).trim()) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            'command_agent requires targetAgent (maria | michelle | kelley | ashton). Refusing to default to Maria.',
+        });
+      }
       const task = payload.task || "";
+      if (!String(task).trim()) {
+        return res.status(400).json({
+          ok: false,
+          error: "command_agent requires task (what the bot should do).",
+        });
+      }
 
       const result = await commandAgent({
         targetAgent: target,
         task,
         requestedBy: payload.requestedBy || "Kimberley",
+        actionId,
+        executeNow: true,
         context: {
           ...(payload.context || {}),
           roleTitle: payload.roleTitle,
@@ -191,7 +234,7 @@ router.post("/run-command", async (req, res) => {
       });
 
       return res.json({
-        ok: true,
+        ok: result.ok !== false,
         summary:
           result.message ||
           `${result.agent} update filed in Kimberley's Note Panel`,

@@ -162,9 +162,13 @@ const agentsDir = path.join(ginaDir, "agents");
 fs.mkdirSync(agentsDir, { recursive: true });
 fs.mkdirSync(path.join(ginaDir, "routes"), { recursive: true });
 
+fs.mkdirSync(path.join(ginaDir, "lib"), { recursive: true });
 const files = [
   ["agents/registry.js", path.join(agentsDir, "registry.js")],
   ["agents/command-agent.tool.js", path.join(agentsDir, "command-agent.tool.js")],
+  ["agents/bot-replies.js", path.join(agentsDir, "bot-replies.js")],
+  ["lib/kimberley-notes.js", path.join(ginaDir, "lib", "kimberley-notes.js")],
+  ["routes/kimberley-notes.js", path.join(ginaDir, "routes", "kimberley-notes.js")],
   ["maria-source.tool.js", path.join(ginaDir, "maria-source.tool.js")],
   ["routes/run-command.js", path.join(ginaDir, "routes", "run-command.js")],
 ];
@@ -183,32 +187,45 @@ const serverPath = [
 
 if (serverPath) {
   let server = fs.readFileSync(serverPath, "utf8");
+  let changed = false;
+  const bakS = `${serverPath}.bak-cmd-${Date.now()}`;
   if (!/run-command/.test(server) && !/runCommandRouter/.test(server)) {
-    const mount = `
-import runCommandRouter from "./routes/run-command.js";
-app.use("/ats", runCommandRouter);
-`;
-    const bakS = `${serverPath}.bak-cmd-${Date.now()}`;
-    fs.copyFileSync(serverPath, bakS);
     if (/app\.use\(\s*["']\/ats["']/.test(server)) {
       server = server.replace(
         /app\.use\(\s*["']\/ats["'][^;]*;/,
         (m) => `${m}\napp.use("/ats", runCommandRouter);`,
       );
-      if (!/runCommandRouter/.test(server.split("app.use")[0])) {
-        server = `import runCommandRouter from "./routes/run-command.js";\n` + server;
-      }
     } else {
-      server = server + "\n" + mount + "\n";
+      server += `\napp.use("/ats", runCommandRouter);\n`;
     }
-    // Ensure import exists once
     if (!/^import runCommandRouter/m.test(server)) {
       server = `import runCommandRouter from "./routes/run-command.js";\n` + server;
     }
-    fs.writeFileSync(serverPath, server, "utf8");
-    console.log("Patched mount into", serverPath, "(backup", bakS + ")");
+    changed = true;
+    console.log("Mounted run-command router");
   } else {
     console.log("server already references run-command — left unchanged");
+  }
+  if (!/kimberley-notes|kimberleyNotesRouter/.test(server)) {
+    if (/app\.use\(\s*["']\/ats["']/.test(server)) {
+      server = server.replace(
+        /app\.use\(\s*["']\/ats["'][^;]*;/,
+        (m) => `${m}\napp.use("/ats", kimberleyNotesRouter);`,
+      );
+    } else {
+      server += `\napp.use("/ats", kimberleyNotesRouter);\n`;
+    }
+    if (!/^import kimberleyNotesRouter/m.test(server)) {
+      server =
+        `import kimberleyNotesRouter from "./routes/kimberley-notes.js";\n` + server;
+    }
+    changed = true;
+    console.log("Mounted kimberley-notes router");
+  }
+  if (changed) {
+    fs.copyFileSync(serverPath, bakS);
+    fs.writeFileSync(serverPath, server, "utf8");
+    console.log("Patched mount into", serverPath, "(backup", bakS + ")");
   }
 }
 

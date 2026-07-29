@@ -36,6 +36,46 @@ describe("bot replies for Kimberley Notes", () => {
       /Operations Manager/,
     );
   });
+
+  it("files queue acks separately from execute replies", () => {
+    const ack = buildBotReply({
+      agentId: "michelle",
+      task: "screen Warehouse Mechanic candidates",
+      phase: "queued",
+    });
+    assert.match(ack, /queued/i);
+    assert.match(ack, /Check for actions/i);
+    const done = buildBotReply({
+      agentId: "michelle",
+      task: 'screen "Ava Chen" for Warehouse Mechanic',
+    });
+    assert.match(done, /screening update/i);
+    assert.match(done, /Ava Chen/);
+    assert.match(done, /Handoff/i);
+  });
+});
+
+describe("kimberley notes upsert by action", () => {
+  it("replaces ack with execute reply for same actionId", async () => {
+    const notes = createKimberleyNotes();
+    const ack = await notes.insertNote({
+      fromAgent: "Kelley",
+      agentRole: "Pipeline ops",
+      task: "move Ava to Interview",
+      reply: "Kelley — queued",
+      actionId: "act_dup_1",
+    });
+    const done = await notes.upsertByActionId("act_dup_1", {
+      fromAgent: "Kelley",
+      agentRole: "Pipeline ops",
+      task: "move Ava to Interview",
+      reply: "Kelley — pipeline ops update",
+    });
+    assert.equal(done.id, ack.id);
+    assert.match(done.reply, /pipeline ops update/);
+    const listed = await notes.listNotes({ agent: "Kelley", limit: 20 });
+    assert.equal(listed.filter((n) => n.actionId === "act_dup_1").length, 1);
+  });
 });
 
 describe("Pipeline Stage Counts formatter", () => {

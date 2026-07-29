@@ -120,11 +120,49 @@ const mariaSrc = await readOrFetch(
   "maria-source.tool.js",
 );
 
+const botRepliesSrc = await readOrFetch(
+  [
+    path.join(__dirname, "..", "agents", "bot-replies.js"),
+    "/tmp/gina-agents/bot-replies.js",
+  ],
+  "agents/bot-replies.js",
+);
+
+const notesLibSrc = await readOrFetch(
+  [
+    path.join(__dirname, "..", "lib", "kimberley-notes.js"),
+    "/tmp/gina-lib/kimberley-notes.js",
+  ],
+  "lib/kimberley-notes.js",
+);
+
+const notesRouteSrc = await readOrFetch(
+  [
+    path.join(__dirname, "..", "routes", "kimberley-notes.js"),
+    "/tmp/gina-routes/kimberley-notes.js",
+  ],
+  "routes/kimberley-notes.js",
+);
+
+const runCommandSrc = await readOrFetch(
+  [
+    path.join(__dirname, "..", "routes", "run-command.js"),
+    "/tmp/gina-routes/run-command.js",
+  ],
+  "routes/run-command.js",
+);
+
+fs.mkdirSync(path.join(ginaDir, "lib"), { recursive: true });
+fs.mkdirSync(path.join(ginaDir, "routes"), { recursive: true });
 fs.writeFileSync(path.join(agentsDir, "registry.js"), registrySrc, "utf8");
 fs.writeFileSync(path.join(agentsDir, "command-agent.tool.js"), commandSrc, "utf8");
+fs.writeFileSync(path.join(agentsDir, "bot-replies.js"), botRepliesSrc, "utf8");
+fs.writeFileSync(path.join(ginaDir, "lib", "kimberley-notes.js"), notesLibSrc, "utf8");
+fs.writeFileSync(path.join(ginaDir, "routes", "kimberley-notes.js"), notesRouteSrc, "utf8");
+fs.writeFileSync(path.join(ginaDir, "routes", "run-command.js"), runCommandSrc, "utf8");
 fs.writeFileSync(path.join(ginaDir, "maria-source.tool.js"), mariaSrc, "utf8");
 fs.writeFileSync(path.join(ginaDir, "GINA_TEAM_PROMPT_RULE.txt"), promptText, "utf8");
-console.log(`Wrote agents + tools under ${ginaDir}`);
+console.log(`Wrote agents + notes + run-command under ${ginaDir}`);
 
 const IMPORT_LINE =
   'import { commandAgentTool, commandAgent } from "./agents/command-agent.tool.js";\n';

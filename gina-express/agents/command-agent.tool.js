@@ -1,12 +1,14 @@
 /**
  * Gina orchestrator tool: command Maria / Michelle / Kelley / Ashton.
  *
- * Drop into Gina next to routes/maria.js (or lib/agents/).
- * Wire `commandAgentTool` into Gina's main chat tool list so when Kimberley says
- * "ask Maria to…" / "have Michelle…" / "tell Kelley…" / "get Ashton to…",
- * Gina queues a real command instead of refusing.
+ * Communication flow:
+ *   Kimberley → Gina (/chat) → queue command_agent
+ *   → Agent → Check for actions → POST /ats/run-command (executeNow)
+ *   → Maria (SignalHire) or Michelle/Kelley/Ashton structured reply
+ *   → Kimberley's Notes (+ morning Pipeline Stage Counts briefing)
  *
- * Replies are always written to Kimberley's Note Panel (and briefing roll-up).
+ * Queue path only queues (+ short ack note). Execute path does the work.
+ * That prevents Maria/SignalHire from running twice.
  */
 
 import { listCommandableAgents, resolveAgent } from "./registry.js";
@@ -48,11 +50,23 @@ async function persistKimberleyNote({
   reply,
   actionId,
   requestedBy,
+  replaceActionId = false,
 }) {
   const mod = await loadKimberleyNotes();
   const notes = mod?.kimberleyNotes || mod?.default;
   if (!notes?.insertNote) return null;
   try {
+    if (replaceActionId && actionId && typeof notes.upsertByActionId === "function") {
+      return await notes.upsertByActionId(actionId, {
+        fromAgent: agent.displayName,
+        agentRole: agent.role,
+        task,
+        reply,
+        actionId,
+        requestedBy: requestedBy || "Kimberley",
+        includeInBriefing: true,
+      });
+    }
     return await notes.insertNote({
       fromAgent: agent.displayName,
       agentRole: agent.role,
@@ -67,8 +81,69 @@ async function persistKimberleyNote({
   }
 }
 
+async function executeAgentWork({ agent, task, requestedBy, context, actionId }) {
+  let mariaResult = null;
+  let error = null;
+  let reply;
+
+  if (agent.id === "maria" && looksLikeSourceTask(task)) {
+    try {
+      mariaResult = await runMariaFromTask(task, context || {});
+      reply = buildBotReply({
+        agentId: "maria",
+        task,
+        result: mariaResult,
+      });
+    } catch (err) {
+      error = String(err?.message || err);
+      reply = buildBotReply({
+        agentId: "maria",
+        task,
+        error,
+      });
+    }
+  } else {
+    reply = buildBotReply({ agentId: agent.id, task, result: context || {} });
+  }
+
+  const note = await persistKimberleyNote({
+    agent,
+    task,
+    reply,
+    actionId,
+    requestedBy,
+    replaceActionId: Boolean(actionId),
+  });
+
+  return {
+    ok: !error,
+    queued: false,
+    executed: true,
+    agent: agent.displayName,
+    role: agent.role,
+    route: agent.route,
+    task,
+    requestedBy,
+    capabilities: agent.capabilities,
+    mariaResult,
+    error,
+    reply,
+    kimberleyNoteId: note?.id || null,
+    message: error
+      ? `${agent.displayName} hit an error — filed in Kimberley's Note Panel.`
+      : `${agent.displayName} responded. Filed in Kimberley's Note Panel${note?.id ? ` (#${note.id})` : ""}.`,
+    nextStep:
+      agent.id === "maria"
+        ? "In Gina ATS → Agent → Check for actions to import the shortlist (if still queued). Read Kimberley's Notes for Maria's status. Then ask Michelle to screen."
+        : "Open Kimberley's Notes. This update is included in Gina's Pipeline Stage Counts morning briefing.",
+  };
+}
+
 /**
  * Queue or run a command for a team bot.
+ *
+ * - With queueAction and without executeNow: queue only + ack note (no Maria run).
+ * - With executeNow / no queueAction: execute work + result note.
  */
 export async function commandAgent(input = {}) {
   const agent = resolveAgent(input.targetAgent || input.agent || input.to);
@@ -85,6 +160,7 @@ export async function commandAgent(input = {}) {
   if (!task) throw new Error("task is required (what should the agent do?)");
 
   const requestedBy = String(input.requestedBy || input.from || "Kimberley").trim();
+  const context = input.context || {};
   const payload = {
     targetAgent: agent.id,
     targetDisplayName: agent.displayName,
@@ -92,21 +168,20 @@ export async function commandAgent(input = {}) {
     route: agent.route,
     requestedBy,
     task,
-    context: input.context || {},
+    context,
     queuedAt: new Date().toISOString(),
   };
 
-  // Prefer explicit queue into ats_actions when Gina provides queueAction.
-  if (typeof input.queueAction === "function") {
+  const executeNow = input.executeNow === true || input.execute === true;
+
+  // Queue-only path: do not run Maria / do not file a full working reply yet.
+  if (typeof input.queueAction === "function" && !executeNow) {
     const id = await input.queueAction("command_agent", payload);
-    let mariaResult = null;
-    let reply;
-    if (agent.id === "maria" && looksLikeSourceTask(task)) {
-      mariaResult = await runMariaFromTask(task, input.context || {});
-      reply = buildBotReply({ agentId: "maria", task, result: mariaResult });
-    } else {
-      reply = buildBotReply({ agentId: agent.id, task });
-    }
+    const reply = buildBotReply({
+      agentId: agent.id,
+      task,
+      phase: "queued",
+    });
     const note = await persistKimberleyNote({
       agent,
       task,
@@ -117,72 +192,28 @@ export async function commandAgent(input = {}) {
     return {
       ok: true,
       queued: true,
+      executed: false,
       actionId: id,
       agent: agent.displayName,
       role: agent.role,
       task,
       requestedBy,
-      mariaResult,
       reply,
       kimberleyNoteId: note?.id || null,
-      message: `Queued for ${agent.displayName}. Reply filed in Kimberley's Note Panel${note?.id ? ` (#${note.id})` : ""}.`,
+      message: `Queued for ${agent.displayName}. Ack filed in Kimberley's Notes — run Check for actions to execute.`,
       nextStep:
-        "Open Kimberley's Notes (or Agent → Check for actions). Replies also roll into Gina's morning Pipeline Stage Counts briefing.",
+        "Open Agent → Check for actions. That executes the bot work and replaces the ack with a working update in Kimberley's Notes.",
+      payload,
     };
   }
 
-  // No queue helper — execute what we can now.
-  if (agent.id === "maria" && looksLikeSourceTask(task)) {
-    const mariaResult = await runMariaFromTask(task, input.context || {});
-    const reply = buildBotReply({ agentId: "maria", task, result: mariaResult });
-    const note = await persistKimberleyNote({
-      agent,
-      task,
-      reply,
-      requestedBy,
-    });
-    return {
-      ok: true,
-      queued: false,
-      executed: true,
-      agent: agent.displayName,
-      role: agent.role,
-      task,
-      requestedBy,
-      mariaResult,
-      reply,
-      kimberleyNoteId: note?.id || null,
-      message: `Maria sourced via SignalHire. Update filed in Kimberley's Note Panel.`,
-      nextStep:
-        "In Gina ATS → Agent → Check for actions to import the shortlist. Read Kimberley's Notes for Maria's status.",
-    };
-  }
-
-  const reply = buildBotReply({ agentId: agent.id, task });
-  const note = await persistKimberleyNote({
+  return executeAgentWork({
     agent,
     task,
-    reply,
     requestedBy,
+    context,
+    actionId: input.actionId || null,
   });
-
-  return {
-    ok: true,
-    queued: false,
-    executed: true,
-    agent: agent.displayName,
-    role: agent.role,
-    route: agent.route,
-    task,
-    requestedBy,
-    capabilities: agent.capabilities,
-    reply,
-    kimberleyNoteId: note?.id || null,
-    message: `${agent.displayName} responded. Filed in Kimberley's Note Panel${note?.id ? ` (#${note.id})` : ""}.`,
-    nextStep:
-      "Open Kimberley's Notes. This update is included in Gina's Pipeline Stage Counts morning briefing.",
-    payload,
-  };
 }
 
 async function runMariaFromTask(task, context = {}) {
@@ -227,13 +258,16 @@ export async function runQueuedCommandAgent(action) {
     task: payload.task,
     requestedBy: payload.requestedBy,
     context: payload.context,
+    actionId: action?.id || payload.actionId || null,
+    executeNow: true,
+    queueAction: undefined,
   });
 }
 
 export const commandAgentTool = {
   name: "command_agent",
   description:
-    "REQUIRED when Kimberley (or any user) asks Gina to tell/ask/have/command Maria, Michelle, Kelley, or Ashton to do something. Routes the task to that bot, files the reply in Kimberley's Note Panel, and includes it in the morning pipeline briefing. For Maria sourcing tasks, triggers SignalHire sourcing. Never say you cannot command team bots.",
+    "REQUIRED when Kimberley (or any user) asks Gina to tell/ask/have/command Maria, Michelle, Kelley, or Ashton to do something. Queues the task for that bot; Check for actions executes it and files the reply in Kimberley's Note Panel (also rolls into the morning pipeline briefing). For Maria sourcing tasks, Check for actions triggers SignalHire. Never say you cannot command team bots.",
   parameters: {
     type: "object",
     required: ["targetAgent", "task"],

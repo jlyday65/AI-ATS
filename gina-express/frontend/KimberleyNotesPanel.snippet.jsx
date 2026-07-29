@@ -75,8 +75,9 @@ function KimberleyNotesPanel() {
         </button>
       </div>
       <p style={{ margin: "0 0 14px", color: "#918D80", fontSize: 13, lineHeight: 1.5 }}>
-        Status updates from Maria, Michelle, Kelley, and Ashton. These also roll into Gina's morning{" "}
-        <strong>Pipeline Stage Counts</strong> briefing. Click <strong>Refresh</strong> to load.
+        Team handoffs: Kimberley asks Gina → Check for actions runs Maria / Michelle / Kelley / Ashton →
+        replies land here and in the morning <strong>Pipeline Stage Counts</strong> briefing. Click{" "}
+        <strong>Refresh</strong> after each Check for actions.
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
         {agents.map(function (a) {

@@ -145,18 +145,18 @@ if (!/id:\s*["']kimberley["']/.test(src)) {
   if (/label:\s*["']Agent["']/.test(src)) {
     src = src.replace(
       /(\{\s*id:\s*["']agent["']\s*,\s*label:\s*["']Agent["']\s*\})/,
-      '$1,\n  { id: "kimberley", label: "Kimberley Notes" }',
+      '$1,\n  { id: "kimberley", label: "Kimberley\\\'s Notes" }',
     );
     // fallback if id:agent pattern differs
     if (!/id:\s*["']kimberley["']/.test(src)) {
       src = src.replace(
         /(label:\s*["']Agent["']\s*\})/,
-        '$1,\n  { id: "kimberley", label: "Kimberley Notes" }',
+        '$1,\n  { id: "kimberley", label: "Kimberley\\\'s Notes" }',
       );
     }
-    console.log("Added Kimberley Notes nav item");
+    console.log("Added Kimberley's Notes nav item");
   } else {
-    console.warn('Could not find Agent nav label — add { id: "kimberley", label: "Kimberley Notes" } manually');
+    console.warn('Could not find Agent nav label — add { id: "kimberley", label: "Kimberley\'s Notes" } manually');
   }
 }
 
