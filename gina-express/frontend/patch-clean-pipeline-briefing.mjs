@@ -156,9 +156,12 @@ if (fs.existsSync(ginaPath)) {
   }
 
   if (/get_pipeline_summary/.test(gina)) {
+    // Use single-quoted description — never nest " inside "
+    const cleanDesc =
+      "Return a clean plain-text pipeline briefing. Lead with Pipeline Stage Counts (New, Screening, Interview, Offer, Hired, Rejected as Label: N). No markdown tables, no emojis. Always include Team updates (Kimberley Notes) from /ats/kimberley-notes/briefing or /ats/pipeline-briefing.";
     const next = gina.replace(
-      /(name:\s*["']get_pipeline_summary["'][\s\S]{0,500}description:\s*["'])([^"']*)(["'])/,
-      `$1Return a clean plain-text pipeline briefing. Lead with "Pipeline Stage Counts" (New, Screening, Interview, Offer, Hired, Rejected as Label: N). No markdown tables, no emojis. Always include "Team updates (Kimberley Notes)" from /ats/kimberley-notes/briefing or /ats/pipeline-briefing.$3`,
+      /(name:\s*["']get_pipeline_summary["'][\s\S]{0,800}?description:\s*)(["'`])([\s\S]*?)\2/,
+      `$1'${cleanDesc.replace(/'/g, "\\'")}'`,
     );
     if (next !== gina) {
       gina = next;
