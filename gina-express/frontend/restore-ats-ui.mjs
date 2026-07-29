@@ -78,7 +78,11 @@ function removeNamedBlocks(src, names) {
 function diagnose(src) {
   return {
     size: src.length,
-    hasApp: /function\s+App\b|export\s+default\s+function\s+App\b/.test(src),
+    hasApp:
+      /function\s+App\b/.test(src) ||
+      /export\s+default\s+function\s+App\b/.test(src) ||
+      /const\s+App\s*=/.test(src) ||
+      /export\s+default\s+App\b/.test(src),
     kimberleyGate: /KimberleyNotesGate/.test(src),
     kimberleyPanel: /KimberleyNotesPanel/.test(src),
     extendsComponent: /extends\s+Component\b/.test(src),
