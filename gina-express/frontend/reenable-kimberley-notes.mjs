@@ -39,7 +39,7 @@ if (/\\`/.test(PANEL)) {
 }
 
 const GATE = `
-class KimberleyNotesGate extends Component {
+class KimberleyNotesGate extends React.Component {
   constructor(props) {
     super(props);
     this.state = { err: null };
@@ -47,11 +47,16 @@ class KimberleyNotesGate extends Component {
   static getDerivedStateFromError(error) {
     return { err: String((error && error.message) || error || "Unknown error") };
   }
+  componentDidCatch(error) {
+    try {
+      console.error("KimberleyNotesGate", error);
+    } catch (_) {}
+  }
   render() {
     if (this.state.err) {
       return (
         <div style={{ padding: 16, color: "#9B2C2C", fontSize: 13 }}>
-          Kimberley's Notes hit an error and was isolated so the rest of the ATS stays up:{" "}
+          Kimberley Notes hit an error and was isolated so the rest of the ATS stays up:{" "}
           {this.state.err}
         </div>
       );
@@ -65,21 +70,21 @@ let src = fs.readFileSync(target, "utf8");
 const bak = `${target}.bak-reenable-${Date.now()}`;
 fs.copyFileSync(target, bak);
 
-// 1) Ensure Component is imported from react
-if (/from\s*["']react["']/.test(src)) {
-  if (!/\bComponent\b/.test(src.match(/import\s*\{[^}]*\}\s*from\s*["']react["']/)?.[0] || "")) {
+// Prefer React.Component (no named Component import required).
+// A missing `Component` identifier crashes the WHOLE App.jsx module → white screen.
+if (!/\bReact\b/.test(src.match(/import\s+[^;]*from\s*["']react["']/)?.[0] || "") &&
+    !/^import\s+React\b/m.test(src)) {
+  // Ensure default React import exists
+  if (/import\s*\{([^}]*)\}\s*from\s*["']react["']/.test(src)) {
     src = src.replace(
       /import\s*\{([^}]*)\}\s*from\s*["']react["']/,
-      (full, inner) => {
-        if (/\bComponent\b/.test(inner)) return full;
-        return `import { ${inner.replace(/\s+$/, "")}, Component } from "react"`;
-      },
+      'import React, { $1 } from "react"',
     );
-    console.log("Added Component to react import");
+    console.log("Added React default import");
+  } else {
+    console.error("Could not find react import — add: import React from \"react\"");
+    process.exit(2);
   }
-} else {
-  console.error("Could not find react import — add Component manually");
-  process.exit(2);
 }
 
 // 2) Strip emergency leftovers / old kimberley renders
@@ -90,7 +95,7 @@ src = src.replace(/\n[ \t]*\{view === "kimberley" && <KimberleyNotes(?:Panel|Gat
 // 3) Replace existing KimberleyNotesPanel (+ optional gate) with clean panel + gate
 function replaceFunction(name, replacement) {
   const re = new RegExp(`function\\s+${name}\\s*\\(`);
-  const classRe = new RegExp(`class\\s+${name}\\s+extends\\s+Component`);
+  const classRe = new RegExp(`class\\s+${name}\\s+extends\\s+[\\w.]+`);
   let start = src.search(re);
   let isClass = false;
   if (start < 0) {

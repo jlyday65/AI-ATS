@@ -130,11 +130,18 @@ if (!appPath) {
   process.exit(2);
 }
 
-const reenable = path.join(__dirname, "reenable-kimberley-notes.mjs");
-const r = spawnSync(process.execPath, [reenable, appPath], {
-  stdio: "inherit",
-});
-if (r.status !== 0) process.exit(r.status || 2);
+const enableUi = process.argv.includes("--enable-ui");
+if (enableUi) {
+  const reenable = path.join(__dirname, "reenable-kimberley-notes.mjs");
+  const r = spawnSync(process.execPath, [reenable, appPath], {
+    stdio: "inherit",
+  });
+  if (r.status !== 0) process.exit(r.status || 2);
+} else {
+  console.log(
+    "Skipping Notes UI re-enable (pass --enable-ui only after ATS is confirmed up).",
+  );
+}
 
 // Keep applyAgentAction capable of team commands (remove-all + one clean copy)
 const applyPatch = path.join(__dirname, "patch-apply-command-actions.mjs");
@@ -168,28 +175,31 @@ if (botCount !== 1) {
   if (d.status !== 0) process.exit(d.status || 2);
 }
 
+// Re-enable Notes UI separately after ATS is confirmed up:
+//   node gina-express/frontend/reenable-kimberley-notes.mjs <App.jsx>
+// (Uses React.Component so a missing Component import cannot white-screen the app.)
+
 console.log(`
-=== Bring-back complete ===
+=== Bring-back complete (backend synced; Notes UI left alone if already set) ===
+
+If the ATS is white-screening, disable Notes UI first:
+  node gina-express/frontend/emergency-disable-kimberley-notes.mjs ${appPath}
 
 1) Build frontend:
    cd ${path.join(ginaDir, "frontend")} && npm run build
 
-2) Commit Gina (paths may be under parent git root):
+2) Commit Gina:
    cd ${ginaDir}
    git add agents lib routes maria-source.tool.js briefing GINA_TEAM_PROMPT_RULE.txt frontend/src/App.jsx server.js
    git status
-   git commit -m "Restore team comms: Kimberley Notes + queue/execute handoffs"
+   git commit -m "Restore team comms backend; Notes UI emergency-safe"
    git push origin main
 
-3) Railway → Redeploy Gina. Confirm RELAY_SECRET + SIGNALHIRE_BASE_URL.
+3) Railway → Redeploy. Confirm ATS loads (board / Agent).
 
-4) Soundness check (new chat):
-   Ask Gina:
-     - Ask Maria to source a Warehouse Mechanic in Atlanta; resumes required
-     - Have Michelle screen the Warehouse Mechanic candidates
-     - Tell Kelley to move Ava Chen to Screening
-     - Get Ashton to draft a follow-up to Ava Chen
-   Then: Agent → Check for actions
-   Then: Kimberley Notes → Refresh
-   Expect one working update per bot (acks replaced), Maria via SignalHire, others with Handoff lines.
+4) Only after ATS is up, re-enable Notes:
+   cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+   node gina-express/frontend/reenable-kimberley-notes.mjs ${appPath}
+   cd ${path.join(ginaDir, "frontend")} && npm run build
+   cd ${ginaDir} && git add frontend/src/App.jsx && git commit -m "Re-enable Kimberley Notes via React.Component gate" && git push origin main
 `);
