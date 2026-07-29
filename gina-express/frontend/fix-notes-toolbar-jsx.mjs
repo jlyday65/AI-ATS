@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 /**
- * Repair App.jsx when Notes toolbar insert left:
- *   <Plus /> Add candidate
- *   <<a data-kimberley-notes-link ...>Kimberley Notes</a>
- * (missing </button>)
+ * Repair App.jsx when Notes toolbar insert left "<<a" after Add candidate.
  *
  * Usage:
  *   node gina-express/frontend/fix-notes-toolbar-jsx.mjs \
@@ -49,46 +46,47 @@ const BTN = `<a
           Kimberley Notes
         </a>`;
 
-// Remove ALL Notes links first
+// 1) Normalize <<a → <a so the link can be matched
+src = src.replace(/<<+/g, "<");
+
+// 2) Strip any Notes links (broken or clean)
 src = src.replace(
   /\s*<a\b[^>]*data-kimberley-notes-link=["']1["'][^>]*>[\s\S]*?<\/a>/gi,
   "",
 );
-// Fix doubled angle brackets left behind
-src = src.replace(/<<+/g, "<");
 
-// Restore Add candidate button close
-src = src.replace(
-  /(<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate)\s*(?:\/button>)?/i,
-  "$1</button>",
-);
-
-// If still not closed (Add candidate not followed by </button>)
+// 3) Close Add candidate button if missing </button>
 src = src.replace(
   /(<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate)(?!\s*<\/button>)/i,
   "$1</button>",
 );
 
+// 4) Insert Notes AFTER </button>
 if (!/data-kimberley-notes-link=/.test(src)) {
   const re =
     /(<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate\s*<\/button>)/i;
   if (!re.test(src)) {
-    console.error("Could not normalize Add candidate button");
+    console.error("Could not find repaired Add candidate </button>");
     console.error("Backup:", bak);
     process.exit(2);
   }
   src = src.replace(re, `$1\n              ${BTN}`);
-  console.log("Repaired Add candidate button and inserted Notes link after it");
-} else {
-  console.log("Notes link already present after cleanup");
+  console.log("Repaired Add candidate and inserted Kimberley Notes after it");
 }
 
-if (/<<a\b/.test(src) || /Add candidate\s*\n\s*<a\b/i.test(src)) {
-  console.error("REFUSING: Add candidate button still looks broken");
+if (/<<a\b/.test(src)) {
+  console.error("REFUSING: <<a still present");
   process.exit(2);
 }
 if ((src.match(/data-kimberley-notes-link=/g) || []).length !== 1) {
-  console.error("REFUSING: expected 1 Notes link");
+  console.error(
+    "REFUSING: expected 1 Notes link, found",
+    (src.match(/data-kimberley-notes-link=/g) || []).length,
+  );
+  process.exit(2);
+}
+if (!/Add candidate\s*<\/button>/i.test(src)) {
+  console.error("REFUSING: Add candidate button not properly closed");
   process.exit(2);
 }
 
