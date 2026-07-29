@@ -230,9 +230,9 @@ export function buildNotesLink({ classNameAttr = "", styleBody = "" } = {}) {
 export function stripExistingNotesToolbar(src) {
   let out = String(src);
 
-  // Unwrap broken/good groups → keep Add candidate button only
+  // Unwrap notes groups → keep Add candidate button only (do not swallow extra tags)
   out = out.replace(
-    /\s*<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>\s*([\s\S]*?)\s*<\/span>\s*(?:<\/button>)?/gi,
+    /\s*<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>\s*([\s\S]*?)\s*<\/span>/gi,
     (full, inner) => {
       const btn =
         inner.match(
@@ -247,25 +247,25 @@ export function stripExistingNotesToolbar(src) {
   out = out.replace(/(^|[^<])\/button>/gi, "$1</button>");
   out = out.replace(/<<+a\b/g, "<a");
 
-  // Notes jammed inside button → pull out then strip
+  // Notes jammed inside Add candidate button → close button, drop inner notes
   out = out.replace(
     /(Add candidate)\s*(<a\b[\s\S]*?<\/a>)\s*<\/button>/i,
     "$1</button>",
   );
 
+  // Remove Notes anchors only — never swallow a following </button>
   out = out.replace(
-    /\s*<a\b[^>]*data-kimberley-notes-link=["']1["'][^>]*>[\s\S]*?<\/a>\s*(?:<\/button>)?/gi,
+    /\s*<a\b[^>]*data-kimberley-notes-link=["']1["'][^>]*>[\s\S]*?<\/a>/gi,
     "",
   );
   out = out.replace(
-    /\s*<a\b[^>]*href=["']\/notes["'][^>]*>\s*Kimberley Notes\s*<\/a>\s*(?:<\/button>)?/gi,
+    /\s*<a\b[^>]*href=["']\/notes["'][^>]*>\s*Kimberley Notes\s*<\/a>/gi,
     "",
   );
 
-  out = out.replace(/<\/span>\s*<\/button>(\s*<\/div>)/gi, "</span>$1");
+  // Only collapse duplicate closes after Add candidate
   out = out.replace(/(Add candidate\s*<\/button>)\s*<\/button>/gi, "$1");
 
-  // If a leftover empty notes span remains, drop it
   out = out.replace(
     /\s*<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>\s*<\/span>/gi,
     "",
