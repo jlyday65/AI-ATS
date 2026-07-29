@@ -5,11 +5,37 @@ Gina creates a **Candidate File** for a client role. Maria fills it with candida
 ## Flow
 
 ```
-Gina  → Create file (job title, description, salary, client)
+Kimberley → Gina: "fill out the candidate file and send to Maria"
+         → create_candidate_file / /ats/candidate-files/from-instruction
+         → Candidate File shell + Kimberley Note + Maria queued
 Maria → Add candidates + resume text
-Michelle → Screening questions + per-candidate answers
-Client  → Review export packet (who to bring in / advance)
-Archive → Saved under .data/candidate-file-archives/
+Michelle → Screening questions + answers
+Client  → Review export packet
+Archive → .data/candidate-file-archives/
+```
+
+Manual entry: ATS toolbar **Candidate File** button → `/candidate-file`
+
+## Mac install (Gina command + page + toolbar)
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+
+# 1) API + page (if not already)
+node gina-express/frontend/patch-candidate-files.mjs ~/lyday-gina-backend/gina-backend
+
+# 2) Gina chat: fill Candidate File → Maria
+node gina-express/frontend/patch-gina-candidate-file-command.mjs ~/lyday-gina-backend/gina-backend
+
+# 3) ATS toolbar button (manual entry)
+node gina-express/frontend/patch-candidate-file-toolbar.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+
+cd ~/lyday-gina-backend
+git add gina-backend/agents gina-backend/lib gina-backend/routes gina-backend/GINA_TEAM_PROMPT_RULE.txt gina-backend/gina.js gina-backend/candidate-file-page.route.js gina-backend/frontend gina-backend/server.js
+git status
+git commit -m "Candidate File: Gina→Maria command + ATS toolbar button"
+git push origin main
 ```
 
 ## URLs (after patch + redeploy)

@@ -196,6 +196,31 @@ router.post("/run-command", async (req, res) => {
       }
     }
 
+    if (type === "create_candidate_file") {
+      const { createCandidateFileFromInstruction } = await import(
+        "../agents/candidate-file.tool.js"
+      );
+      const result = await createCandidateFileFromInstruction({
+        task: payload.task || payload.instruction || "",
+        requestedBy: payload.requestedBy || "Kimberley",
+        roleTitle: payload.roleTitle || payload.jobTitle,
+        jobDescription: payload.jobDescription || payload.description,
+        salary: payload.salary,
+        location: payload.location,
+        clientName: payload.clientName || payload.client,
+        sendToMaria: payload.sendToMaria,
+        context: payload.context || {},
+        queueAction: req.app?.locals?.queueAction,
+      });
+      return res.json({
+        ok: result.ok !== false,
+        summary: result.message,
+        kimberleyNoteId: result.kimberleyNoteId || null,
+        reply: result.reply || null,
+        result,
+      });
+    }
+
     if (type === "command_agent") {
       const target =
         payload.targetAgent ||

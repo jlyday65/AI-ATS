@@ -41,6 +41,30 @@ export function createCandidateFilesRouter(deps = {}) {
     }
   });
 
+  /**
+   * Gina / Kimberley natural-language create:
+   * POST /ats/candidate-files/from-instruction
+   * body: { task, roleTitle?, jobDescription?, salary?, location?, clientName?, sendToMaria? }
+   */
+  router.post("/candidate-files/from-instruction", async (req, res) => {
+    try {
+      const { createCandidateFileFromInstruction } = await import(
+        "../agents/candidate-file.tool.js"
+      );
+      const queueAction =
+        typeof req.app?.locals?.queueAction === "function"
+          ? req.app.locals.queueAction
+          : undefined;
+      const result = await createCandidateFileFromInstruction({
+        ...(req.body || {}),
+        queueAction,
+      });
+      res.status(201).json(result);
+    } catch (err) {
+      res.status(400).json({ ok: false, error: String(err?.message || err) });
+    }
+  });
+
   router.get("/candidate-files/:id", async (req, res) => {
     try {
       const file = await store.getFile(req.params.id);
