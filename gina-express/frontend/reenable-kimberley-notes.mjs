@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 /**
- * Safely re-enable Kimberley's Notes after emergency disable.
+ * Safely re-enable Kimberley's Notes after ATS is confirmed up.
  *
  * Guards:
- * - plain JSX snippet (no escaped backticks, no useEffect, no setState-during-render)
+ * - forces `import React` default (Gate uses React.Component — never bare Component)
+ * - plain JSX snippet (no useEffect, no escaped backticks)
  * - panel is a SIBLING of AgentPanel (never nested in its props)
- * - Error boundary wrapper so Notes failures can't white-screen the whole ATS
+ * - Error boundary so Notes render errors can't kill the board
+ * - refuses to write if post-checks fail
  *
- * Usage (one line):
- *   node gina-express/frontend/reenable-kimberley-notes.mjs /Users/jameslyday/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+ * Usage:
+ *   node gina-express/frontend/reenable-kimberley-notes.mjs \
+ *     /Users/jameslyday/lyday-gina-backend/gina-backend/frontend/src/App.jsx
  */
 
 import fs from "fs";
@@ -38,6 +41,7 @@ if (/\\`/.test(PANEL)) {
   process.exit(2);
 }
 
+// Keep Gate text free of curly apostrophes that complicate patches.
 const GATE = `
 class KimberleyNotesGate extends React.Component {
   constructor(props) {
@@ -70,11 +74,22 @@ let src = fs.readFileSync(target, "utf8");
 const bak = `${target}.bak-reenable-${Date.now()}`;
 fs.copyFileSync(target, bak);
 
-// Prefer React.Component (no named Component import required).
-// A missing `Component` identifier crashes the WHOLE App.jsx module → white screen.
-if (!/\bReact\b/.test(src.match(/import\s+[^;]*from\s*["']react["']/)?.[0] || "") &&
-    !/^import\s+React\b/m.test(src)) {
-  // Ensure default React import exists
+if (/async\s+function\s+await\s+applyAgentAction/.test(src)) {
+  console.error("Refusing: App.jsx has async function await applyAgentAction — run restore-ats-ui first");
+  process.exit(2);
+}
+if ((src.match(/const BOT_NAMES\s*=\s*new Set/g) || []).length > 1) {
+  console.error("Refusing: duplicate BOT_NAMES — run fix-duplicate-bot-names first");
+  process.exit(2);
+}
+
+// 1) Force default React import (required for React.Component)
+const reactImport = src.match(/import\s+([^;]+)\s+from\s*["']react["']/);
+if (!reactImport) {
+  console.error('Refusing: no react import found');
+  process.exit(2);
+}
+if (!/\bReact\b/.test(reactImport[1])) {
   if (/import\s*\{([^}]*)\}\s*from\s*["']react["']/.test(src)) {
     src = src.replace(
       /import\s*\{([^}]*)\}\s*from\s*["']react["']/,
@@ -82,90 +97,96 @@ if (!/\bReact\b/.test(src.match(/import\s+[^;]*from\s*["']react["']/)?.[0] || ""
     );
     console.log("Added React default import");
   } else {
-    console.error("Could not find react import — add: import React from \"react\"");
+    console.error("Could not add React default import automatically");
     process.exit(2);
   }
+} else {
+  console.log("React default import already present");
 }
 
-// 2) Strip emergency leftovers / old kimberley renders
+// 2) Strip old kimberley mounts / emergency leftovers
 src = src.replace(/\n[ \t]*\{\/\* EMERGENCY[\s\S]*?\*\/\}\s*\n/g, "\n");
 src = src.replace(/\n[ \t]*\{false && null \/\* EMERGENCY[\s\S]*?\*\/\}\s*\n/g, "\n");
-src = src.replace(/\n[ \t]*\{view === "kimberley" && <KimberleyNotes(?:Panel|Gate) \/>\}\s*\n/g, "\n");
+src = src.replace(/\n[ \t]*\{view === "kimberley" && <KimberleyNotes(?:Panel|Gate)\s*\/>\}\s*\n/g, "\n");
 
-// 3) Replace existing KimberleyNotesPanel (+ optional gate) with clean panel + gate
-function replaceFunction(name, replacement) {
-  const re = new RegExp(`function\\s+${name}\\s*\\(`);
-  const classRe = new RegExp(`class\\s+${name}\\s+extends\\s+[\\w.]+`);
-  let start = src.search(re);
-  let isClass = false;
-  if (start < 0) {
-    start = src.search(classRe);
-    isClass = start >= 0;
-  }
+function removeNamed(name) {
+  const reFn = new RegExp(`function\\s+${name}\\s*\\(`);
+  const reClass = new RegExp(`class\\s+${name}\\s+extends\\s+[\\w.]+`);
+  let start = src.search(reFn);
+  if (start < 0) start = src.search(reClass);
   if (start < 0) return false;
-  const after = src.slice(start + 1);
-  const endRel = after.search(
-    /\n\s*(?:function\s+|class\s+)(ResumeUploadPanel|CandidateTracker|AgentPanel|MariaView|App|GinaBriefingCard|KimberleyNotesPanel|KimberleyNotesGate)\b/,
-  );
-  if (endRel < 0) {
-    // brace match
-    const braceAt = src.indexOf("{", start);
-    let depth = 0;
-    let end = -1;
-    for (let i = braceAt; i < src.length; i += 1) {
-      if (src[i] === "{") depth += 1;
-      else if (src[i] === "}") {
-        depth -= 1;
-        if (depth === 0) {
-          end = i + 1;
-          break;
-        }
+  const braceAt = src.indexOf("{", start);
+  let depth = 0;
+  let end = -1;
+  for (let i = braceAt; i < src.length; i += 1) {
+    if (src[i] === "{") depth += 1;
+    else if (src[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = i + 1;
+        break;
       }
     }
-    if (end < 0) return false;
-    src = src.slice(0, start) + replacement + "\n" + src.slice(end);
-    return true;
   }
-  const end = start + 1 + endRel;
-  src = src.slice(0, start) + replacement + "\n" + src.slice(end);
+  if (end < 0) {
+    const after = src.slice(start + 1);
+    const endRel = after.search(
+      /\n\s*(?:function\s+|class\s+)(ResumeUploadPanel|CandidateTracker|AgentPanel|MariaView|App|GinaBriefingCard|KimberleyNotesPanel|KimberleyNotesGate)\b/,
+    );
+    if (endRel < 0) return false;
+    end = start + 1 + endRel;
+  }
+  src = src.slice(0, start) + src.slice(end);
   return true;
 }
 
-if (src.includes("function KimberleyNotesPanel") || src.includes("class KimberleyNotesGate")) {
-  replaceFunction("KimberleyNotesGate", "");
-  replaceFunction("KimberleyNotesPanel", PANEL + "\n" + GATE);
-  console.log("Replaced KimberleyNotesPanel (+ gate)");
-} else {
-  const anchor = src.search(/function\s+ResumeUploadPanel\s*\(/);
-  if (anchor < 0) {
-    console.error("No ResumeUploadPanel anchor");
-    process.exit(2);
-  }
-  src = src.slice(0, anchor) + PANEL + "\n" + GATE + "\n" + src.slice(anchor);
-  console.log("Inserted KimberleyNotesPanel + gate");
-}
+// 3) Remove any existing panel/gate, then insert clean copies once
+while (removeNamed("KimberleyNotesGate")) {}
+while (removeNamed("KimberleyNotesPanel")) {}
 
-// 4) Nav item next to Agent (only once)
+const anchors = [
+  /function\s+ResumeUploadPanel\s*\(/,
+  /function\s+CandidateTracker\s*\(/,
+  /function\s+AgentPanel\s*\(/,
+  /function\s+JobsView\s*\(/,
+  /export\s+default\s+function\s+App\s*\(/,
+  /function\s+App\s*\(/,
+];
+let insertAt = -1;
+for (const re of anchors) {
+  insertAt = src.search(re);
+  if (insertAt >= 0) break;
+}
+if (insertAt < 0) {
+  console.error("No insert anchor found for Notes panel");
+  process.exit(2);
+}
+src = src.slice(0, insertAt) + PANEL + "\n" + GATE + "\n" + src.slice(insertAt);
+console.log("Inserted KimberleyNotesPanel + KimberleyNotesGate");
+
+// 4) Nav — label without apostrophe (avoids quote escaping bugs)
 if (!/id:\s*["']kimberley["']/.test(src)) {
-  if (/label:\s*["']Agent["']/.test(src)) {
-    src = src.replace(
-      /(\{\s*id:\s*["']agent["']\s*,\s*label:\s*["']Agent["']\s*\})/,
-      '$1,\n  { id: "kimberley", label: "Kimberley\\\'s Notes" }',
-    );
-    // fallback if id:agent pattern differs
-    if (!/id:\s*["']kimberley["']/.test(src)) {
-      src = src.replace(
-        /(label:\s*["']Agent["']\s*\})/,
-        '$1,\n  { id: "kimberley", label: "Kimberley\\\'s Notes" }',
-      );
+  const patterns = [
+    /(\{\s*id:\s*["']agent["']\s*,\s*label:\s*["']Agent["']\s*\})/,
+    /(\{\s*id:\s*["']agent["']\s*,\s*label:\s*["'][^"']+["']\s*\})/,
+    /(label:\s*["']Agent["']\s*\})/,
+  ];
+  for (const re of patterns) {
+    if (re.test(src)) {
+      src = src.replace(re, '$1,\n  { id: "kimberley", label: "Kimberley Notes" }');
+      break;
     }
-    console.log("Added Kimberley's Notes nav item");
+  }
+  if (/id:\s*["']kimberley["']/.test(src)) {
+    console.log("Added Kimberley Notes nav item");
   } else {
-    console.warn('Could not find Agent nav label — add { id: "kimberley", label: "Kimberley\'s Notes" } manually');
+    console.warn(
+      'Could not add nav automatically — add { id: "kimberley", label: "Kimberley Notes" } next to Agent',
+    );
   }
 }
 
-// 5) Render gate after closed AgentPanel block
+// 5) Mount gate as sibling after AgentPanel (self-closing) or before Maria
 if (!/view === "kimberley" && <KimberleyNotesGate/.test(src)) {
   const agentClosed =
     /(\{\s*view\s*===\s*["']agent["']\s*&&\s*<AgentPanel\b[^>]*\/>\s*\})/;
@@ -187,7 +208,7 @@ if (!/view === "kimberley" && <KimberleyNotesGate/.test(src)) {
   }
 }
 
-// 6) Hard refusals — only fail if Kimberley appears INSIDE an AgentPanel tag
+// 6) Hard refusals
 const agentOpen = src.match(/<AgentPanel\b[\s\S]*?\/>/g) || [];
 for (const chunk of agentOpen) {
   if (/KimberleyNotes/.test(chunk)) {
@@ -195,18 +216,26 @@ for (const chunk of agentOpen) {
     process.exit(2);
   }
 }
-if (/EMERGENCY disabled:/.test(src) && /KimberleyNotesPanel/.test(src)) {
-  // leftover nested comment style from old emergency script
-  if (/\{\/\*[^*]*\/\*/.test(src)) {
-    console.error("REFUSING: nested emergency comments still present");
-    process.exit(2);
-  }
+if (/class\s+KimberleyNotesGate\s+extends\s+Component\b/.test(src)) {
+  console.error("REFUSING: Gate extends bare Component (must be React.Component)");
+  process.exit(2);
 }
-const panelBlock = src.match(
-  /function\s+KimberleyNotesPanel\([\s\S]*?\n(?=class\s+KimberleyNotesGate|function\s+)/,
-);
-if (panelBlock && /\buseEffect\s*\(/.test(panelBlock[0])) {
-  console.error("REFUSING: panel contains useEffect");
+if (!/class\s+KimberleyNotesGate\s+extends\s+React\.Component\b/.test(src)) {
+  console.error("REFUSING: Gate missing extends React.Component");
+  process.exit(2);
+}
+if (!/import\s+React\b|import\s+React,/.test(src)) {
+  console.error("REFUSING: React default import missing after patch");
+  process.exit(2);
+}
+const panelCount = (src.match(/function\s+KimberleyNotesPanel\s*\(/g) || []).length;
+const gateCount = (src.match(/class\s+KimberleyNotesGate\s+extends/g) || []).length;
+if (panelCount !== 1 || gateCount !== 1) {
+  console.error(`REFUSING: expected 1 panel + 1 gate, found ${panelCount}/${gateCount}`);
+  process.exit(2);
+}
+if (!/view === "kimberley" && <KimberleyNotesGate/.test(src)) {
+  console.error("REFUSING: kimberley view mount missing");
   process.exit(2);
 }
 
@@ -214,14 +243,17 @@ fs.writeFileSync(target, src, "utf8");
 console.log("Backup:", bak);
 console.log("Wrote:", target);
 console.log(`
-Next:
-  cd ~/lyday-gina-backend/gina-backend/frontend
-  npm run build
-  cd ~/lyday-gina-backend/gina-backend
-  git add frontend/src/App.jsx
-  git commit -m "Safely re-enable Kimberley Notes with error boundary"
-  git push origin main
+VERIFY ORDER (important):
+  1) cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+  2) If build fails → restore backup:
+       cp "${bak}" "${target}"
+  3) git add frontend/src/App.jsx
+     git commit -m "Re-enable Kimberley Notes via React.Component gate"
+     git push origin main
+  4) Railway Redeploy
+  5) Hard refresh — confirm BOARD still loads first
+  6) Open "Kimberley Notes" → Refresh
 
-Then Railway → Redeploy.
-In Gina ATS open the "Kimberley's Notes" nav item and click Refresh.
+If white screen returns:
+  node gina-express/frontend/restore-ats-ui.mjs ${target}
 `);

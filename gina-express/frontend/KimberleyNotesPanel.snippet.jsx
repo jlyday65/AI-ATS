@@ -58,10 +58,9 @@ function KimberleyNotesPanel() {
             margin: 0,
             fontSize: 18,
             fontWeight: 600,
-            fontFamily: "'Space Grotesk', sans-serif",
           }}
         >
-          Kimberley's Notes
+          Kimberley Notes
         </h2>
         <button
           type="button"
