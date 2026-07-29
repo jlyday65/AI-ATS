@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 /**
- * Mount Candidate Files API + standalone page on Gina backend.
+ * Mount Candidate Files on Gina server.js ONLY (never gina.js).
+ * Mirrors Kimberley Notes embed patch (ESM).
  *
  * ONE LINE:
  *   node gina-express/frontend/patch-candidate-files.mjs ~/lyday-gina-backend/gina-backend
+ *
+ * If site is 502, run rollback first:
+ *   node gina-express/frontend/rollback-candidate-files.mjs ~/lyday-gina-backend/gina-backend
  */
 
 import fs from "fs";
@@ -11,15 +15,35 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const raw = String(process.argv[2] || "")
+const rootArg = String(process.argv[2] || "")
   .trim()
   .replace(/^~/, process.env.HOME || "");
-const ginaDir = path.resolve(raw);
-if (!ginaDir || !fs.existsSync(ginaDir)) {
+const root = path.resolve(rootArg);
+const ginaDir = fs.existsSync(path.join(root, "server.js"))
+  ? root
+  : fs.existsSync(path.join(root, "gina-backend", "server.js"))
+    ? path.join(root, "gina-backend")
+    : root;
+
+const serverPath = path.join(ginaDir, "server.js");
+if (!fs.existsSync(serverPath)) {
   console.error(
     "Usage (one line): node patch-candidate-files.mjs ~/lyday-gina-backend/gina-backend",
   );
   process.exit(1);
+}
+
+const serverHead = fs.readFileSync(serverPath, "utf8").slice(0, 1500);
+const isCjs =
+  /\brequire\s*\(/.test(serverHead) && !/^import\s+/m.test(serverHead);
+if (isCjs) {
+  console.error(
+    "server.js looks CommonJS. This patch is ESM-only (same as Kimberley Notes).",
+  );
+  console.error(
+    "Run rollback-candidate-files.mjs first if you are on a 502, then confirm server uses import.",
+  );
+  process.exit(2);
 }
 
 function copyInto(relSrc, relDest) {
@@ -40,91 +64,113 @@ const html = fs.readFileSync(
   "utf8",
 );
 
-const routeJs = `/** AUTO: candidate-file page (embedded) */
-import express from "express";
-const __cfHtml = ${JSON.stringify(html)};
-export function sendCandidateFilePage(_req, res) {
-  res.type("html").send(__cfHtml);
-}
-export default function mountCandidateFilePage(app) {
-  const send = sendCandidateFilePage;
-  app.get("/candidate-file", send);
-  app.get("/candidate-files", send);
-  app.get("/candidate-file.html", send);
-  console.log("[candidate-file] page routes: /candidate-file /candidate-files");
-}
-`;
+// Page path is /candidate-file only — do NOT use /candidate-files (API list lives there under /ats)
+const pageRoute = `/** AUTO: candidate-file HTML page (embedded) */
+const HTML = ${JSON.stringify(html)};
 
-const routePath = path.join(ginaDir, "candidate-file-page.route.js");
-fs.writeFileSync(routePath, routeJs, "utf8");
+export function mountCandidateFilePage(app) {
+  const send = (_req, res) => {
+    res.status(200).type("html").send(HTML);
+  };
+  app.get("/candidate-file", send);
+  app.get("/candidate-file.html", send);
+  console.log("[candidate-file] page route: /candidate-file");
+}
+
+export default mountCandidateFilePage;
+`;
+fs.writeFileSync(
+  path.join(ginaDir, "candidate-file-page.route.js"),
+  pageRoute,
+  "utf8",
+);
 console.log("Wrote candidate-file-page.route.js");
 
-function ensureMount(serverPath) {
-  if (!fs.existsSync(serverPath)) return false;
-  let src = fs.readFileSync(serverPath, "utf8");
-  const bak = `${serverPath}.bak-candidate-files-${Date.now()}`;
-  fs.copyFileSync(serverPath, bak);
-
-  if (!/candidate-files\.js/.test(src)) {
-    const importLine =
-      'import { createCandidateFilesRouter } from "./routes/candidate-files.js";\n';
-    if (/^import /m.test(src)) {
-      src = src.replace(/^(import .+\n)/m, `$1${importLine}`);
-    } else {
-      src = importLine + src;
-    }
-    const mount =
-      '\napp.use("/ats", createCandidateFilesRouter());\nconsole.log("[candidate-files] /ats/candidate-files mounted");\n';
-    if (/app\.listen\(/.test(src)) {
-      src = src.replace(/app\.listen\(/, `${mount}app.listen(`);
-    } else {
-      src += mount;
-    }
-    console.log("Mounted candidate-files router in", path.basename(serverPath));
-  } else {
-    console.log("candidate-files router already referenced in", path.basename(serverPath));
-  }
-
-  if (!/candidate-file-page\.route|\/candidate-file/.test(src) || !/mountCandidateFilePage/.test(src)) {
-    if (!/candidate-file-page\.route/.test(src)) {
-      const imp =
-        'import mountCandidateFilePage from "./candidate-file-page.route.js";\n';
-      src = src.replace(/^(import .+\n)/m, `$1${imp}`);
-    }
-    if (!/mountCandidateFilePage\s*\(/.test(src)) {
-      const call = "\nmountCandidateFilePage(app);\n";
-      if (/app\.listen\(/.test(src)) {
-        src = src.replace(/app\.listen\(/, `${call}app.listen(`);
-      } else {
-        src += call;
-      }
-    }
-    console.log("Mounted candidate-file page in", path.basename(serverPath));
-  }
-
-  fs.writeFileSync(serverPath, src, "utf8");
-  console.log("Backup:", bak);
-  return true;
+function scrubCandidateMounts(src) {
+  let out = src;
+  out = out.replace(
+    /\n?import\s*\{\s*createCandidateFilesRouter\s*\}\s*from\s*["']\.\/routes\/candidate-files\.js["'];\s*\n?/g,
+    "\n",
+  );
+  out = out.replace(
+    /\n?import\s+createCandidateFilesRouter\s+from\s*["']\.\/routes\/candidate-files\.js["'];\s*\n?/g,
+    "\n",
+  );
+  out = out.replace(
+    /\n?import\s*\{\s*mountCandidateFilePage\s*\}\s*from\s*["']\.\/candidate-file-page\.route\.js["'];\s*\n?/g,
+    "\n",
+  );
+  out = out.replace(
+    /\n?import\s+mountCandidateFilePage\s+from\s*["']\.\/candidate-file-page\.route\.js["'];\s*\n?/g,
+    "\n",
+  );
+  out = out.replace(/\n?\s*mountCandidateFilePage\s*\(\s*app\s*\)\s*;\s*\n?/g, "\n");
+  out = out.replace(
+    /\n?\s*app\.use\(\s*["']\/ats["']\s*,\s*createCandidateFilesRouter\s*\(\s*\)\s*\)\s*;\s*\n?/g,
+    "\n",
+  );
+  out = out.replace(
+    /\n?\s*console\.log\(\s*["']\[candidate-files\][^"']*["']\s*\)\s*;\s*\n?/g,
+    "\n",
+  );
+  out = out.replace(
+    /\n?\s*console\.log\(\s*["']\[candidate-file\][^"']*["']\s*\)\s*;\s*\n?/g,
+    "\n",
+  );
+  return out;
 }
 
-const servers = ["server.js", "gina.js"]
-  .map((n) => path.join(ginaDir, n))
-  .filter((p) => fs.existsSync(p));
+// Scrub gina.js if the old patch polluted it (common 502 cause)
+const ginaPath = path.join(ginaDir, "gina.js");
+if (fs.existsSync(ginaPath)) {
+  const before = fs.readFileSync(ginaPath, "utf8");
+  const after = scrubCandidateMounts(before);
+  if (after !== before) {
+    const gbak = `${ginaPath}.bak-cf-scrub-${Date.now()}`;
+    fs.copyFileSync(ginaPath, gbak);
+    fs.writeFileSync(ginaPath, after, "utf8");
+    console.log("Scrubbed broken Candidate File mounts from gina.js");
+    console.log("Backup:", gbak);
+  }
+}
 
-if (!servers.length) {
-  console.error("No server.js/gina.js found under", ginaDir);
+let src = scrubCandidateMounts(fs.readFileSync(serverPath, "utf8"));
+const bak = `${serverPath}.bak-candidate-files-${Date.now()}`;
+fs.copyFileSync(serverPath, bak);
+
+const imports =
+  `import { createCandidateFilesRouter } from "./routes/candidate-files.js";\n` +
+  `import { mountCandidateFilePage } from "./candidate-file-page.route.js";\n`;
+src = imports + src;
+
+const mountBlock = `
+mountCandidateFilePage(app);
+app.use("/ats", createCandidateFilesRouter());
+console.log("[candidate-files] mounted /candidate-file + /ats/candidate-files");
+`;
+
+if (/app\.listen\s*\(/.test(src)) {
+  src = src.replace(/app\.listen\s*\(/, `${mountBlock}\napp.listen(`);
+} else if (/const\s+app\s*=\s*express\s*\(/.test(src)) {
+  src = src.replace(
+    /(const\s+app\s*=\s*express\s*\(\s*\)\s*;?)/,
+    `$1\n${mountBlock}`,
+  );
+} else {
+  console.error("Could not find app.listen / express() in server.js — refusing write");
   process.exit(2);
 }
-for (const s of servers) ensureMount(s);
 
+fs.writeFileSync(serverPath, src, "utf8");
+console.log("Patched", serverPath);
+console.log("Backup:", bak);
 console.log(`
 Next:
-  cd ${ginaDir}
-  git add lib/candidate-files.js routes/candidate-files.js candidate-file-page.route.js frontend/public/candidate-file.html frontend/candidate-file.html server.js gina.js
+  cd ~/lyday-gina-backend
+  git add gina-backend/lib/candidate-files.js gina-backend/routes/candidate-files.js gina-backend/candidate-file-page.route.js gina-backend/frontend/public/candidate-file.html gina-backend/server.js gina-backend/gina.js
   git status
-  git commit -m "Add Candidate File handoff (Gina → Maria → Michelle → client)"
+  git commit -m "Fix Candidate File mount on server.js only"
   git push origin main
 
-Railway Redeploy. Open:
-  https://lyday-gina-backend-production.up.railway.app/candidate-file
+After redeploy open: /candidate-file
 `);

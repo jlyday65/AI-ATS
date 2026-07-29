@@ -32,6 +32,19 @@ Archive → Saved under .data/candidate-file-archives/
 
 ## Mac install
 
+If Railway shows **502 Bad Gateway**, roll back first:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/rollback-candidate-files.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend
+git add gina-backend/server.js gina-backend/gina.js
+git commit -m "Rollback Candidate File mount (restore ATS from 502)"
+git push origin main
+```
+
+Then install the fixed mount (server.js only):
+
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
 node gina-express/frontend/patch-candidate-files.mjs ~/lyday-gina-backend/gina-backend
