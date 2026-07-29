@@ -46,44 +46,41 @@ const BTN = `<a
           Kimberley Notes
         </a>`;
 
-// 1) Normalize <<a → <a
-src = src.replace(/<<+/g, "<");
-
-// 2) Strip Notes links (multiline-safe)
-src = src.replace(
-  /\s*<a\b[^>]*data-kimberley-notes-link\s*=\s*["']1["'][\s\S]*?<\/a>/gi,
-  "",
-);
-// Also strip if marker is on a following line inside the tag
-src = src.replace(
-  /\s*<a\b[\s\S]*?data-kimberley-notes-link\s*=\s*["']1["'][\s\S]*?<\/a>/gi,
-  "",
-);
-
-// 3) Close Add candidate button
-src = src.replace(
-  /(<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate)(?!\s*<\/button>)/i,
-  "$1</button>",
-);
-
-if (!/<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate\s*<\/button>/i.test(src)) {
-  console.error("Could not repair Add candidate </button>");
-  console.error("Snippet around Add candidate:");
-  const i = src.search(/Add candidate/i);
-  console.error(src.slice(Math.max(0, i - 120), i + 200));
-  console.error("Backup:", bak);
+const needle = "Add candidate";
+const idx = src.search(/Add candidate/i);
+if (idx < 0) {
+  console.error("Could not find Add candidate");
   process.exit(2);
 }
 
-// 4) Insert Notes after button (only once)
+const endNeedle = idx + needle.length;
+let after = src.slice(endNeedle);
+
+// Drop broken/good Notes <a>…</a> immediately after Add candidate
+after = after.replace(/^\s*<+a\b[\s\S]*?<\/a>/i, "");
+
+// Ensure </button> comes next
+if (!/^\s*<\/button>/i.test(after)) {
+  after = "</button>" + after;
+}
+
+src = src.slice(0, endNeedle) + after;
+
+// Remove any other Notes links elsewhere
+src = src.replace(/<<+/g, "<");
 src = src.replace(
   /\s*<a\b[\s\S]*?data-kimberley-notes-link\s*=\s*["']1["'][\s\S]*?<\/a>/gi,
   "",
 );
-src = src.replace(
-  /(<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate\s*<\/button>)/i,
-  `$1\n              ${BTN}`,
-);
+
+// Insert one Notes link after the Add candidate </button>
+const re = /(Add candidate\s*<\/button>)/i;
+if (!re.test(src)) {
+  console.error("Add candidate </button> still missing after repair");
+  console.error(src.slice(Math.max(0, idx - 80), idx + 160));
+  process.exit(2);
+}
+src = src.replace(re, `$1\n              ${BTN}`);
 
 if (/<<a\b/.test(src)) {
   console.error("REFUSING: <<a still present");
