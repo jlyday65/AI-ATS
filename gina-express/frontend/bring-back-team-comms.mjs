@@ -136,7 +136,7 @@ const r = spawnSync(process.execPath, [reenable, appPath], {
 });
 if (r.status !== 0) process.exit(r.status || 2);
 
-// Keep applyAgentAction capable of team commands when present
+// Keep applyAgentAction capable of team commands (remove-all + one clean copy)
 const applyPatch = path.join(__dirname, "patch-apply-command-actions.mjs");
 if (fs.existsSync(applyPatch)) {
   console.log("\nRefreshing applyAgentAction for Check for actions…");
@@ -147,9 +147,25 @@ if (fs.existsSync(applyPatch)) {
     console.warn(
       "applyAgentAction patch returned",
       p.status,
-      "- continue if App.jsx already handles command_agent",
+      "- trying duplicate BOT_NAMES repair…",
     );
+    const dedupe = path.join(__dirname, "fix-duplicate-bot-names.mjs");
+    const d = spawnSync(process.execPath, [dedupe, appPath], { stdio: "inherit" });
+    if (d.status !== 0) {
+      console.warn("BOT_NAMES repair also failed — run fix-duplicate-bot-names.mjs manually");
+    }
   }
+}
+
+// Safety: never leave two BOT_NAMES declarations (Vite build killer)
+const botCount = (
+  fs.readFileSync(appPath, "utf8").match(/const BOT_NAMES\s*=\s*new Set/g) || []
+).length;
+if (botCount !== 1) {
+  console.log(`\nBOT_NAMES count is ${botCount} — running dedupe repair…`);
+  const dedupe = path.join(__dirname, "fix-duplicate-bot-names.mjs");
+  const d = spawnSync(process.execPath, [dedupe, appPath], { stdio: "inherit" });
+  if (d.status !== 0) process.exit(d.status || 2);
 }
 
 console.log(`

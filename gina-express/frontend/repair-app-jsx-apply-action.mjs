@@ -267,9 +267,14 @@ if (!m) {
   src = src.slice(0, cutStart) + "\n  " + CLEAN_FN + "\n" + src.slice(end);
 }
 
-// Ensure await on call sites
-if (/applyAgentAction\s*\(\s*action\s*\)/.test(src) && !/await\s+applyAgentAction\s*\(\s*action\s*\)/.test(src)) {
-  src = src.replace(/([^.\w])applyAgentAction\s*\(\s*action\s*\)/g, "$1await applyAgentAction(action)");
+// Call sites only — never touch `async function applyAgentAction(action)`
+src = src.replace(
+  /(?<!function )(?<!await )applyAgentAction\s*\(\s*action\s*\)/g,
+  "await applyAgentAction(action)",
+);
+if (/async function await applyAgentAction/.test(src)) {
+  console.error("Refusing: await rewriter corrupted the function declaration");
+  process.exit(1);
 }
 
 fs.writeFileSync(target, src, "utf8");

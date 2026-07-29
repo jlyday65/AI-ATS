@@ -107,50 +107,102 @@ let src = fs.readFileSync(appPath, "utf8");
 const bak = `${appPath}.bak-cmd-${Date.now()}`;
 fs.copyFileSync(appPath, bak);
 
-const re = /(?:async\s+)?function applyAgentAction\s*\([^)]*\)\s*\{/;
-const m = src.match(re);
-if (!m) {
-  console.error("Could not find function applyAgentAction in", appPath);
-  console.error("Backup left unused. Paste applyAgentAction.replacement.js manually.");
-  process.exit(1);
-}
-
-const start = m.index;
-// brace match from first { of the function
-let i = src.indexOf("{", start);
-let depth = 0;
-let end = -1;
-for (; i < src.length; i++) {
-  const ch = src[i];
-  if (ch === "{") depth++;
-  else if (ch === "}") {
-    depth--;
-    if (depth === 0) {
-      end = i + 1;
-      break;
+function braceEnd(text, braceAt) {
+  let depth = 0;
+  for (let j = braceAt; j < text.length; j++) {
+    if (text[j] === "{") depth++;
+    else if (text[j] === "}") {
+      depth--;
+      if (depth === 0) return j + 1;
     }
   }
+  return -1;
 }
-if (end < 0) {
-  console.error("Could not find end of applyAgentAction");
+
+// Remove ALL existing BOT_NAMES / isBotMatch / applyAgentAction copies first
+// (re-running this patch used to leave a second BOT_NAMES and break Vite).
+for (let guard = 0; guard < 12; guard++) {
+  const bot = src.search(/const BOT_NAMES\s*=\s*new Set/);
+  const isBot = src.search(/function isBotMatch\s*\(/);
+  const fn = src.search(/(?:async\s+)?function applyAgentAction\b/);
+  const hits = [bot, isBot, fn].filter((n) => n >= 0);
+  if (!hits.length) break;
+  let start = Math.min(...hits);
+  if (bot >= 0 && fn >= 0 && fn - bot < 400) start = bot;
+  else if (fn >= 0) start = fn;
+
+  let end = -1;
+  if (fn >= 0 && fn >= start) {
+    end = braceEnd(src, src.indexOf("{", fn));
+  } else if (isBot >= 0 && isBot >= start) {
+    end = braceEnd(src, src.indexOf("{", isBot));
+  } else if (bot >= 0) {
+    const semi = src.indexOf(";", bot);
+    end = semi >= 0 ? semi + 1 : -1;
+  }
+  if (end < 0) {
+    const rest = src.slice(start + 1);
+    const nm = rest.match(
+      /\n(?:  )?(?:async )?function (?!applyAgentAction|isBotMatch)[A-Za-z_]/,
+    );
+    if (!nm) {
+      console.error("Could not clear old applyAgentAction/BOT_NAMES block");
+      process.exit(1);
+    }
+    end = start + 1 + nm.index;
+  }
+  src = src.slice(0, start) + src.slice(end);
+}
+
+const anchors = [
+  "\nfunction JobsView",
+  "\n  function JobsView",
+  "\nfunction ResumeUploadPanel",
+  "\n  function ResumeUploadPanel",
+  "\nfunction ResumeTabPanel",
+  "\nexport default function App",
+  "\nfunction App(",
+  "\nfunction KimberleyNotesPanel",
+  "\nclass KimberleyNotesGate",
+];
+let inserted = false;
+for (const anchor of anchors) {
+  const idx = src.indexOf(anchor);
+  if (idx >= 0) {
+    src = src.slice(0, idx) + "\n\n  " + fnBlock + "\n" + src.slice(idx);
+    inserted = true;
+    console.log("Inserted applyAgentAction before", anchor.trim());
+    break;
+  }
+}
+if (!inserted) {
+  console.error("Could not find insert anchor for applyAgentAction in", appPath);
+  console.error("Restore backup:", bak);
   process.exit(1);
 }
 
-// Also replace a preceding const BOT_NAMES if we re-insert
-let replaceFrom = start;
-const before = src.slice(Math.max(0, start - 200), start);
-const botDecl = before.search(/const BOT_NAMES\s*=\s*new Set/);
-if (botDecl >= 0) {
-  replaceFrom = Math.max(0, start - 200) + botDecl;
+const botCount = (src.match(/const BOT_NAMES\s*=\s*new Set/g) || []).length;
+const fnCount = (src.match(/(?:async\s+)?function applyAgentAction\b/g) || []).length;
+if (botCount !== 1 || fnCount !== 1) {
+  console.error(
+    `Refusing to write: expected 1 BOT_NAMES and 1 applyAgentAction, got ${botCount}/${fnCount}`,
+  );
+  console.error("Restore backup:", bak);
+  process.exit(1);
 }
 
-const newFn = fnBlock.endsWith("}") ? fnBlock : fnBlock;
-src = src.slice(0, replaceFrom) + "\n  " + newFn + "\n" + src.slice(end);
-
-// Ensure Check for actions awaits applyAgentAction
-if (/applyAgentAction\s*\(\s*action\s*\)/.test(src) && !/await\s+applyAgentAction\s*\(\s*action\s*\)/.test(src)) {
-  src = src.replace(/([^.\w])applyAgentAction\s*\(\s*action\s*\)/g, "$1await applyAgentAction(action)");
+// Call sites only — never touch `async function applyAgentAction(action)`
+const callFixed = src.replace(
+  /(?<!function )(?<!await )applyAgentAction\s*\(\s*action\s*\)/g,
+  "await applyAgentAction(action)",
+);
+if (callFixed !== src) {
+  src = callFixed;
   console.log("Updated call sites to await applyAgentAction(action)");
+}
+if (/async function await applyAgentAction/.test(src)) {
+  console.error("Refusing: await rewriter corrupted the function declaration");
+  process.exit(1);
 }
 
 fs.writeFileSync(appPath, src, "utf8");
