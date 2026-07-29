@@ -165,7 +165,7 @@ if (!d.hasApp || d.kimberleyGate || d.kimberleyPanel || d.awaitTypo) {
         "\n",
       );
       src = src.replace(
-        /\s*,?\s*\{\s*id:\s*["']kimberley["']\s*,\s*label:\s*["'][^"']*Notes["']\s*\}/g,
+        /\s*,?\s*\{\s*id:\s*["']kimberley["'][^}]*\}\s*/g,
         "",
       );
       fs.writeFileSync(target, src, "utf8");
