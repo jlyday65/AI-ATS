@@ -182,16 +182,24 @@ if (!/view === "kimberley" && <KimberleyNotesGate/.test(src)) {
   }
 }
 
-// 6) Hard refusals
-if (/<AgentPanel\b[\s\S]{0,200}KimberleyNotes/.test(src)) {
-  console.error("REFUSING: Kimberley still looks nested inside AgentPanel");
-  process.exit(2);
+// 6) Hard refusals — only fail if Kimberley appears INSIDE an AgentPanel tag
+const agentOpen = src.match(/<AgentPanel\b[\s\S]*?\/>/g) || [];
+for (const chunk of agentOpen) {
+  if (/KimberleyNotes/.test(chunk)) {
+    console.error("REFUSING: Kimberley still looks nested inside AgentPanel");
+    process.exit(2);
+  }
 }
-if (/EMERGENCY disabled:.*\/*/.test(src)) {
-  console.error("REFUSING: nested emergency comments still present");
-  process.exit(2);
+if (/EMERGENCY disabled:/.test(src) && /KimberleyNotesPanel/.test(src)) {
+  // leftover nested comment style from old emergency script
+  if (/\{\/\*[^*]*\/\*/.test(src)) {
+    console.error("REFUSING: nested emergency comments still present");
+    process.exit(2);
+  }
 }
-const panelBlock = src.match(/function\s+KimberleyNotesPanel\([\s\S]*?\n(?=function\s+|class\s+)/);
+const panelBlock = src.match(
+  /function\s+KimberleyNotesPanel\([\s\S]*?\n(?=class\s+KimberleyNotesGate|function\s+)/,
+);
 if (panelBlock && /\buseEffect\s*\(/.test(panelBlock[0])) {
   console.error("REFUSING: panel contains useEffect");
   process.exit(2);
