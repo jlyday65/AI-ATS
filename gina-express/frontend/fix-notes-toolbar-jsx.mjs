@@ -46,33 +46,44 @@ const BTN = `<a
           Kimberley Notes
         </a>`;
 
-// 1) Normalize <<a → <a so the link can be matched
+// 1) Normalize <<a → <a
 src = src.replace(/<<+/g, "<");
 
-// 2) Strip any Notes links (broken or clean)
+// 2) Strip Notes links (multiline-safe)
 src = src.replace(
-  /\s*<a\b[^>]*data-kimberley-notes-link=["']1["'][^>]*>[\s\S]*?<\/a>/gi,
+  /\s*<a\b[^>]*data-kimberley-notes-link\s*=\s*["']1["'][\s\S]*?<\/a>/gi,
+  "",
+);
+// Also strip if marker is on a following line inside the tag
+src = src.replace(
+  /\s*<a\b[\s\S]*?data-kimberley-notes-link\s*=\s*["']1["'][\s\S]*?<\/a>/gi,
   "",
 );
 
-// 3) Close Add candidate button if missing </button>
+// 3) Close Add candidate button
 src = src.replace(
   /(<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate)(?!\s*<\/button>)/i,
   "$1</button>",
 );
 
-// 4) Insert Notes AFTER </button>
-if (!/data-kimberley-notes-link=/.test(src)) {
-  const re =
-    /(<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate\s*<\/button>)/i;
-  if (!re.test(src)) {
-    console.error("Could not find repaired Add candidate </button>");
-    console.error("Backup:", bak);
-    process.exit(2);
-  }
-  src = src.replace(re, `$1\n              ${BTN}`);
-  console.log("Repaired Add candidate and inserted Kimberley Notes after it");
+if (!/<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate\s*<\/button>/i.test(src)) {
+  console.error("Could not repair Add candidate </button>");
+  console.error("Snippet around Add candidate:");
+  const i = src.search(/Add candidate/i);
+  console.error(src.slice(Math.max(0, i - 120), i + 200));
+  console.error("Backup:", bak);
+  process.exit(2);
 }
+
+// 4) Insert Notes after button (only once)
+src = src.replace(
+  /\s*<a\b[\s\S]*?data-kimberley-notes-link\s*=\s*["']1["'][\s\S]*?<\/a>/gi,
+  "",
+);
+src = src.replace(
+  /(<button\b[^>]*>\s*<Plus\b[^>]*\/>\s*Add candidate\s*<\/button>)/i,
+  `$1\n              ${BTN}`,
+);
 
 if (/<<a\b/.test(src)) {
   console.error("REFUSING: <<a still present");
@@ -85,12 +96,9 @@ if ((src.match(/data-kimberley-notes-link=/g) || []).length !== 1) {
   );
   process.exit(2);
 }
-if (!/Add candidate\s*<\/button>/i.test(src)) {
-  console.error("REFUSING: Add candidate button not properly closed");
-  process.exit(2);
-}
 
 fs.writeFileSync(appPath, src, "utf8");
+console.log("Repaired Add candidate and inserted Kimberley Notes after it");
 console.log("Backup:", bak);
 console.log("Wrote:", appPath);
 console.log(`
