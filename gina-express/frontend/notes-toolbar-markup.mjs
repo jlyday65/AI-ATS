@@ -28,11 +28,18 @@ export function resolveAppJsxPath(argv = process.argv) {
 
 export function isToolbarCorrupt(src) {
   const text = String(src);
+  // Real breakages from Notes toolbar patches (not valid <button><span/></button>)
   if (/<\/a>\s*\/button>/i.test(text)) return "a-slash-button";
-  if (/<\/span>\s*<\/button>/i.test(text)) return "span-button";
-  if (/data-kimberley-notes-group=/i.test(text)) return "notes-group";
   if (/<<a\b/.test(text)) return "double-lt-a";
   if (/Add candidate\s*<a\b/i.test(text)) return "notes-inside-button";
+  if (
+    /data-kimberley-notes-group=["']1["'][\s\S]*?<\/span>\s*<\/button>/i.test(
+      text,
+    )
+  ) {
+    return "span-button";
+  }
+  if (/data-kimberley-notes-group=/i.test(text)) return "notes-group";
   const opens = (text.match(/<button\b/gi) || []).length;
   const closes = (text.match(/<\/button>/gi) || []).length;
   if (opens !== closes) return `button-balance-${opens}-${closes}`;
@@ -50,14 +57,34 @@ export function scoreAppJsx(text, label) {
     /export\s+default\s+function\s+App\b/.test(text) ||
     /const\s+App\s*=/.test(text) ||
     /export\s+default\s+App\b/.test(text);
+  const hasTracker =
+    /function\s+CandidateTracker\b/.test(text) ||
+    /export\s+default\s+function\s+CandidateTracker\b/.test(text);
+  const hasDefaultExport =
+    /export\s+default\s+function\s+[A-Za-z]/.test(text) ||
+    /export\s+default\s+[A-Za-z]/.test(text);
+  const isAtsShell = hasApp || hasTracker || hasDefaultExport;
+
   if (hasApp) {
     s += 50;
     reasons.push("has App");
-  } else reasons.push("NO App");
+  } else if (hasTracker) {
+    s += 50;
+    reasons.push("has CandidateTracker");
+  } else if (hasDefaultExport) {
+    s += 40;
+    reasons.push("has default export");
+  } else {
+    reasons.push("NO App/Tracker");
+  }
 
   if (/Add candidate/i.test(text)) {
     s += 15;
     reasons.push("Add candidate");
+  }
+  if (/SendToClientPanel/.test(text)) {
+    s += 5;
+    reasons.push("SendToClientPanel");
   }
   if (/Check for actions/i.test(text)) {
     s += 8;
@@ -72,7 +99,6 @@ export function scoreAppJsx(text, label) {
     s -= 60;
     reasons.push(`corrupt:${corrupt}`);
   }
-  // Prefer backups from before the span-group experiment
   if (/bak-notes-link/i.test(label)) {
     s += 5;
     reasons.push("notes-link bak");
@@ -81,11 +107,22 @@ export function scoreAppJsx(text, label) {
     s += 3;
     reasons.push("iframe bak");
   }
-  if (/bak-notes-toolbar|bak-fix-notes-toolbar/i.test(label)) {
+  if (/bak-notes-toolbar|bak-fix-notes-toolbar|bak-nuclear/i.test(label)) {
     s -= 10;
     reasons.push("toolbar bak");
   }
-  return { label, score: s, size: text.length, hasApp, reasons };
+  // Prefer known-good Gina commits from James's history
+  if (/git:(b0f53fe|0bef5af|5609d82|ba6e329)/i.test(label)) {
+    s += 25;
+    reasons.push("known-good sha");
+  }
+  return {
+    label,
+    score: s,
+    size: text.length,
+    hasApp: isAtsShell,
+    reasons,
+  };
 }
 
 export function pickBestAppJsxBackup(appPath) {

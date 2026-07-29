@@ -135,7 +135,12 @@ const rels = [
   "gina-backend/frontend/src/App.jsx",
   "frontend/src/App.jsx",
 ];
+// Prefer known-good commits from James's Mac git log first
 for (const rev of [
+  "b0f53fe",
+  "0bef5af",
+  "5609d82",
+  "ba6e329",
   "HEAD",
   "HEAD~1",
   "HEAD~2",
@@ -179,16 +184,29 @@ for (const c of candidates.slice(0, 15)) {
   );
 }
 
-const best = candidates.find(
-  (c) =>
-    c.compiles &&
-    c.hasApp &&
-    /Add candidate/i.test(c.text) &&
-    !isToolbarCorrupt(c.text),
-) || candidates.find((c) => c.compiles && c.hasApp);
+// esbuild is the source of truth. Prefer clean markers, but accept any compile.
+const best =
+  candidates.find(
+    (c) =>
+      c.compiles &&
+      c.hasApp &&
+      /Add candidate/i.test(c.text) &&
+      !isToolbarCorrupt(c.text),
+  ) ||
+  candidates.find(
+    (c) => c.compiles && /Add candidate/i.test(c.text) && c.size > 20000,
+  ) ||
+  candidates.find((c) => c.compiles && c.hasApp) ||
+  candidates.find((c) => c.compiles && c.size > 20000);
 
 if (!best) {
-  console.error("\nNo App.jsx candidate compiles. Manual git checkout needed.");
+  console.error("\nNo compiling App.jsx candidate found.");
+  console.error("Try manual restore from a known-good commit:");
+  console.error(`
+  cd ~/lyday-gina-backend
+  git show b0f53fe:gina-backend/frontend/src/App.jsx > gina-backend/frontend/src/App.jsx
+  cd gina-backend/frontend && npm run build
+`);
   spawnSync("git", ["log", "--oneline", "-20", "--", ...rels], {
     cwd: gitRoot,
     stdio: "inherit",
