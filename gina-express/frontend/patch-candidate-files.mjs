@@ -138,39 +138,95 @@ let src = scrubCandidateMounts(fs.readFileSync(serverPath, "utf8"));
 const bak = `${serverPath}.bak-candidate-files-${Date.now()}`;
 fs.copyFileSync(serverPath, bak);
 
-const imports =
-  `import { createCandidateFilesRouter } from "./routes/candidate-files.js";\n` +
+const importRouter =
+  `import { createCandidateFilesRouter } from "./routes/candidate-files.js";\n`;
+const importPage =
   `import { mountCandidateFilePage } from "./candidate-file-page.route.js";\n`;
-src = imports + src;
 
-const mountBlock = `
-mountCandidateFilePage(app);
+// Place imports with other imports (not only at top if scrubbed)
+if (/^import\s+/m.test(src)) {
+  src = src.replace(/(^import\s.+;\s*\n)/m, `$1${importRouter}${importPage}`);
+} else {
+  src = importRouter + importPage + src;
+}
+
+const mountBlock = `mountCandidateFilePage(app);
 app.use("/ats", createCandidateFilesRouter());
 console.log("[candidate-files] mounted /candidate-file + /ats/candidate-files");
 `;
 
-if (/app\.listen\s*\(/.test(src)) {
-  src = src.replace(/app\.listen\s*\(/, `${mountBlock}\napp.listen(`);
-} else if (/const\s+app\s*=\s*express\s*\(/.test(src)) {
+// CRITICAL: mount BEFORE SPA catch-all (app.get("*") / sendFile index.html),
+// otherwise /candidate-file serves the ATS board.
+let mounted = false;
+if (/const\s+app\s*=\s*express\s*\(/.test(src)) {
   src = src.replace(
     /(const\s+app\s*=\s*express\s*\(\s*\)\s*;?)/,
     `$1\n${mountBlock}`,
   );
-} else {
-  console.error("Could not find app.listen / express() in server.js — refusing write");
+  mounted = /mountCandidateFilePage\s*\(\s*app\s*\)/.test(src);
+}
+
+// Also insert immediately before any catch-all if not already early enough
+if (
+  /app\.get\(\s*["'`](\*|\/\*|\/\.\*)["'`]/i.test(src) &&
+  /mountCandidateFilePage/.test(src)
+) {
+  // Move mount to just before catch-all by removing existing mounts and re-inserting
+  src = src.replace(/\n?\s*mountCandidateFilePage\s*\(\s*app\s*\)\s*;\s*\n?/g, "\n");
+  src = src.replace(
+    /\n?\s*app\.use\(\s*["']\/ats["']\s*,\s*createCandidateFilesRouter\s*\(\s*\)\s*\)\s*;\s*\n?/g,
+    "\n",
+  );
+  src = src.replace(
+    /\n?\s*console\.log\(\s*["']\[candidate-files\][^"']*["']\s*\)\s*;\s*\n?/g,
+    "\n",
+  );
+  src = src.replace(
+    /(app\.get\(\s*["'`](?:\*|\/\*|\/\.\*)["'`])/i,
+    `${mountBlock}\n$1`,
+  );
+  mounted = true;
+}
+
+if (!mounted) {
+  if (/app\.listen\s*\(/.test(src)) {
+    src = src.replace(/app\.listen\s*\(/, `${mountBlock}\napp.listen(`);
+    mounted = true;
+  }
+}
+
+if (!/mountCandidateFilePage\s*\(\s*app\s*\)/.test(src)) {
+  console.error("Failed to insert mountCandidateFilePage(app) before SPA catch-all");
   process.exit(2);
 }
 
 fs.writeFileSync(serverPath, src, "utf8");
 console.log("Patched", serverPath);
 console.log("Backup:", bak);
+
+// Sanity: files exist for Railway
+for (const rel of [
+  "lib/candidate-files.js",
+  "routes/candidate-files.js",
+  "candidate-file-page.route.js",
+]) {
+  if (!fs.existsSync(path.join(ginaDir, rel))) {
+    console.error("Missing required file:", rel);
+    process.exit(2);
+  }
+}
+
 console.log(`
+VERIFY after redeploy:
+  1) https://lyday-gina-backend-production.up.railway.app/ats/candidate-files
+     → JSON like {"ok":true,"files":[]}
+  2) https://lyday-gina-backend-production.up.railway.app/candidate-file
+     → page titled "Candidate File" (NOT the ATS board)
+
 Next:
   cd ~/lyday-gina-backend
-  git add gina-backend/lib/candidate-files.js gina-backend/routes/candidate-files.js gina-backend/candidate-file-page.route.js gina-backend/frontend/public/candidate-file.html gina-backend/server.js gina-backend/gina.js
+  git add gina-backend/lib/candidate-files.js gina-backend/routes/candidate-files.js gina-backend/candidate-file-page.route.js gina-backend/frontend/public/candidate-file.html gina-backend/frontend/candidate-file.html gina-backend/server.js
   git status
-  git commit -m "Fix Candidate File mount on server.js only"
+  git commit -m "Mount Candidate File before ATS SPA catch-all"
   git push origin main
-
-After redeploy open: /candidate-file
 `);
