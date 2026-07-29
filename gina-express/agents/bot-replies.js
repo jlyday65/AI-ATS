@@ -116,7 +116,8 @@ export function buildMariaReply({ task, result, error } = {}) {
     "Handoff:",
     bullets([
       "Kimberley → Gina ATS → Agent → Check for actions to import any remaining candidates.",
-      "Then ask Michelle to screen the new shortlist (same role).",
+      "Add shortlisted candidates + resumes into the open Candidate File (/candidate-file).",
+      "Then ask Michelle to screen the new shortlist (same role) and record Q&A on that file.",
       "Kelley handles stage moves; Ashton drafts outreach after Kimberley approves.",
     ]),
   ]
@@ -144,6 +145,7 @@ export function buildMichelleReply({ task, result } = {}) {
       reviewed != null
         ? `Working a screen pass on ${reviewed} candidate(s) with resume text on file.`
         : "Reviewing candidates with resume text on file against the open requisition.",
+      "Screening questions + answers go on the Candidate File (/candidate-file) for client review.",
       "Will flag strong fits for Screening / Interview and note gaps for Kimberley.",
       "No auto-reject without Kimberley approval on edge cases.",
     ]),
@@ -152,6 +154,7 @@ export function buildMichelleReply({ task, result } = {}) {
     bullets([
       "Strong fits → Kelley for unambiguous stage moves.",
       "Gaps / edge cases → Kimberley's Notes until Kimberley decides.",
+      "When Q&A is complete → Export Candidate File for client review.",
       "Approved outreach targets → Ashton for draft follow-ups.",
     ]),
   ]

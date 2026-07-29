@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Candidate File</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #2c2a24;
+        --muted: #918d80;
+        --line: #e6e2d6;
+        --bg: #f7f4ec;
+        --card: #fff;
+        --teal: #2f6459;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+        color: var(--ink);
+        background: linear-gradient(180deg, #fbf8f1 0%, var(--bg) 100%);
+        min-height: 100vh;
+      }
+      main { max-width: 920px; margin: 0 auto; padding: 24px 16px 64px; }
+      header {
+        display: flex; align-items: baseline; justify-content: space-between;
+        gap: 12px; margin-bottom: 8px;
+      }
+      h1 { margin: 0; font-size: 20px; font-weight: 650; }
+      h2 { margin: 24px 0 8px; font-size: 15px; }
+      p.lead { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+      .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+      button, .btn {
+        font: inherit; font-size: 12px; padding: 7px 12px; border-radius: 8px;
+        border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer;
+        text-decoration: none; display: inline-flex; align-items: center;
+      }
+      button.primary { background: var(--teal); color: #fff; border-color: var(--teal); }
+      button:disabled { opacity: 0.55; cursor: default; }
+      label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+      input, textarea, select {
+        width: 100%; font: inherit; font-size: 13px; padding: 8px 10px;
+        border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink);
+      }
+      textarea { min-height: 88px; resize: vertical; }
+      .card {
+        border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+        padding: 14px; margin-bottom: 12px;
+      }
+      .err { color: #9b2c2c; font-size: 13px; }
+      .ok { color: var(--teal); font-size: 13px; }
+      .meta { font-size: 12px; color: var(--muted); }
+      pre.export {
+        white-space: pre-wrap; word-break: break-word; font-size: 12px;
+        line-height: 1.45; background: #faf8f2; border: 1px solid var(--line);
+        border-radius: 10px; padding: 12px; max-height: 420px; overflow: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+      a.back { font-size: 12px; color: var(--muted); }
+      .cand h3 { margin: 0 0 6px; font-size: 14px; }
+      .flow { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Candidate File</h1>
+        <div class="row" style="margin:0">
+          <button type="button" id="refreshBtn">Refresh</button>
+          <a class="back" href="/">Back to ATS</a>
+          <a class="back" href="/notes">Kimberley Notes</a>
+        </div>
+      </header>
+      <p class="lead">
+        Gina creates the shell (job title, description, salary). Maria adds candidates and resumes.
+        Michelle adds screening questions and answers. Export a client-ready packet and save it for later.
+      </p>
+      <p class="flow">Handoff: Gina → Maria → Michelle → Client review → archive</p>
+      <p class="err" id="err" hidden></p>
+      <p class="ok" id="msg" hidden></p>
+
+      <div class="card" id="createCard">
+        <h2 style="margin-top:0">Create Candidate File (Gina)</h2>
+        <div class="grid2">
+          <div>
+            <label>Client name</label>
+            <input id="clientName" placeholder="Client / company" />
+          </div>
+          <div>
+            <label>Job title *</label>
+            <input id="jobTitle" placeholder="e.g. Warehouse Mechanic" />
+          </div>
+        </div>
+        <div class="grid2">
+          <div>
+            <label>Salary</label>
+            <input id="salary" placeholder="e.g. $75k–$90k or $28/hr" />
+          </div>
+          <div>
+            <label>Location</label>
+            <input id="location" placeholder="City, ST or Remote" />
+          </div>
+        </div>
+        <label>Job description *</label>
+        <textarea id="jobDescription" placeholder="Paste the client job description"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button type="button" class="primary" id="createBtn">Create &amp; hand to Maria</button>
+        </div>
+      </div>
+
+      <h2>Open files</h2>
+      <div id="list" class="meta">Loading…</div>
+
+      <div id="detail" hidden>
+        <h2 id="detailTitle">File</h2>
+        <p class="meta" id="detailMeta"></p>
+
+        <div class="card">
+          <h2 style="margin-top:0">Add candidate (Maria)</h2>
+          <div class="grid2">
+            <div>
+              <label>Name *</label>
+              <input id="candName" />
+            </div>
+            <div>
+              <label>Email</label>
+              <input id="candEmail" />
+            </div>
+          </div>
+          <label>Resume text</label>
+          <textarea id="candResume" placeholder="Paste resume text"></textarea>
+          <div class="row" style="margin-top:10px">
+            <button type="button" class="primary" id="addCandBtn">Add candidate to file</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 style="margin-top:0">Screening questions (Michelle)</h2>
+          <label>One question per line</label>
+          <textarea id="questions" placeholder="Do you have X experience?&#10;Are you available for Y shifts?"></textarea>
+          <div class="row" style="margin-top:10px">
+            <button type="button" class="primary" id="saveQsBtn">Save questions</button>
+          </div>
+        </div>
+
+        <div id="candidates"></div>
+
+        <div class="card">
+          <h2 style="margin-top:0">Client packet</h2>
+          <div class="row">
+            <button type="button" class="primary" id="exportBtn">Export for client &amp; save</button>
+            <a class="btn" id="downloadLink" href="#" target="_blank" rel="noreferrer">Download .txt</a>
+            <button type="button" id="copyBtn">Copy packet</button>
+          </div>
+          <pre class="export" id="exportOut">(Export to preview)</pre>
+        </div>
+      </div>
+    </main>
+    <script>
+      (function () {
+        var activeId = null;
+        var lastText = "";
+
+        function $(id) { return document.getElementById(id); }
+        function showErr(t) {
+          var e = $("err"); var m = $("msg");
+          m.hidden = true;
+          if (!t) { e.hidden = true; e.textContent = ""; return; }
+          e.hidden = false; e.textContent = t;
+        }
+        function showMsg(t) {
+          var e = $("err"); var m = $("msg");
+          e.hidden = true;
+          m.hidden = !t;
+          m.textContent = t || "";
+        }
+
+        async function api(path, opts) {
+          var res = await fetch(path, Object.assign({
+            headers: { "Content-Type": "application/json" },
+          }, opts || {}));
+          var data = await res.json().catch(function () { return {}; });
+          if (!res.ok || data.ok === false) {
+            throw new Error(data.error || ("HTTP " + res.status));
+          }
+          return data;
+        }
+
+        async function refreshList() {
+          var data = await api("/ats/candidate-files?limit=30");
+          var el = $("list");
+          if (!data.files.length) {
+            el.innerHTML = '<p class="meta">No Candidate Files yet — create one above.</p>';
+            return;
+          }
+          el.innerHTML = data.files.map(function (f) {
+            return (
+              '<div class="card" style="cursor:pointer" data-id="' + f.id + '">' +
+              "<strong>" + (f.job && f.job.title ? f.job.title : f.id) + "</strong> " +
+              '<span class="meta">· ' + f.status + (f.clientName ? " · " + f.clientName : "") +
+              " · " + (f.candidates ? f.candidates.length : 0) + " candidates</span></div>"
+            );
+          }).join("");
+          Array.prototype.forEach.call(el.querySelectorAll("[data-id]"), function (node) {
+            node.onclick = function () { openFile(node.getAttribute("data-id")); };
+          });
+        }
+
+        function renderDetail(file) {
+          activeId = file.id;
+          $("detail").hidden = false;
+          $("detailTitle").textContent = (file.job && file.job.title) || file.id;
+          $("detailMeta").textContent =
+            "id " + file.id + " · " + file.status +
+            (file.clientName ? " · " + file.clientName : "") +
+            (file.job && file.job.salary ? " · " + file.job.salary : "");
+          $("downloadLink").href = "/ats/candidate-files/" + file.id + "/export.txt";
+          $("questions").value = (file.screeningQuestions || [])
+            .map(function (q) { return q.question || q; }).join("\n");
+          if (file.lastExportText) {
+            lastText = file.lastExportText;
+            $("exportOut").textContent = lastText;
+          }
+          var box = $("candidates");
+          if (!file.candidates || !file.candidates.length) {
+            box.innerHTML = '<p class="meta">No candidates yet — Maria adds them here.</p>';
+            return;
+          }
+          box.innerHTML = file.candidates.map(function (c) {
+            var qa = (c.screening || []).map(function (s, i) {
+              return (
+                '<label>Q' + (i + 1) + ": " + s.question + "</label>" +
+                '<textarea data-cid="' + c.id + '" data-q="' + encodeURIComponent(s.question) + '" class="ans">' +
+                (s.answer || "") + "</textarea>"
+              );
+            }).join("");
+            if (!qa && (file.screeningQuestions || []).length) {
+              qa = file.screeningQuestions.map(function (s, i) {
+                return (
+                  '<label>Q' + (i + 1) + ": " + s.question + "</label>" +
+                  '<textarea data-cid="' + c.id + '" data-q="' + encodeURIComponent(s.question) + '" class="ans"></textarea>'
+                );
+              }).join("");
+            }
+            return (
+              '<div class="card cand">' +
+              "<h3>" + c.name + "</h3>" +
+              '<p class="meta">' + (c.email || "") + (c.source ? " · " + c.source : "") + "</p>" +
+              (c.resumeText
+                ? "<pre class='export' style='max-height:160px'>" + c.resumeText.slice(0, 2500) + "</pre>"
+                : '<p class="meta">No resume text</p>') +
+              (qa
+                ? ("<div>" + qa +
+                   '<div class="row" style="margin-top:8px"><button type="button" class="primary saveAns" data-cid="' +
+                   c.id + '">Save answers (Michelle)</button></div></div>')
+                : "") +
+              "</div>"
+            );
+          }).join("");
+          Array.prototype.forEach.call(box.querySelectorAll(".saveAns"), function (btn) {
+            btn.onclick = function () { saveAnswers(btn.getAttribute("data-cid")); };
+          });
+        }
+
+        async function openFile(id) {
+          showErr("");
+          var data = await api("/ats/candidate-files/" + id);
+          renderDetail(data.file);
+        }
+
+        async function saveAnswers(candidateId) {
+          var answers = [];
+          Array.prototype.forEach.call(
+            document.querySelectorAll('textarea.ans[data-cid="' + candidateId + '"]'),
+            function (ta) {
+              answers.push({
+                question: decodeURIComponent(ta.getAttribute("data-q") || ""),
+                answer: ta.value,
+              });
+            },
+          );
+          var data = await api(
+            "/ats/candidate-files/" + activeId + "/candidates/" + candidateId + "/answers",
+            { method: "POST", body: JSON.stringify({ answers: answers }) },
+          );
+          showMsg("Answers saved for candidate.");
+          renderDetail(data.file);
+        }
+
+        $("createBtn").onclick = async function () {
+          showErr("");
+          try {
+            var title = $("jobTitle").value.trim();
+            var description = $("jobDescription").value.trim();
+            if (!title || !description) throw new Error("Job title and description are required");
+            var data = await api("/ats/candidate-files", {
+              method: "POST",
+              body: JSON.stringify({
+                clientName: $("clientName").value.trim(),
+                createdBy: "Gina",
+                job: {
+                  title: title,
+                  description: description,
+                  salary: $("salary").value.trim(),
+                  location: $("location").value.trim(),
+                },
+              }),
+            });
+            showMsg(data.handoff || "Created.");
+            $("jobTitle").value = "";
+            $("jobDescription").value = "";
+            await refreshList();
+            renderDetail(data.file);
+          } catch (e) {
+            showErr(e.message || String(e));
+          }
+        };
+
+        $("addCandBtn").onclick = async function () {
+          if (!activeId) return showErr("Open a Candidate File first");
+          try {
+            var name = $("candName").value.trim();
+            if (!name) throw new Error("Candidate name required");
+            var data = await api("/ats/candidate-files/" + activeId + "/candidates", {
+              method: "POST",
+              body: JSON.stringify({
+                name: name,
+                email: $("candEmail").value.trim(),
+                resumeText: $("candResume").value.trim(),
+                source: "Maria",
+              }),
+            });
+            $("candName").value = "";
+            $("candEmail").value = "";
+            $("candResume").value = "";
+            showMsg(data.handoff || "Candidate added.");
+            renderDetail(data.file);
+            await refreshList();
+          } catch (e) {
+            showErr(e.message || String(e));
+          }
+        };
+
+        $("saveQsBtn").onclick = async function () {
+          if (!activeId) return showErr("Open a Candidate File first");
+          try {
+            var questions = $("questions").value.split("\n")
+              .map(function (l) { return l.trim(); }).filter(Boolean);
+            var data = await api(
+              "/ats/candidate-files/" + activeId + "/screening-questions",
+              { method: "POST", body: JSON.stringify({ questions: questions }) },
+            );
+            showMsg("Screening questions saved.");
+            renderDetail(data.file);
+          } catch (e) {
+            showErr(e.message || String(e));
+          }
+        };
+
+        $("exportBtn").onclick = async function () {
+          if (!activeId) return showErr("Open a Candidate File first");
+          try {
+            var data = await api("/ats/candidate-files/" + activeId + "/export", {
+              method: "POST",
+              body: JSON.stringify({ saveArchive: true }),
+            });
+            lastText = data.text || "";
+            $("exportOut").textContent = lastText;
+            showMsg(data.handoff || "Exported and archived.");
+            renderDetail(data.file);
+          } catch (e) {
+            showErr(e.message || String(e));
+          }
+        };
+
+        $("copyBtn").onclick = async function () {
+          if (!lastText) return showErr("Export first");
+          try {
+            await navigator.clipboard.writeText(lastText);
+            showMsg("Client packet copied.");
+          } catch (e) {
+            showErr("Copy failed — select the packet text manually.");
+          }
+        };
+
+        $("refreshBtn").onclick = function () {
+          refreshList().then(function () {
+            if (activeId) return openFile(activeId);
+          }).catch(function (e) { showErr(e.message || String(e)); });
+        };
+
+        refreshList().catch(function (e) { showErr(e.message || String(e)); });
+      })();
+    </script>
+  </body>
+</html>

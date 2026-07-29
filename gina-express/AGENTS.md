@@ -9,6 +9,24 @@
 | **Kelley** | Pipeline ops | `/kelly` | Stages, notes, ATS housekeeping (alias: Kelly) |
 | **Ashton** | Outreach | `/ashton` | Candidate/client outreach drafts + follow-ups |
 
+## Candidate File (Gina → Maria → Michelle → client)
+
+Create a shared packet per requisition:
+
+1. **Gina** opens `/candidate-file` → Create (job title, description, salary, client)
+2. **Maria** adds candidates + resume text on that file
+3. **Michelle** saves screening questions and per-candidate answers
+4. **Export for client & save** → downloadable `.txt` + archive under `.data/candidate-file-archives/`
+
+Install on Gina:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-candidate-files.mjs ~/lyday-gina-backend/gina-backend
+```
+
+See `CANDIDATE-FILE.md`.
+
 ## Sound communication contract
 
 ```
