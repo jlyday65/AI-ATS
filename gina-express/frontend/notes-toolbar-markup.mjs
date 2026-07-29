@@ -1,14 +1,13 @@
 /**
- * Shared Kimberley Notes toolbar markup.
- * Notes sits WITH Add candidate (same className), never as a child of the <button>.
+ * Safe Kimberley Notes toolbar insert:
+ * - Never wrap Add candidate in a <span> group (that caused </span></button>)
+ * - Never nest Notes inside the <button>
+ * - Clone Add candidate className/style onto a sibling <a>
  */
 
 import path from "path";
+import fs from "fs";
 
-/**
- * Resolve App.jsx path from CLI.
- * Trim FIRST so a leading space from `\` line breaks does not block `~/` expansion.
- */
 export function resolveAppJsxPath(argv = process.argv) {
   const raw = argv
     .slice(2)
@@ -27,37 +26,94 @@ export function resolveAppJsxPath(argv = process.argv) {
   return path.resolve(expanded);
 }
 
-/** Fix known broken Notes inserts before re-wrapping. */
-export function healBrokenNotesToolbar(src) {
-  let out = String(src);
+export function isToolbarCorrupt(src) {
+  const text = String(src);
+  if (/<\/a>\s*\/button>/i.test(text)) return "a-slash-button";
+  if (/<\/span>\s*<\/button>/i.test(text)) return "span-button";
+  if (/data-kimberley-notes-group=/i.test(text)) return "notes-group";
+  if (/<<a\b/.test(text)) return "double-lt-a";
+  if (/Add candidate\s*<a\b/i.test(text)) return "notes-inside-button";
+  const opens = (text.match(/<button\b/gi) || []).length;
+  const closes = (text.match(/<\/button>/gi) || []).length;
+  if (opens !== closes) return `button-balance-${opens}-${closes}`;
+  return null;
+}
 
-  // </a>/button>  (Vite: ">" is not valid inside a JSX element)
-  out = out.replace(/<\/a>\s*\/button>/gi, "</a></button>");
-  // Orphan /button> missing "<"
-  out = out.replace(/(^|[^<])\/button>/gi, "$1</button>");
-  // <<a → <a
-  out = out.replace(/<<+a\b/g, "<a");
+export function scoreAppJsx(text, label) {
+  if (!text || text.length < 5000) {
+    return { label, score: -1, reasons: ["too small"], size: text?.length || 0 };
+  }
+  const reasons = [];
+  let s = 0;
+  const hasApp =
+    /function\s+App\b/.test(text) ||
+    /export\s+default\s+function\s+App\b/.test(text) ||
+    /const\s+App\s*=/.test(text) ||
+    /export\s+default\s+App\b/.test(text);
+  if (hasApp) {
+    s += 50;
+    reasons.push("has App");
+  } else reasons.push("NO App");
 
-  // Notes jammed inside Add candidate button → close button first, leave Notes sibling
-  out = out.replace(
-    /(Add candidate)\s*(<a\b[\s\S]*?<\/a>)\s*<\/button>/i,
-    "$1</button>$2",
-  );
+  if (/Add candidate/i.test(text)) {
+    s += 15;
+    reasons.push("Add candidate");
+  }
+  if (/Check for actions/i.test(text)) {
+    s += 8;
+    reasons.push("actions");
+  }
+  if (/KimberleyNotes(Gate|Panel)/.test(text)) {
+    s -= 25;
+    reasons.push("react notes panel");
+  }
+  const corrupt = isToolbarCorrupt(text);
+  if (corrupt) {
+    s -= 60;
+    reasons.push(`corrupt:${corrupt}`);
+  }
+  // Prefer backups from before the span-group experiment
+  if (/bak-notes-link/i.test(label)) {
+    s += 5;
+    reasons.push("notes-link bak");
+  }
+  if (/bak-iframe-notes/i.test(label)) {
+    s += 3;
+    reasons.push("iframe bak");
+  }
+  if (/bak-notes-toolbar|bak-fix-notes-toolbar/i.test(label)) {
+    s -= 10;
+    reasons.push("toolbar bak");
+  }
+  return { label, score: s, size: text.length, hasApp, reasons };
+}
 
-  // Exact Mac failure: </span></button> after Notes group
-  out = out.replace(
-    /(<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>[\s\S]*?<\/span>)\s*<\/button>/gi,
-    "$1",
-  );
-  out = out.replace(/<\/span>\s*<\/button>(\s*<\/div>)/gi, "</span>$1");
+export function pickBestAppJsxBackup(appPath) {
+  const bakDir = path.dirname(appPath);
+  const files = fs
+    .readdirSync(bakDir)
+    .filter((n) => n === "App.jsx" || n.startsWith("App.jsx."))
+    .map((n) => path.join(bakDir, n))
+    .filter((p) => {
+      try {
+        return fs.statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    });
 
-  // Duplicate closes after a real Add candidate button
-  out = out.replace(
-    /(Add candidate\s*<\/button>)\s*<\/button>/gi,
-    "$1",
-  );
-
-  return out;
+  const candidates = [];
+  for (const p of files) {
+    // Skip the live broken file when scoring backups only — caller may include it
+    try {
+      const text = fs.readFileSync(p, "utf8");
+      candidates.push({ ...scoreAppJsx(text, p), text, path: p });
+    } catch {
+      // ignore
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score || b.size - a.size);
+  return candidates;
 }
 
 export function extractAddCandidateButton(src) {
@@ -84,8 +140,7 @@ export function extractAddCandidateButton(src) {
   if (closeRel < 0) return null;
   const end = label + closeRel + "</button>".length;
   const full = src.slice(open, end);
-  if (/data-kimberley-notes-link=/i.test(full)) return null;
-  if (/<a\b/i.test(full) && /Kimberley Notes/i.test(full)) return null;
+  if (/<a\b/i.test(full)) return null;
   const attrsMatch = full.match(/^<button\b([^>]*)>/i);
   return {
     full,
@@ -113,9 +168,12 @@ export function extractStyleObjectBody(buttonHtml) {
     .trim();
 }
 
+/** Sibling Notes link — matches Add candidate chrome, no wrapper span. */
 export function buildNotesLink({ classNameAttr = "", styleBody = "" } = {}) {
   const classLine = classNameAttr ? `\n          ${classNameAttr}` : "";
-  const base = styleBody ? `${styleBody},` : "";
+  const base = styleBody
+    ? `${styleBody},`
+    : `display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: "#2F6459", color: "#fff", border: "none",`;
   return `<a
           data-kimberley-notes-link="1"
           href="/notes"
@@ -123,55 +181,19 @@ export function buildNotesLink({ classNameAttr = "", styleBody = "" } = {}) {
           rel="noreferrer"${classLine}
           style={{
             ${base}
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
             textDecoration: "none",
             cursor: "pointer",
-            marginLeft: 0,
-            borderTopLeftRadius: 0,
-            borderBottomLeftRadius: 0,
-            borderLeft: "1px solid rgba(255,255,255,0.28)",
+            marginLeft: 8,
           }}
         >
           Kimberley Notes
         </a>`;
 }
 
-export function buildAddCandidateGroup(buttonHtml, classNameAttr = "") {
-  const styleBody = extractStyleObjectBody(buttonHtml);
-  const notes = buildNotesLink({ classNameAttr, styleBody });
-  let btn = buttonHtml;
-  if (!/borderTopRightRadius\s*:/.test(btn)) {
-    if (/\bstyle=\{\{/.test(btn)) {
-      btn = btn.replace(
-        /\bstyle=\{\{/,
-        "style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0,",
-      );
-    } else if (!/\bstyle=\{/.test(btn)) {
-      btn = btn.replace(
-        /^<button\b/i,
-        `<button style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}`,
-      );
-    }
-  }
-
-  return `<span
-              data-kimberley-notes-group="1"
-              style={{
-                display: "inline-flex",
-                alignItems: "stretch",
-                verticalAlign: "middle",
-              }}
-            >
-              ${btn}
-              ${notes}
-            </span>`;
-}
-
 export function stripExistingNotesToolbar(src) {
-  let out = src;
-  // Unwrap prior groups; also swallow a stray </button> after </span>
+  let out = String(src);
+
+  // Unwrap broken/good groups → keep Add candidate button only
   out = out.replace(
     /\s*<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>\s*([\s\S]*?)\s*<\/span>\s*(?:<\/button>)?/gi,
     (full, inner) => {
@@ -183,6 +205,17 @@ export function stripExistingNotesToolbar(src) {
       return btn ? `\n              ${btn[0]}` : "";
     },
   );
+
+  out = out.replace(/<\/a>\s*\/button>/gi, "</a></button>");
+  out = out.replace(/(^|[^<])\/button>/gi, "$1</button>");
+  out = out.replace(/<<+a\b/g, "<a");
+
+  // Notes jammed inside button → pull out then strip
+  out = out.replace(
+    /(Add candidate)\s*(<a\b[\s\S]*?<\/a>)\s*<\/button>/i,
+    "$1</button>",
+  );
+
   out = out.replace(
     /\s*<a\b[^>]*data-kimberley-notes-link=["']1["'][^>]*>[\s\S]*?<\/a>\s*(?:<\/button>)?/gi,
     "",
@@ -191,55 +224,52 @@ export function stripExistingNotesToolbar(src) {
     /\s*<a\b[^>]*href=["']\/notes["'][^>]*>\s*Kimberley Notes\s*<\/a>\s*(?:<\/button>)?/gi,
     "",
   );
-  out = out.replace(/<<+a\b/g, "<a");
-  // Orphan </button> left after stripping Notes that had been </a></button>
-  out = out.replace(/(Add candidate\s*<\/button>)\s*<\/button>/gi, "$1");
-  out = out.replace(/<\/span>\s*<\/button>(\s*<\/div>)/gi, "</span>$1");
-  return out;
-}
 
-function finalizeToolbar(out) {
-  // Never leave </span></button> (Mac Vite: button does not match opening div)
-  out = out.replace(
-    /(<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>[\s\S]*?<\/span>)\s*<\/button>/gi,
-    "$1",
-  );
   out = out.replace(/<\/span>\s*<\/button>(\s*<\/div>)/gi, "</span>$1");
   out = out.replace(/(Add candidate\s*<\/button>)\s*<\/button>/gi, "$1");
+
+  // If a leftover empty notes span remains, drop it
+  out = out.replace(
+    /\s*<span\b[^>]*data-kimberley-notes-group=["']1["'][^>]*>\s*<\/span>/gi,
+    "",
+  );
+
   return out;
 }
 
 export function insertNotesWithAddCandidate(src) {
-  let out = healBrokenNotesToolbar(src);
-  out = stripExistingNotesToolbar(out);
-  out = healBrokenNotesToolbar(out);
+  let out = stripExistingNotesToolbar(src);
+
+  // Strip any radius hacks we previously injected into Add candidate
+  out = out.replace(
+    /\s*borderTopRightRadius\s*:\s*0\s*,\s*borderBottomRightRadius\s*:\s*0\s*,?/g,
+    "",
+  );
 
   const found = extractAddCandidateButton(out);
   if (!found) return { ok: false, reason: "add-candidate-missing", src: out };
 
-  const classNameAttr = extractClassNameAttr(found.attrs);
-  const group = buildAddCandidateGroup(found.full, classNameAttr);
-  out = out.slice(0, found.index) + group + out.slice(found.end);
-  out = finalizeToolbar(out);
+  // Restore pristine button HTML (no radius hacks)
+  let btn = found.full.replace(
+    /\s*borderTopRightRadius\s*:\s*0\s*,\s*borderBottomRightRadius\s*:\s*0\s*,?/g,
+    "",
+  );
+  // Clean empty style={{ }} left behind
+  btn = btn.replace(/\s*style=\{\{\s*\}\}/g, "");
 
-  if (/<<a\b/.test(out)) {
-    return { ok: false, reason: "double-lt-a", src: out };
-  }
-  if (/<\/a>\s*\/button>/i.test(out) || /(^|[^<])\/button>/i.test(out)) {
-    return { ok: false, reason: "orphan-button-close", src: out };
-  }
-  if (/<\/span>\s*<\/button>/i.test(out)) {
-    return { ok: false, reason: "span-button-mismatch", src: out };
-  }
+  const classNameAttr = extractClassNameAttr(found.attrs);
+  const styleBody = extractStyleObjectBody(btn);
+  const notes = buildNotesLink({ classNameAttr, styleBody });
+  const replacement = `${btn}\n              ${notes}`;
+  out = out.slice(0, found.index) + replacement + out.slice(found.end);
+
+  const corrupt = isToolbarCorrupt(out);
+  if (corrupt) return { ok: false, reason: corrupt, src: out };
+
   const n = (out.match(/data-kimberley-notes-link=/g) || []).length;
-  if (n !== 1) {
-    return { ok: false, reason: `notes-count-${n}`, src: out };
-  }
-  if ((out.match(/data-kimberley-notes-group=/g) || []).length !== 1) {
-    return { ok: false, reason: "group-count", src: out };
-  }
-  if (/Add candidate\s*<a\b[^>]*data-kimberley-notes-link/i.test(out)) {
-    return { ok: false, reason: "notes-inside-button", src: out };
+  if (n !== 1) return { ok: false, reason: `notes-count-${n}`, src: out };
+  if (/data-kimberley-notes-group=/.test(out)) {
+    return { ok: false, reason: "group-present", src: out };
   }
   return { ok: true, src: out };
 }

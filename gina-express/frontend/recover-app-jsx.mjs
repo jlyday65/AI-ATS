@@ -75,6 +75,16 @@ function score(text, label) {
     s -= 25;
     reasons.push("bare Component");
   }
+  if (/data-kimberley-notes-group=/.test(text) || /<\/span>\s*<\/button>/i.test(text) || /<\/a>\s*\/button>/i.test(text)) {
+    s -= 60;
+    reasons.push("corrupt notes toolbar");
+  }
+  const btnOpen = (text.match(/<button\b/gi) || []).length;
+  const btnClose = (text.match(/<\/button>/gi) || []).length;
+  if (btnOpen !== btnClose) {
+    s -= 40;
+    reasons.push(`button imbalance ${btnOpen}/${btnClose}`);
+  }
   return { label, score: s, size: text.length, hasApp, reasons };
 }
 
