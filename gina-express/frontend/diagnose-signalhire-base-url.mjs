@@ -123,14 +123,38 @@ console.log("Body:", text.slice(0, 400));
 if (/ERR_NGROK_8012|failed to establish a connection to the upstream/i.test(text)) {
   console.error(`
 FAIL: ngrok is up, but nothing is listening on localhost:3000 (ERR_NGROK_8012).
+`);
+  // Probe local AI-ATS to make the next step obvious
+  try {
+    const local = await fetch("http://127.0.0.1:3000/api/maria/source", {
+      headers: { Accept: "application/json" },
+    });
+    const localText = await local.text();
+    console.error(
+      `Local check http://127.0.0.1:3000/api/maria/source → HTTP ${local.status}`,
+    );
+    console.error(localText.slice(0, 200));
+  } catch (e) {
+    console.error(
+      `Local check http://127.0.0.1:3000/api/maria/source → FAILED (${e?.cause?.code || e?.message || e})`,
+    );
+    console.error(`
+AI-ATS is not running. In a SEPARATE Terminal window (leave it open):
 
-In another Terminal:
   cd ~/AI-ATS
+  git pull origin cursor/ai-ats-b2b-platform-4f1f
+  npm install
   npm run dev
 
-Wait until you see "Ready" on http://localhost:3000, leave it running,
-then re-run this diagnose command. Keep ngrok http 3000 running too.
+Wait for:  ✓ Ready  /  Local: http://localhost:3000
+Then verify locally:
+
+  curl -sS http://localhost:3000/api/maria/source
+
+You should see JSON with "agent":"maria". Keep npm run dev AND ngrok http 3000
+running, then re-run this diagnose command.
 `);
+  }
   process.exit(2);
 }
 
