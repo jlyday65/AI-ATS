@@ -274,7 +274,7 @@ console.log("GINA_TEAM_RULES:", /const GINA_TEAM_RULES/.test(restored));
 const poolFix = path.join(__dirname, "fix-gina-pool-undefined.mjs");
 if (fs.existsSync(poolFix) && /\bpool\.(query|connect)\b/.test(restored)) {
   console.log("\nEnsuring pool import (avoids HTTP 500 pool is not defined)…");
-  const r = spawnSync(process.execPath, [poolFix, ginaDir], {
+  const r = spawnSync(process.execPath, [poolFix, ginaDir, "--force"], {
     encoding: "utf8",
     stdio: "inherit",
   });
