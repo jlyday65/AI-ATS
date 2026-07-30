@@ -94,10 +94,47 @@ describe("kimberley notes upsert by action", () => {
       task: "move Ava to Interview",
       reply: "Kelley — pipeline ops update",
     });
-    assert.equal(done.id, ack.id);
+    assert.equal(String(done.id), String(ack.id));
     assert.match(done.reply, /pipeline ops update/);
     const listed = await notes.listNotes({ agent: "Kelley", limit: 50 });
     assert.equal(listed.filter((n) => n.actionId === actionId).length, 1);
+  });
+
+  it("normalizes object action ids and collapses duplicates on list", async () => {
+    const { normalizeActionId, collapseNotesByActionId, createKimberleyNotes: create } =
+      await import("../lib/kimberley-notes.js");
+    assert.equal(normalizeActionId({ id: 89 }), "89");
+    assert.equal(normalizeActionId("89"), "89");
+    const notes = create();
+    await notes.insertNote({
+      fromAgent: "Maria",
+      agentRole: "Sourcer",
+      task: "source WAM",
+      reply: "ack",
+      actionId: { id: 89 },
+    });
+    await notes.upsertByActionId(89, {
+      fromAgent: "Maria",
+      agentRole: "Sourcer",
+      task: "source WAM",
+      reply: "done",
+    });
+    // Simulate a stale duplicate that snuck in
+    await notes.upsertByActionId(89, {
+      fromAgent: "Maria",
+      agentRole: "Sourcer",
+      task: "source WAM",
+      reply: "done again",
+    });
+    const listed = await notes.listNotes({ agent: "Maria", limit: 50 });
+    assert.equal(listed.filter((n) => String(n.actionId) === "89").length, 1);
+    assert.match(listed[0].reply, /done again/);
+    const collapsed = collapseNotesByActionId([
+      { actionId: "1", reply: "a" },
+      { actionId: "1", reply: "b" },
+      { actionId: null, reply: "c" },
+    ]);
+    assert.equal(collapsed.length, 2);
   });
 });
 

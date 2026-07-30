@@ -54,6 +54,19 @@ export function createKimberleyNotesRouter(deps = {}) {
     }
   });
 
+  /** Collapse historical duplicates that share the same action_id. */
+  router.post("/kimberley-notes/dedupe", async (_req, res) => {
+    try {
+      if (typeof notes.dedupeByActionId !== "function") {
+        return res.status(501).json({ ok: false, error: "dedupe not available" });
+      }
+      const result = await notes.dedupeByActionId();
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: String(err?.message || err) });
+    }
+  });
+
   router.post("/kimberley-notes", async (req, res) => {
     try {
       const body = req.body || {};

@@ -10,7 +10,10 @@ import { Router } from "express";
 import { commandAgent } from "../agents/command-agent.tool.js";
 import { buildBotReply } from "../agents/bot-replies.js";
 import { resolveAgent } from "../agents/registry.js";
-import { kimberleyNotes } from "../lib/kimberley-notes.js";
+import {
+  kimberleyNotes,
+  normalizeActionId,
+} from "../lib/kimberley-notes.js";
 import {
   extractLocationFromText,
   extractRoleTitleFromText,
@@ -229,7 +232,9 @@ router.post("/run-command", async (req, res) => {
       body.payload ?? body.action?.payload ?? body,
       body,
     );
-    const actionId = body.actionId || body.action?.id || null;
+    const actionId = normalizeActionId(
+      body.actionId || body.action?.id || body.action?.actionId || null,
+    ) || null;
 
     if (type === "source_candidates_signalhire") {
       if (!payload.roleTitle) {

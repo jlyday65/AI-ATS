@@ -55,14 +55,22 @@ async function persistKimberleyNote({
   const mod = await loadKimberleyNotes();
   const notes = mod?.kimberleyNotes || mod?.default;
   if (!notes?.insertNote) return null;
+  const normalizedId =
+    typeof mod.normalizeActionId === "function"
+      ? mod.normalizeActionId(actionId)
+      : actionId?.id ?? actionId?.actionId ?? actionId ?? null;
   try {
-    if (replaceActionId && actionId && typeof notes.upsertByActionId === "function") {
-      return await notes.upsertByActionId(actionId, {
+    if (
+      (replaceActionId || normalizedId) &&
+      normalizedId &&
+      typeof notes.upsertByActionId === "function"
+    ) {
+      return await notes.upsertByActionId(normalizedId, {
         fromAgent: agent.displayName,
         agentRole: agent.role,
         task,
         reply,
-        actionId,
+        actionId: normalizedId,
         requestedBy: requestedBy || "Kimberley",
         includeInBriefing: true,
       });
@@ -72,7 +80,7 @@ async function persistKimberleyNote({
       agentRole: agent.role,
       task,
       reply,
-      actionId: actionId ?? null,
+      actionId: normalizedId || null,
       requestedBy: requestedBy || "Kimberley",
       includeInBriefing: true,
     });
@@ -174,7 +182,11 @@ export async function commandAgent(input = {}) {
 
   // Queue-only path: do not run Maria / do not file a full working reply yet.
   if (typeof input.queueAction === "function" && !executeNow) {
-    const id = await input.queueAction("command_agent", payload);
+    const queued = await input.queueAction("command_agent", payload);
+    const id =
+      queued && typeof queued === "object"
+        ? queued.id ?? queued.actionId ?? queued.action_id
+        : queued;
     const reply = buildBotReply({
       agentId: agent.id,
       task,
@@ -186,6 +198,7 @@ export async function commandAgent(input = {}) {
       reply,
       actionId: id,
       requestedBy,
+      replaceActionId: true,
     });
     return {
       ok: true,
