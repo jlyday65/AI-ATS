@@ -118,6 +118,22 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
+## Fix: Railway `Cannot find module '/app/routes/agents/command-agent.tool.js'`
+
+`routes/candidate-files.js` (or another route) imported `./agents/...` instead of `../agents/...`.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-routes-agent-imports.mjs ~/lyday-gina-backend/gina-backend
+node --check ~/lyday-gina-backend/gina-backend/routes/candidate-files.js
+cd ~/lyday-gina-backend
+git add gina-backend/routes gina-backend/agents gina-backend/lib
+git status
+git commit -m "Fix routes agent import paths (../agents not ./agents)"
+git pull origin main --rebase
+git push origin main
+```
+
 ## Fix: Railway `Unexpected identifier 'TEAM'` in webhooks.js
 
 Orphan **TEAM BOT UPDATE RULE** / **GINA TEAM COMMAND RULE** prose was pasted into `routes/webhooks.js` (not inside a string). Strip it:
