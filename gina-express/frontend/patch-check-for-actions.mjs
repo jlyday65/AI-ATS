@@ -448,6 +448,8 @@ if (fs.existsSync(rc)) {
 
 console.log(`
 Next:
+  node gina-express/frontend/patch-ats-toolbar-links.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+  node gina-express/frontend/patch-bot-nav-branding.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
   cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
   cd ~/lyday-gina-backend
   git add gina-backend/frontend/src/App.jsx gina-backend/routes/run-command.js gina-backend/agents gina-backend/lib gina-backend/maria-source.tool.js gina-backend/server.js
@@ -456,7 +458,7 @@ Next:
   git pull origin main --rebase
   git push origin main
 
-After redeploy: Agent → Check for actions
+After redeploy: Gina → Check for actions
 Expect Kelley/Maria actions to run (not "Unknown action type").
 Then open Kimberley Notes.
 `);

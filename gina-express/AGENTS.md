@@ -108,12 +108,15 @@ Then commit `gina-backend/frontend/src/App.jsx` (+ routes/agents/lib if copied),
 
 If the patch says `Expected "(" but found "applyAgentAction"`, pull again — that was a bad await rewriter (fixed). Do **not** skip the patch; Check for actions will keep saying Unknown action type without it.
 
-Also restore toolbar after nuclear restore:
+Also restore toolbar + Gina/bot branding after nuclear restore:
 
 ```bash
 node gina-express/frontend/patch-ats-toolbar-links.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+node gina-express/frontend/patch-bot-nav-branding.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
 cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 ```
+
+Nav labels become: 🗂️ Gina · 🔍 Maria · ✅ Michelle · 📣 Kelley · 📋 Ashton
 
 Railway: `SIGNALHIRE_BASE_URL` + `RELAY_SECRET`. Redeploy, re-ask Gina, Check for actions.
 
