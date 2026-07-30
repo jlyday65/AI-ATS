@@ -118,6 +118,30 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
+## Fix: Skipped action — Maria needs a roleTitle
+
+Action was queued as `source_candidates_signalhire` (or Maria command) without a usable `roleTitle`, and inference failed on phrasing like "source candidates for Warehouse Assistant Manager".
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git status
+git commit -m "Infer Maria roleTitle from source candidates for … phrasing"
+git pull origin main --rebase
+git push origin main
+```
+
+That copies updated `maria-source.tool.js` + `routes/run-command.js` and patches App.jsx to send `taskHint`.
+
+**Action 89 already failed** — re-queue with an explicit title, then Check for actions again:
+
+> Ask Maria to source a Warehouse Assistant Manager candidate in Atlanta; resumes required
+
+Do not reuse the empty/failed row; ask Gina to queue a fresh action.
+
 ## Fix: Chat HTTP 500 `{"error":"pool is not defined"}`
 
 Gina chat tried to queue an Ashton/Maria/etc. action but a backend file used `pool` without a **top-level** import (often after nuclear restore). Older fixes could wrongly skip files that only had `function foo({ pool })`.
