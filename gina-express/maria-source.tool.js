@@ -341,12 +341,16 @@ export async function mariaSourceViaSignalHire(input = {}) {
       (typeof json.error === "string" && json.error) ||
       json.hint ||
       `SignalHire Maria source failed (${response.status}) at ${sourceUrl}`;
-    if (/ERR_NGROK_3200|endpoint .+ is offline/i.test(rawText)) {
+    if (/ERR_NGROK_8012|failed to establish a connection to the upstream/i.test(rawText)) {
+      detail = `ngrok reached your Mac but AI-ATS is not running on localhost:3000 (ERR_NGROK_8012). Start: cd ~/AI-ATS && npm run dev — leave it running with ngrok http 3000.`;
+    } else if (/ERR_NGROK_3200|endpoint .+ is offline/i.test(rawText)) {
       detail = `SignalHire ngrok tunnel is OFFLINE (${sourceUrl}). On your Mac: start AI-ATS (npm run dev) and ngrok http 3000, then set Gina Railway SIGNALHIRE_BASE_URL to the new https://….ngrok-free.dev URL and redeploy (or update the env if the subdomain changed).`;
     } else if (response.status === 404) {
       detail = `SignalHire Maria source 404 at ${sourceUrl}. SIGNALHIRE_BASE_URL must be your AI-ATS public URL (serves GET/POST /api/maria/source), not Gina and not a dead Vercel host. ${snippet ? `Body: ${snippet}` : ""}`;
     } else if (response.status === 401) {
       detail = `SignalHire rejected RELAY_SECRET (${json.hint || "unauthorized"}) for ${sourceUrl}. Gina RELAY_SECRET must match SignalHire /ats secret.`;
+    } else if (response.status === 502) {
+      detail = `SignalHire ngrok returned 502 for ${sourceUrl}. Start AI-ATS on port 3000: cd ~/AI-ATS && npm run dev`;
     }
     const err = new Error(detail);
     err.status = response.status;

@@ -76,7 +76,9 @@ Set SIGNALHIRE_BASE_URL to your AI-ATS tunnel/Vercel URL, for example:
   process.exit(1);
 }
 
-if (/ngrok\.(io|app|dev|free\.dev)$/i.test(host) === false && /vercel\.app$/i.test(host) === false) {
+const isNgrok = /\.ngrok(-free)?\.(dev|app|io)$/i.test(host);
+const isVercel = /\.vercel\.app$/i.test(host);
+if (!isNgrok && !isVercel) {
   console.log(
     "Note: host is not *.ngrok-free.dev or *.vercel.app — continuing anyway.\n",
   );
@@ -118,6 +120,20 @@ try {
 console.log("HTTP", res.status);
 console.log("Body:", text.slice(0, 400));
 
+if (/ERR_NGROK_8012|failed to establish a connection to the upstream/i.test(text)) {
+  console.error(`
+FAIL: ngrok is up, but nothing is listening on localhost:3000 (ERR_NGROK_8012).
+
+In another Terminal:
+  cd ~/AI-ATS
+  npm run dev
+
+Wait until you see "Ready" on http://localhost:3000, leave it running,
+then re-run this diagnose command. Keep ngrok http 3000 running too.
+`);
+  process.exit(2);
+}
+
 if (res.status === 404) {
   if (/ERR_NGROK_3200|endpoint .+ is offline/i.test(text)) {
     console.error(`
@@ -134,6 +150,15 @@ Leave both running, then re-probe the NEW https://….ngrok-free.dev URL.
 FAIL: 404 — this host does not serve /api/maria/source.
 Make sure Terminal A is running: cd ~/AI-ATS && npm run dev
 And ngrok targets port 3000: ngrok http 3000
+`);
+  process.exit(2);
+}
+
+if (res.status === 502) {
+  console.error(`
+FAIL: HTTP 502 from ngrok — AI-ATS is not reachable on localhost:3000.
+
+  cd ~/AI-ATS && npm run dev
 `);
   process.exit(2);
 }
