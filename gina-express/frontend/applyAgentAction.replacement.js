@@ -22,7 +22,7 @@
     const { type, payload } = action;
     try {
       // --- Team commands (Kimberley → Gina → Maria/Michelle/Kelley/Ashton) ---
-      if (type === "command_agent" || type === "source_candidates_signalhire") {
+      if (type === "command_agent" || type === "source_candidates_signalhire" || type === "create_candidate_file") {
         const res = await fetch("/ats/run-command", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

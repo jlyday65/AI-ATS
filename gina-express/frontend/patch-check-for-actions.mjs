@@ -1,0 +1,423 @@
+#!/usr/bin/env node
+/**
+ * Fix: Skipped action N: Unknown action type "command_agent"
+ *      Skipped action N: Unknown action type "source_candidates_signalhire"
+ *
+ * Restores applyAgentAction handlers + /ats/run-command support.
+ * esbuild-gated. Also ensures Check for actions awaits applyAgentAction.
+ *
+ * ONE LINE:
+ *   node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+ */
+
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { createRequire } from "module";
+import { spawnSync } from "child_process";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkg = path.join(__dirname, "..");
+const rootArg = String(process.argv[2] || "")
+  .trim()
+  .replace(/^~/, process.env.HOME || "");
+const root = path.resolve(rootArg);
+const ginaDir = fs.existsSync(path.join(root, "frontend", "src", "App.jsx"))
+  ? root
+  : fs.existsSync(path.join(root, "gina-backend", "frontend", "src", "App.jsx"))
+    ? path.join(root, "gina-backend")
+    : root;
+
+const appPath = path.join(ginaDir, "frontend", "src", "App.jsx");
+if (!fs.existsSync(appPath)) {
+  console.error(
+    "Usage (one line): node patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend",
+  );
+  process.exit(1);
+}
+
+function copy(rel) {
+  const src = path.join(pkg, rel);
+  const dest = path.join(ginaDir, rel);
+  if (!fs.existsSync(src)) {
+    console.warn("Skip missing:", rel);
+    return;
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+  console.log("Copied", rel);
+}
+
+copy("routes/run-command.js");
+copy("agents/command-agent.tool.js");
+copy("agents/bot-replies.js");
+copy("agents/registry.js");
+copy("agents/candidate-file.tool.js");
+copy("lib/kimberley-notes.js");
+copy("lib/candidate-files.js");
+copy("maria-source.tool.js");
+
+// Ensure server mounts /ats/run-command
+const serverPath = path.join(ginaDir, "server.js");
+if (fs.existsSync(serverPath)) {
+  let server = fs.readFileSync(serverPath, "utf8");
+  const sbak = `${serverPath}.bak-run-command-${Date.now()}`;
+  let changed = false;
+  if (!/run-command\.js|runCommandRouter|run-command/.test(server)) {
+    if (/^import\s+/m.test(server)) {
+      server =
+        `import runCommandRouter from "./routes/run-command.js";\n` + server;
+    } else {
+      server =
+        `const runCommandRouter = require("./routes/run-command.js");\n` +
+        server;
+    }
+    if (/const\s+app\s*=\s*express\s*\(/.test(server)) {
+      server = server.replace(
+        /(const\s+app\s*=\s*express\s*\(\s*\)\s*;?)/,
+        `$1\napp.use("/ats", runCommandRouter);`,
+      );
+    } else if (/app\.listen\s*\(/.test(server)) {
+      server = server.replace(
+        /app\.listen\s*\(/,
+        `app.use("/ats", runCommandRouter);\napp.listen(`,
+      );
+    } else {
+      server += `\napp.use("/ats", runCommandRouter);\n`;
+    }
+    changed = true;
+    console.log("Mounted /ats/run-command on server.js");
+  } else if (!/app\.use\(\s*["']\/ats["']\s*,\s*runCommandRouter/.test(server) && /import runCommandRouter/.test(server) === false) {
+    // import might exist under another name — leave alone
+  }
+  // If import exists but no mount:
+  if (
+    /routes\/run-command\.js/.test(server) &&
+    !/app\.use\(\s*["']\/ats["'].*runCommand|run-command/.test(
+      server.split("import").slice(1).join("import"),
+    ) &&
+    !/app\.use\(\s*["']\/ats["']\s*,\s*runCommandRouter/.test(server)
+  ) {
+    // try add mount if missing
+    if (!/runCommandRouter/.test(server) && /from\s*["']\.\/routes\/run-command\.js["']/.test(server)) {
+      // has default import under another name — skip
+    } else if (/runCommandRouter/.test(server) && !/app\.use\(\s*["']\/ats["']\s*,\s*runCommandRouter/.test(server)) {
+      server = server.replace(
+        /(const\s+app\s*=\s*express\s*\(\s*\)\s*;?)/,
+        `$1\napp.use("/ats", runCommandRouter);`,
+      );
+      changed = true;
+    }
+  }
+  if (changed) {
+    fs.copyFileSync(serverPath, sbak);
+    fs.writeFileSync(serverPath, server, "utf8");
+    console.log("Backup server:", sbak);
+  } else {
+    console.log("server.js already references run-command");
+  }
+}
+
+function loadEsbuild() {
+  try {
+    const req = createRequire(
+      path.join(ginaDir, "frontend", "node_modules", "esbuild", "package.json"),
+    );
+    return req("esbuild");
+  } catch {
+    return null;
+  }
+}
+
+function canCompile(esbuild, text) {
+  if (!esbuild) return { ok: false, error: "esbuild missing" };
+  try {
+    esbuild.transformSync(text, {
+      loader: "jsx",
+      jsx: "automatic",
+      logLevel: "silent",
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e?.errors?.[0]?.text || e.message || e) };
+  }
+}
+
+function braceEnd(src, braceAt) {
+  let depth = 0;
+  for (let j = braceAt; j < src.length; j++) {
+    if (src[j] === "{") depth++;
+    else if (src[j] === "}") {
+      depth--;
+      if (depth === 0) return j + 1;
+    }
+  }
+  return -1;
+}
+
+const CLEAN = `
+  const BOT_NAMES = new Set(["maria", "michelle", "kelley", "kelly", "ashton", "gina"]);
+
+  function isBotMatch(match) {
+    const name = String(match?.name || match?.fullName || "").trim().toLowerCase();
+    return Boolean(name) && BOT_NAMES.has(name);
+  }
+
+  async function applyAgentAction(action) {
+    const { type, payload } = action;
+    try {
+      if (
+        type === "command_agent" ||
+        type === "source_candidates_signalhire" ||
+        type === "create_candidate_file"
+      ) {
+        const res = await fetch("/ats/run-command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            type,
+            actionId: action.id,
+            payload: payload || {},
+            action,
+            summary: action.summary || action.detail || "",
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          return {
+            ok: false,
+            reason: data.error || data.reason || \`Command failed (\${res.status})\`,
+          };
+        }
+        return {
+          ok: true,
+          summary:
+            data.summary ||
+            (data.reply
+              ? \`\${data.result?.agent || "Team"} replied — see Kimberley's Notes\`
+              : "Team command executed"),
+          kimberleyNoteId: data.kimberleyNoteId || null,
+          reply: data.reply || null,
+        };
+      }
+
+      if (
+        (type === "update_stage" || type === "add_note") &&
+        isBotMatch(payload?.match)
+      ) {
+        const bot = String(payload.match.name || "").trim();
+        const task =
+          payload.text ||
+          payload.task ||
+          payload.note ||
+          \`Command for \${bot}\`;
+        const res = await fetch("/ats/run-command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            type: "command_agent",
+            actionId: action.id,
+            payload: {
+              targetAgent: bot,
+              task,
+              requestedBy: "Kimberley",
+              resumesRequired: /resume/i.test(String(task)),
+            },
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          return {
+            ok: false,
+            reason:
+              data.error ||
+              \`Bot command for \${bot} failed — is /ats/run-command mounted?\`,
+          };
+        }
+        return { ok: true, summary: data.summary || \`Ran command for \${bot}\` };
+      }
+
+      if (type === "create_candidate" || type === "import_candidate") {
+        if (!payload?.name) return { ok: false, reason: "Missing candidate name in payload." };
+        const email = (payload.email || "").trim().toLowerCase();
+        const name = (payload.name || "").trim().toLowerCase();
+        const existing = candidates.find((c) => {
+          if (email && (c.email || "").trim().toLowerCase() === email) return true;
+          if (name && (c.name || "").trim().toLowerCase() === name) return true;
+          return false;
+        });
+        if (existing) {
+          const resumeText =
+            payload.resumeText || payload.resume_text || payload.summary || "";
+          const role = payload.jobTitle || payload.role || existing.role || "";
+          const patch = {
+            resumeText: resumeText || existing.resumeText || existing.resume_text || "",
+            summary: payload.summary || existing.summary || "",
+            headline: payload.headline || existing.headline || "",
+            role,
+            jobTitle: payload.jobTitle || existing.jobTitle || "",
+            source: existing.source || payload.source || "SignalHire",
+          };
+          if (typeof updateCandidate === "function") {
+            updateCandidate(existing.id, patch);
+          } else if (typeof setCandidates === "function") {
+            setCandidates((prev) =>
+              (prev || []).map((c) => (c.id === existing.id ? { ...c, ...patch } : c)),
+            );
+          }
+          return { ok: true, summary: \`Updated \${existing.name} with resume/role from import\` };
+        }
+        let jobId = payload.jobId || null;
+        if (!jobId && payload.jobTitle) {
+          const job = jobs.find(
+            (j) =>
+              (j.title || "").trim().toLowerCase() ===
+              String(payload.jobTitle).trim().toLowerCase(),
+          );
+          if (job) jobId = job.id;
+        }
+        addCandidate({
+          name: payload.name,
+          role: payload.jobTitle || payload.role || "",
+          email: payload.email || "",
+          phone: payload.phone || "",
+          source: payload.source || (type === "import_candidate" ? "SignalHire" : "Gina"),
+          resumeText: payload.resumeText || payload.resume_text || "",
+          summary: payload.summary || "",
+          headline: payload.headline || "",
+          jobId,
+          jobTitle: payload.jobTitle || "",
+        });
+        return { ok: true, summary: \`Created candidate: \${payload.name}\` };
+      }
+
+      if (type === "update_stage") {
+        const match = findCandidateByMatch(payload?.match);
+        if (!match) return { ok: false, reason: \`No candidate found matching \${JSON.stringify(payload?.match)}.\` };
+        if (match.ambiguous) return { ok: false, reason: \`\${match.count} candidates share that name — ask Gina to match by email instead.\` };
+        if (!STAGES.some((s) => s.key === payload?.stage)) return { ok: false, reason: \`"\${payload?.stage}" isn't a valid stage.\` };
+        setStage(match.id, payload.stage);
+        return { ok: true, summary: \`Moved \${match.name} to \${stageMeta(payload.stage).label}\` };
+      }
+
+      if (type === "add_note") {
+        const match = findCandidateByMatch(payload?.match);
+        if (!match) return { ok: false, reason: \`No candidate found matching \${JSON.stringify(payload?.match)}.\` };
+        if (match.ambiguous) return { ok: false, reason: \`\${match.count} candidates share that name — ask Gina to match by email instead.\` };
+        if (!payload?.text) return { ok: false, reason: "Missing note text in payload." };
+        addNote(match.id, payload.text);
+        return { ok: true, summary: \`Added a note to \${match.name}\` };
+      }
+
+      return { ok: false, reason: \`Unknown action type "\${type}".\` };
+    } catch (e) {
+      return { ok: false, reason: e.message || String(e) };
+    }
+  }
+`.trim();
+
+let src = fs.readFileSync(appPath, "utf8");
+const bak = `${appPath}.bak-check-actions-${Date.now()}`;
+fs.copyFileSync(appPath, bak);
+
+const esbuild = loadEsbuild();
+const before = canCompile(esbuild, src);
+if (!before.ok) {
+  console.error("App.jsx does not compile before patch:", before.error);
+  console.error("Run nuclear-restore-app-jsx.mjs first, then re-run this patch.");
+  process.exit(2);
+}
+
+// Remove existing BOT_NAMES + applyAgentAction blocks (keep one clean copy)
+for (let guard = 0; guard < 8; guard++) {
+  const bot = src.search(/const BOT_NAMES\s*=\s*new Set/);
+  const fn = src.search(/(?:async\s+)?function applyAgentAction\b/);
+  if (bot < 0 && fn < 0) break;
+  let start = bot >= 0 && fn >= 0 ? Math.min(bot, fn) : bot >= 0 ? bot : fn;
+  // Prefer including BOT_NAMES when near the function
+  if (bot >= 0 && fn >= 0 && Math.abs(fn - bot) < 500) start = Math.min(bot, fn);
+  const fnAt = src.search(/(?:async\s+)?function applyAgentAction\b/);
+  if (fnAt < 0) {
+    // orphan BOT_NAMES
+    const semi = src.indexOf(";", bot);
+    if (semi > bot) src = src.slice(0, bot) + src.slice(semi + 1);
+    continue;
+  }
+  const braceAt = src.indexOf("{", fnAt);
+  const end = braceEnd(src, braceAt);
+  if (end < 0) {
+    console.error("Could not find end of applyAgentAction");
+    process.exit(2);
+  }
+  // If BOT_NAMES sits just above, extend start upward
+  if (bot >= 0 && bot < fnAt && fnAt - bot < 400) start = bot;
+  else start = fnAt;
+  src = src.slice(0, start) + "\n" + src.slice(end);
+}
+
+// Insert clean function near CandidateTracker helpers — after last removed spot,
+// prefer before export default or near other helpers.
+if (/function\s+findCandidateByMatch\b/.test(src)) {
+  src = src.replace(
+    /(function\s+findCandidateByMatch\b[\s\S]*?\n\})/,
+    `$1\n\n${CLEAN}\n`,
+  );
+} else if (/export\s+default\s+function\s+App\b|function\s+CandidateTracker\b|function\s+App\b/.test(src)) {
+  src = src.replace(
+    /(function\s+(?:App|CandidateTracker)\b)/,
+    `\n${CLEAN}\n\n$1`,
+  );
+} else {
+  src += `\n${CLEAN}\n`;
+}
+
+// Ensure Check for actions awaits applyAgentAction
+src = src.replace(
+  /(?<!await\s)applyAgentAction\s*\(\s*action\s*\)/g,
+  "await applyAgentAction(action)",
+);
+// Avoid double await
+src = src.replace(/await\s+await\s+applyAgentAction/g, "await applyAgentAction");
+
+if (!/type === "command_agent"/.test(src) && !/type === 'command_agent'/.test(src)) {
+  console.error("REFUSING: command_agent handler missing after insert");
+  process.exit(2);
+}
+
+const after = canCompile(esbuild, src);
+if (!after.ok) {
+  console.error("REFUSING: App.jsx would not compile:", after.error);
+  fs.copyFileSync(bak, appPath);
+  process.exit(2);
+}
+
+fs.writeFileSync(appPath, src, "utf8");
+console.log("OK: Check for actions handles command_agent + source_candidates_signalhire");
+console.log("Backup:", bak);
+console.log("Wrote:", appPath);
+
+// Quick syntax check on run-command
+const rc = path.join(ginaDir, "routes/run-command.js");
+if (fs.existsSync(rc)) {
+  const chk = spawnSync(process.execPath, ["--check", rc], { encoding: "utf8" });
+  if (chk.status !== 0) {
+    console.warn("Warning: routes/run-command.js --check failed:", chk.stderr);
+  }
+}
+
+console.log(`
+Next:
+  cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+  cd ~/lyday-gina-backend
+  git add gina-backend/frontend/src/App.jsx gina-backend/routes/run-command.js gina-backend/agents gina-backend/lib gina-backend/maria-source.tool.js gina-backend/server.js
+  git status
+  git commit -m "Fix Check for actions: handle command_agent and Maria sourcing"
+  git pull origin main --rebase
+  git push origin main
+
+After redeploy: Agent → Check for actions
+Expect Kelley/Maria actions to run (not "Unknown action type").
+Then open Kimberley Notes.
+`);
