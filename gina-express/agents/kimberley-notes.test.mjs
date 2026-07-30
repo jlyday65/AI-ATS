@@ -17,6 +17,14 @@ describe("bot replies for Kimberley Notes", () => {
     assert.match(reply, /Pipeline Stage Counts/i);
   });
 
+  it("files a Kelley status update for plain update asks", () => {
+    const reply = buildKelleyReply({
+      task: "Provide a pipeline ops status update for Kimberley",
+    });
+    assert.match(reply, /Kelley — status update/);
+    assert.match(reply, /Handoff/);
+  });
+
   it("files an Ashton project status update", () => {
     const reply = buildAshtonReply({
       task: "give me an update on the project status",
