@@ -216,6 +216,15 @@ for (const rel of [
   }
 }
 
+// Guard: routes must use ../agents not ./agents (Railway MODULE_NOT_FOUND)
+const cfSrc = fs.readFileSync(path.join(ginaDir, "routes/candidate-files.js"), "utf8");
+if (/["']\.\/agents\//.test(cfSrc)) {
+  console.error(
+    "REFUSING: routes/candidate-files.js has ./agents/ imports — run fix-routes-agent-imports.mjs",
+  );
+  process.exit(2);
+}
+
 console.log(`
 VERIFY after redeploy:
   1) https://lyday-gina-backend-production.up.railway.app/ats/candidate-files
