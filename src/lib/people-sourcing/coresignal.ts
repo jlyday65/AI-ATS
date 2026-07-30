@@ -21,8 +21,9 @@ function buildEsQuery(query: PeopleSearchQuery) {
   }
   if (query.job.location?.trim()) {
     must.push({
-      match: {
-        location: query.job.location.trim(),
+      multi_match: {
+        query: query.job.location.trim(),
+        fields: ["location_full", "location", "location_country"],
       },
     });
   }
@@ -61,6 +62,13 @@ function asArray(payload: unknown): Record<string, unknown>[] {
   return [];
 }
 
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 function mapCandidate(
   row: Record<string, unknown>,
   index: number,
@@ -70,35 +78,44 @@ function mapCandidate(
   const fullName = String(
     row.full_name ?? row.name ?? `Coresignal Candidate ${index + 1}`,
   );
-  const headline = row.headline
-    ? String(row.headline)
-    : row.job_title
-      ? String(row.job_title)
-      : undefined;
-  const location = row.location ? String(row.location) : undefined;
-  const profileUrl = row.profile_url
-    ? String(row.profile_url)
-    : row.linkedin_url
-      ? String(row.linkedin_url)
-      : `https://example.com/coresignal/${id}`;
+  const headline = firstString(
+    row.headline,
+    row.active_experience_title,
+    row.job_title,
+    row.title,
+  );
+  const location = firstString(
+    row.location_full,
+    row.location,
+    row.location_country,
+  );
+  const company = firstString(row.company_name);
+  const profileUrl =
+    firstString(row.linkedin_url, row.profile_url) ||
+    `https://example.com/coresignal/${id}`;
   const skillsRaw = row.skills;
   const skills = Array.isArray(skillsRaw)
     ? skillsRaw.map(String).slice(0, 12)
     : typeof skillsRaw === "string"
       ? skillsRaw.split(/[,|;]/).map((s) => s.trim()).filter(Boolean).slice(0, 12)
       : [];
-  const summary = row.summary ? String(row.summary).slice(0, 800) : undefined;
+  if (company && !skills.includes(company)) {
+    // Keep company as a light signal when skills aren't in preview payload.
+  }
+  const summary = firstString(row.summary, row.headline);
   const experienceYears =
     typeof row.experience_years === "number"
       ? row.experience_years
       : typeof row.total_experience_years === "number"
         ? row.total_experience_years
         : undefined;
+  const managementLevel = firstString(row.active_experience_management_level);
+  const department = firstString(row.active_experience_department);
 
   return {
     id: `cand_coresignal_${jobId}_${id}`,
     fullName,
-    headline,
+    headline: company && headline ? `${headline} @ ${company}` : headline,
     location,
     email: row.email ? String(row.email) : undefined,
     skills,
@@ -110,21 +127,43 @@ function mapCandidate(
         handle: fullName.toLowerCase().replace(/\s+/g, "."),
       },
     ],
-    summary: summary || `Coresignal multi-source employee match for ${jobId}.`,
+    summary:
+      summary ||
+      [
+        headline || "Professional",
+        company ? `at ${company}` : null,
+        location ? `· ${location}` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
     resumeText: [
       fullName,
       headline || "",
+      company || "",
       location || "",
+      profileUrl,
       "",
       "SUMMARY",
-      summary || `Professional with overlap for the open role.`,
+      summary ||
+        `Professional with overlap for the open role${company ? ` (current: ${company})` : ""}.`,
+      "",
+      "EXPERIENCE",
+      [
+        headline || "Role",
+        company ? `— ${company}` : "",
+        department ? `(${department})` : "",
+        managementLevel ? `· ${managementLevel}` : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
       "",
       "SKILLS",
-      skills.join(", ") || "see profile",
+      skills.join(", ") || "see LinkedIn / Coresignal profile",
     ].join("\n"),
     sourceSignals: [
       "Coresignal Multi-source Employee API",
-      skills[0] ? `Skill signal: ${skills[0]}` : "Profile match",
+      company ? `Current company: ${company}` : "Profile match",
+      managementLevel || (skills[0] ? `Skill signal: ${skills[0]}` : "Headline match"),
       experienceYears != null ? `${experienceYears}+ years` : "Experience on file",
     ],
   };
