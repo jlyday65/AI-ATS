@@ -17,27 +17,92 @@ const SIGNALHIRE_BASE_URL = (
   "http://localhost:3000"
 ).replace(/\/$/, "");
 
-/** Pull role title from free-text task when queue payload omits roleTitle. */
+const ROLE_NOISE = new Set(
+  [
+    "candidate",
+    "candidates",
+    "people",
+    "person",
+    "someone",
+    "somebody",
+    "talent",
+    "profile",
+    "profiles",
+    "resume",
+    "resumes",
+    "update",
+    "status",
+    "maria",
+    "michelle",
+    "kelley",
+    "kelly",
+    "ashton",
+    "gina",
+    "kimberley",
+    "kimberly",
+    "signalhire",
+    "open role",
+    "the role",
+    "a role",
+    "this role",
+  ].map((s) => s.toLowerCase()),
+);
+
+function cleanRoleCapture(raw = "") {
+  let s = String(raw || "")
+    .replace(/^["'`{\[\s]+/, "")
+    .replace(/["'`}\]\s]+$/, "")
+    .replace(/\b(with|that|who|which|all|and)\b.*$/i, "")
+    .replace(/\s+candidates?\b.*$/i, "")
+    .replace(/\s+role\b.*$/i, "")
+    .replace(/[?.!,;:]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // Drop leading articles / filler
+  s = s.replace(/^(?:an?\s+|the\s+|some\s+|any\s+)/i, "").trim();
+  if (!s) return "";
+  if (ROLE_NOISE.has(s.toLowerCase())) return "";
+  // Too short / not a job title
+  if (s.length < 3 || s.length > 80) return "";
+  if (/^(for|in|to|from|with|and|or)$/i.test(s)) return "";
+  return s;
+}
+
+/**
+ * Pull role title from free-text task when queue payload omits roleTitle.
+ * Handles common Kimberley / Gina phrasings, including
+ * "source candidates for Warehouse Assistant Manager in Atlanta".
+ */
 export function extractRoleTitleFromText(text = "") {
   const t = String(text || "").trim();
   if (!t) return "";
+
   const patterns = [
-    /\bsource\s+(?:an?\s+|a\s+)?(.+?)\s+candidate/gi,
-    /\bsource\s+(?:an?\s+|a\s+)?(.+?)(?:\s+in\s+|\s+for\s+|[.!]|$)/gi,
-    /\b(?:find|recruit|hire)\s+(?:an?\s+|a\s+)?(.+?)(?:\s+candidate|\s+in\s+|\s+for\s+|[.!]|$)/gi,
+    // Explicit fields (JSON fragments / notes)
+    /\brole(?:\s*title)?\s*[:=]\s*["']?([^"'\n,}+]+)/gi,
+    /\bjob(?:\s*title)?\s*[:=]\s*["']?([^"'\n,}+]+)/gi,
+    /\b"roleTitle"\s*:\s*"([^"]+)"/gi,
+    /\b"jobTitle"\s*:\s*"([^"]+)"/gi,
+    // "… for the Warehouse Assistant Manager role"
+    /\bfor\s+(?:the\s+)?(.+?)\s+role\b/gi,
+    // "source candidates for X" / "find candidates for X"
+    /\b(?:source|find|recruit|hire|shortlist|identify)\s+candidates?\s+for\s+(?:the\s+|an?\s+|a\s+)?(.+?)(?:\s+in\s+|\s+with\s+|\s+who\s+|[.!;,]|$)/gi,
+    // "source a X candidate"
+    /\b(?:source|find|recruit|hire|shortlist|identify)\s+(?:an?\s+|a\s+)?(.+?)\s+candidates?\b/gi,
+    // "source X in Atlanta" / "source X for …"
+    /\b(?:source|find|recruit|hire|shortlist|identify)\s+(?:an?\s+|a\s+)?(.+?)(?:\s+in\s+|\s+for\s+|[.!;,]|$)/gi,
+    // "Warehouse Assistant Manager in Atlanta" (Title Case + location)
+    /\b([A-Z][A-Za-z0-9/&-]+(?:\s+[A-Z][A-Za-z0-9/&-]+){1,6})\s+in\s+[A-Z]/,
   ];
-  // Prefer the LAST match — taskHint blobs often include older roles first.
+
+  // Prefer the LAST good match — taskHint blobs often include older roles first.
   let last = "";
   for (const re of patterns) {
     let m;
     re.lastIndex = 0;
     while ((m = re.exec(t))) {
-      if (m[1]) {
-        last = m[1]
-          .replace(/\b(with|that|who|all)\b.*$/i, "")
-          .replace(/[?.!,;:]+$/g, "")
-          .trim();
-      }
+      const cleaned = cleanRoleCapture(m[1]);
+      if (cleaned) last = cleaned;
     }
     if (last) return last;
   }

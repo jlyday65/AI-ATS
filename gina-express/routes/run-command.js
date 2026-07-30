@@ -53,12 +53,24 @@ function collectText(value, out = [], depth = 0) {
 }
 
 function normalizeSourcePayload(payload = {}, body = {}) {
-  const flat = parsePayload(payload);
+  // Payload may itself be a JSON string, or nested under action.payload
+  let flat = parsePayload(payload);
+  if (flat && typeof flat.payload === "object") {
+    flat = { ...flat, ...parsePayload(flat.payload) };
+  }
+  const actionRow = body.action || {};
+  const actionPayload = parsePayload(actionRow.payload);
+  flat = {
+    ...parsePayload(actionPayload),
+    ...flat,
+  };
+
   const blob = collectText({
     ...flat,
     ...body,
-    action: body.action,
-    summary: body.summary || flat.summary,
+    action: actionRow,
+    summary: body.summary || flat.summary || actionRow.summary,
+    detail: actionRow.detail || actionRow.notes || actionRow.description,
     taskHint: body.taskHint,
   }).join("\n");
 
@@ -69,19 +81,34 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     flat.message ||
     flat.description ||
     flat.roleDescription ||
+    actionRow.task ||
+    actionRow.summary ||
     "";
-  const task = primaryTask || body.taskHint || flat.notes || flat.text || blob;
+  const task =
+    primaryTask || body.taskHint || flat.notes || flat.text || blob;
 
-  const roleTitle =
+  const roleTitle = String(
     flat.roleTitle ||
-    flat.role_title ||
-    flat.context?.roleTitle ||
-    extractRoleTitleFromText(primaryTask) ||
-    extractRoleTitleFromText(task) ||
-    flat.jobTitle ||
-    flat.job_title ||
-    flat.title ||
-    "";
+      flat.role_title ||
+      flat.context?.roleTitle ||
+      flat.job?.title ||
+      flat.job?.name ||
+      flat.requisition?.title ||
+      extractRoleTitleFromText(primaryTask) ||
+      extractRoleTitleFromText(task) ||
+      extractRoleTitleFromText(blob) ||
+      extractRoleTitleFromText(body.taskHint || "") ||
+      flat.jobTitle ||
+      flat.job_title ||
+      // Only use bare `title` when it looks like a job title (not "update"/bot names)
+      (flat.title &&
+      !/^(update|status|maria|michelle|kelley|kelly|ashton|gina)$/i.test(
+        String(flat.title).trim(),
+      )
+        ? flat.title
+        : "") ||
+      "",
+  ).trim();
 
   const location =
     flat.location ||
@@ -102,6 +129,7 @@ function normalizeSourcePayload(payload = {}, body = {}) {
       flat.context?.resumesRequired ??
       (/resume/i.test(task) || /resume/i.test(blob)),
     _debugKeys: Object.keys(flat),
+    _taskPreview: String(task || "").slice(0, 240),
   };
 }
 
@@ -157,7 +185,9 @@ router.post("/run-command", async (req, res) => {
             'Maria needs a roleTitle to source. Could not infer one from the queued action. Re-queue with roleTitle or task like "source a Warehouse Assistant Manager candidate in Atlanta".',
           debug: {
             keys: payload._debugKeys,
-            taskPreview: String(payload.task || "").slice(0, 240),
+            taskPreview: payload._taskPreview || String(payload.task || "").slice(0, 240),
+            hint:
+              'Ask Gina again: "Ask Maria to source a <Job Title> candidate in <City>; resumes required"',
           },
         });
       }

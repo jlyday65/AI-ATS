@@ -223,12 +223,23 @@ async function runMariaFromTask(task, context = {}) {
   }
   const roleTitle =
     context.roleTitle ||
+    (typeof mod.extractRoleTitleFromText === "function"
+      ? mod.extractRoleTitleFromText(task)
+      : "") ||
     task.match(
-      /\b(?:source|find|recruit|hire)\s+(?:an?\s+|a\s+)?(.+?)(?:\s+candidate|\s+in\s+|\s+for\s+|$)/i,
+      /\b(?:source|find|recruit|hire)\s+(?:candidates?\s+for\s+)?(?:an?\s+|a\s+)?(.+?)(?:\s+candidate|\s+in\s+|\s+for\s+|$)/i,
     )?.[1]?.trim() ||
-    "Open role";
+    "";
+  if (!roleTitle || /^(candidates?|people|someone|talent)$/i.test(roleTitle)) {
+    throw new Error(
+      'Maria needs a roleTitle to source. Include it in the task, e.g. "source a Warehouse Assistant Manager candidate in Atlanta".',
+    );
+  }
   const location =
     context.location ||
+    (typeof mod.extractLocationFromText === "function"
+      ? mod.extractLocationFromText(task)
+      : "") ||
     task.match(/\bin\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)/i)?.[1]?.trim() ||
     "";
   const resumesRequired =
@@ -242,6 +253,7 @@ async function runMariaFromTask(task, context = {}) {
     pushToGina: true,
     pushTopN: context.pushTopN ?? 5,
     requiredSkills: context.requiredSkills,
+    task,
   });
 }
 

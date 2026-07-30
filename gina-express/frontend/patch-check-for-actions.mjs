@@ -180,14 +180,29 @@ const CLEAN = `
             actionId: action.id,
             payload: payload || {},
             action,
-            summary: action.summary || action.detail || "",
+            summary: action.summary || action.detail || action.notes || "",
+            taskHint: [
+              action.summary,
+              action.detail,
+              action.notes,
+              action.description,
+              action.task,
+              typeof action.payload === "string"
+                ? action.payload
+                : JSON.stringify(action.payload || {}),
+              typeof payload === "string" ? payload : JSON.stringify(payload || {}),
+            ]
+              .filter(Boolean)
+              .join("\\n"),
           }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data.ok === false) {
+          const dbg = data.debug ? \` | debug: \${JSON.stringify(data.debug)}\` : "";
           return {
             ok: false,
-            reason: data.error || data.reason || \`Command failed (\${res.status})\`,
+            reason:
+              (data.error || data.reason || \`Command failed (\${res.status})\`) + dbg,
           };
         }
         return {
