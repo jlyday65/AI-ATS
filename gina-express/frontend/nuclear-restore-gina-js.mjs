@@ -269,6 +269,20 @@ console.log("From:", best.label);
 console.log("Safety bak of previous broken file:", safety);
 console.log("command_agent:", /command_agent/.test(restored));
 console.log("GINA_TEAM_RULES:", /const GINA_TEAM_RULES/.test(restored));
+
+// Ensure pool import if this gina.js queues via Postgres
+const poolFix = path.join(__dirname, "fix-gina-pool-undefined.mjs");
+if (fs.existsSync(poolFix) && /\bpool\.(query|connect)\b/.test(restored)) {
+  console.log("\nEnsuring pool import (avoids HTTP 500 pool is not defined)…");
+  const r = spawnSync(process.execPath, [poolFix, ginaDir], {
+    encoding: "utf8",
+    stdio: "inherit",
+  });
+  if (r.status !== 0) {
+    console.warn("Warning: pool fix exited", r.status);
+  }
+}
+
 console.log(`
 Next:
   node --check ${target}

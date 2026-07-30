@@ -118,6 +118,24 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
+## Fix: Chat HTTP 500 `{"error":"pool is not defined"}`
+
+Gina chat tried to queue an Ashton/Maria/etc. action but `gina.js` used `pool` without importing it (often after nuclear restore).
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend
+node --check ~/lyday-gina-backend/gina-backend/gina.js
+cd ~/lyday-gina-backend
+git add gina-backend/gina.js gina-backend/server.js gina-backend/lib
+git status
+git commit -m "Fix pool is not defined in Gina chat/queue path"
+git pull origin main --rebase
+git push origin main
+```
+
+Then retest: "Gina please get an update from Ashton on his projects"
+
 ## Fix: Railway `Unexpected identifier 'task'` in gina.js
 
 Orphan Candidate File / TEAM prompt prose (with backticks around 'task') was pasted into `gina.js` outside a string.
