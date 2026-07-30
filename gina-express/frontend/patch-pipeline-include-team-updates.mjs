@@ -128,30 +128,36 @@ if (fs.existsSync(serverPath)) {
   }
 }
 
-// Strengthen gina.js
+// Strengthen gina.js — only via GINA_TEAM_RULES const (never raw prose paste)
 const ginaPath = path.join(ginaDir, "gina.js");
 if (fs.existsSync(ginaPath)) {
   let gina = fs.readFileSync(ginaPath, "utf8");
   const bak = `${ginaPath}.bak-team-brief-${Date.now()}`;
   let changed = false;
 
-  if (!/PIPELINE BRIEFING — TEAM UPDATES RULE/.test(gina)) {
-    if (/PIPELINE BRIEFING FORMAT RULE/.test(gina)) {
+  const safeRule = RULE.replace(/`/g, "'");
+
+  if (/const GINA_TEAM_RULES\s*=\s*`/.test(gina)) {
+    if (!/PIPELINE BRIEFING — TEAM UPDATES RULE/.test(gina)) {
       gina = gina.replace(
-        /PIPELINE BRIEFING FORMAT RULE[\s\S]*?(?=\n{2,}[A-Z]{3,}|\nexport |\nconst |\nfunction |$)/,
-        `${RULE}\n`,
+        /const GINA_TEAM_RULES\s*=\s*`([\s\S]*?)`;/,
+        (_m, body) =>
+          `const GINA_TEAM_RULES = \`${String(body).replace(/\$\{GINA_TEAM_RULES\}/g, "")}\n\n${safeRule}\`;`,
       );
       changed = true;
-      console.log("Replaced older PIPELINE BRIEFING FORMAT RULE");
-    } else if (/You are Gina/i.test(gina)) {
-      gina = gina.replace(/You are Gina[^\n]*/, (m) => `${m}\n\n${RULE}\n`);
-      changed = true;
-      console.log("Injected TEAM UPDATES RULE into gina.js");
-    } else {
-      gina += `\n\n${RULE}\n`;
-      changed = true;
-      console.log("Appended TEAM UPDATES RULE to gina.js");
+      console.log("Appended TEAM UPDATES RULE into GINA_TEAM_RULES const");
     }
+  } else if (!/PIPELINE BRIEFING — TEAM UPDATES RULE/.test(gina)) {
+    const rulesConst = `const GINA_TEAM_RULES = \`${safeRule}\`;`;
+    if (/^import .+$/m.test(gina)) {
+      const lastImport = [...gina.matchAll(/^import .+$/gm)].pop();
+      const idx = lastImport.index + lastImport[0].length;
+      gina = gina.slice(0, idx) + "\n\n" + rulesConst + "\n" + gina.slice(idx);
+    } else {
+      gina = rulesConst + "\n\n" + gina;
+    }
+    changed = true;
+    console.log("Inserted TEAM UPDATES RULE as GINA_TEAM_RULES const");
   }
 
   if (/get_pipeline_summary/.test(gina)) {
@@ -173,7 +179,6 @@ if (fs.existsSync(ginaPath)) {
     /get_pipeline_summary|pipeline_summary|\/ats\/summary/.test(gina) &&
     !/kimberley-notes\/briefing/.test(gina)
   ) {
-    // Soft hint near any fetch of last summary
     if (/lastSummary|latestSummary|pipelineSummary|ats\/summary/.test(gina)) {
       gina = gina.replace(
         /(async\s+function\s+\w*[Ss]ummary\w*\s*\([^)]*\)\s*\{)/,

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Fix Kelley/Kelly silent "update" requests from Gina.
- * Syncs bot reply + registry + prompt rule; injects Kelly update rule into gina.js.
+ * Sync bot reply + registry + dual-file rules into Gina.
+ * NEVER pastes raw prompt prose into gina.js (that breaks Railway with
+ * Unexpected identifier 'task' / 'TEAM'). Uses const GINA_TEAM_RULES = `...`.
  *
  * ONE LINE:
  *   node gina-express/frontend/patch-kelley-updates.mjs ~/lyday-gina-backend/gina-backend
@@ -24,7 +25,8 @@ const ginaDir = fs.existsSync(path.join(root, "server.js"))
     ? path.join(root, "gina-backend")
     : root;
 
-if (!fs.existsSync(path.join(ginaDir, "gina.js"))) {
+const ginaPath = path.join(ginaDir, "gina.js");
+if (!fs.existsSync(ginaPath)) {
   console.error(
     "Usage (one line): node patch-kelley-updates.mjs ~/lyday-gina-backend/gina-backend",
   );
@@ -43,6 +45,18 @@ function copy(rel) {
   console.log("Copied", rel);
 }
 
+function canParse(code) {
+  const tmp = `${ginaPath}.parse-tmp-${Date.now()}.mjs`;
+  fs.writeFileSync(tmp, code, "utf8");
+  const r = spawnSync(process.execPath, ["--check", tmp], { encoding: "utf8" });
+  try {
+    fs.unlinkSync(tmp);
+  } catch {
+    /* ignore */
+  }
+  return r.status === 0;
+}
+
 copy("agents/registry.js");
 copy("agents/bot-replies.js");
 copy("agents/command-agent.tool.js");
@@ -52,6 +66,23 @@ copy("routes/kimberley-notes.js");
 copy("briefing/format-pipeline-stage-counts.js");
 copy("GINA_TEAM_PROMPT_RULE.txt");
 copy("lib/kimberley-notes.js");
+
+// If gina.js already broken from prior raw paste, repair first
+const repair = path.join(__dirname, "repair-gina-js-syntax.mjs");
+const pre = spawnSync(process.execPath, ["--check", ginaPath], { encoding: "utf8" });
+if (pre.status !== 0) {
+  console.log("gina.js does not parse — running repair-gina-js-syntax first…");
+  const r = spawnSync(process.execPath, [repair, ginaDir], {
+    encoding: "utf8",
+    stdio: "inherit",
+  });
+  if (r.status !== 0) process.exit(2);
+}
+
+const teamRule = fs
+  .readFileSync(path.join(ginaDir, "GINA_TEAM_PROMPT_RULE.txt"), "utf8")
+  .trim()
+  .replace(/`/g, "'");
 
 const RULE = `
 TEAM BOT UPDATE RULE (required — Maria / Michelle / Kelley / Ashton):
@@ -70,98 +101,71 @@ EVERY executed bot reply is dual-filed to BOTH:
 When Kimberley later asks for a pipeline summary, you MUST pull live Team updates
 from /ats/kimberley-notes/briefing or /ats/pipeline-briefing and include ALL bots
 that have filed notes — never reply with stage counts alone.
-`;
+`.trim();
 
-const ginaPath = path.join(ginaDir, "gina.js");
+const rulesBody = [RULE, teamRule].join("\n\n").replace(/`/g, "'");
+const rulesConst = `const GINA_TEAM_RULES = \`${rulesBody}\`;`;
+
 let gina = fs.readFileSync(ginaPath, "utf8");
 const bak = `${ginaPath}.bak-kelley-${Date.now()}`;
 fs.copyFileSync(ginaPath, bak);
 
-if (!/TEAM BOT UPDATE RULE|KELLEY \/ KELLY UPDATE RULE/.test(gina)) {
-  if (/GINA TEAM COMMAND RULE|CANDIDATE FILE \(required|DUAL-FILE RULE/.test(gina)) {
-    gina = gina.replace(
-      /(GINA TEAM COMMAND RULE[\s\S]*?)(\n{2,}(?=[A-Z])|\nexport |\nconst |\nfunction |$)/,
-      (_, a, b) => `${a.trim()}\n${RULE.trim()}\n${b}`,
-    );
-  } else if (/You are Gina/i.test(gina)) {
-    gina = gina.replace(/You are Gina[^\n]*/, (m) => `${m}\n${RULE.trim()}\n`);
-  } else {
-    gina = `${RULE.trim()}\n\n${gina}`;
-  }
-  console.log("Injected TEAM BOT UPDATE RULE into gina.js");
-} else if (/KELLEY \/ KELLY UPDATE RULE/.test(gina) && !/TEAM BOT UPDATE RULE/.test(gina)) {
-  gina = gina.replace(
-    /KELLEY \/ KELLY UPDATE RULE[\s\S]*?(?=\n{2,}[A-Z]{3,}|\nexport |\nconst |\nfunction |$)/,
-    `${RULE.trim()}\n`,
-  );
-  console.log("Replaced Kelley-only rule with TEAM BOT UPDATE RULE");
+if (/const GINA_TEAM_RULES\s*=/.test(gina)) {
+  gina = gina.replace(/const GINA_TEAM_RULES\s*=\s*`[\s\S]*?`;/, rulesConst);
+  console.log("Refreshed const GINA_TEAM_RULES");
 } else {
-  console.log("Team bot update rule already present");
+  if (/^import .+$/m.test(gina)) {
+    const lastImport = [...gina.matchAll(/^import .+$/gm)].pop();
+    const idx = lastImport.index + lastImport[0].length;
+    gina = gina.slice(0, idx) + "\n\n" + rulesConst + "\n" + gina.slice(idx);
+  } else {
+    gina = rulesConst + "\n\n" + gina;
+  }
+  console.log("Inserted const GINA_TEAM_RULES (safe — no raw prose paste)");
 }
 
-// Refresh team prompt block if present as a file paste
-const teamRule = fs.readFileSync(
-  path.join(ginaDir, "GINA_TEAM_PROMPT_RULE.txt"),
-  "utf8",
-);
-if (/Ask Kelly \/ Kelley for an update/.test(teamRule) && /GINA TEAM COMMAND RULE/.test(gina)) {
-  // Soft replace older team rule without Kelly update example
-  if (!/Ask Kelly \/ Kelley for an update/.test(gina)) {
-    gina = gina.replace(
-      /GINA TEAM COMMAND RULE[\s\S]*?(?=\nKELLEY \/ KELLY UPDATE RULE|\nCANDIDATE FILE|\n{2}[A-Z]{3,}|\nexport |\nconst |$)/,
-      `${teamRule.trim()}\n\n`,
-    );
-    console.log("Refreshed GINA TEAM COMMAND RULE (includes Kelly update example)");
+if (!/\$\{GINA_TEAM_RULES\}/.test(gina)) {
+  if (/systemPrompt\s*=\s*`/.test(gina)) {
+    gina = gina.replace(/systemPrompt\s*=\s*`/, "systemPrompt = `${GINA_TEAM_RULES}\n\n` + `");
+    console.log("Wired GINA_TEAM_RULES into systemPrompt");
+  } else if (/const\s+SYSTEM\s*=\s*`/.test(gina)) {
+    gina = gina.replace(/const\s+SYSTEM\s*=\s*`/, "const SYSTEM = `${GINA_TEAM_RULES}\n\n");
+    console.log("Wired GINA_TEAM_RULES into SYSTEM");
   }
 }
 
-fs.writeFileSync(ginaPath, gina, "utf8");
-const check = spawnSync(process.execPath, ["--check", ginaPath], {
-  encoding: "utf8",
-});
-if (check.status !== 0) {
-  console.error("REFUSING: gina.js failed node --check");
-  console.error(check.stderr || check.stdout);
+if (!canParse(gina)) {
+  console.error("REFUSING: gina.js would not parse after safe rules inject");
   fs.copyFileSync(bak, ginaPath);
   process.exit(2);
 }
 
+fs.writeFileSync(ginaPath, gina, "utf8");
 console.log("OK: gina.js passes node --check");
 console.log("Backup:", bak);
 
-// Also wire pipeline briefing so Kelley notes appear under Team updates
 const briefPatch = path.join(__dirname, "patch-pipeline-include-team-updates.mjs");
 if (fs.existsSync(briefPatch)) {
-  console.log("\nWiring Kelley notes into Gina pipeline summary…");
+  console.log("\nWiring bot notes into Gina pipeline summary…");
   const brief = spawnSync(process.execPath, [briefPatch, ginaDir], {
     encoding: "utf8",
     stdio: "inherit",
   });
   if (brief.status !== 0) {
-    console.warn(
-      "Warning: pipeline team-updates patch exited",
-      brief.status,
-      "— re-run patch-pipeline-include-team-updates.mjs if summary still omits Kelley",
-    );
+    console.warn("Warning: pipeline team-updates patch exited", brief.status);
   }
 }
 
 console.log(`
-OK: ALL bot replies (Maria / Michelle / Kelley / Ashton) dual-file to
-Kimberley's Notes AND Gina pipeline Team updates.
+OK: ALL bot replies dual-file to Kimberley's Notes AND Gina pipeline Team updates.
+gina.js rules are in const GINA_TEAM_RULES (safe for Railway).
 
 Next:
-  cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+  node --check ~/lyday-gina-backend/gina-backend/gina.js
   cd ~/lyday-gina-backend
-  git add gina-backend/agents gina-backend/routes gina-backend/briefing gina-backend/lib gina-backend/GINA_TEAM_PROMPT_RULE.txt gina-backend/gina.js gina-backend/frontend/src/App.jsx gina-backend/server.js
+  git add gina-backend/agents gina-backend/routes gina-backend/briefing gina-backend/lib gina-backend/GINA_TEAM_PROMPT_RULE.txt gina-backend/gina.js gina-backend/server.js
   git status
-  git commit -m "All bot updates go to Kimberley Notes and Gina pipeline summary"
+  git commit -m "Safe GINA_TEAM_RULES inject + dual-file bot updates"
   git pull origin main --rebase
   git push origin main
-
-After Railway redeploy (new Gina chat):
-  Ask Gina for an update from Maria / Michelle / Kelley / Ashton
-  → Check for actions → Kimberley Notes
-  → Ask Gina for the pipeline summary
-  Expect each bot under Team updates (Kimberley Notes)
 `);

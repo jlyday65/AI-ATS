@@ -118,6 +118,24 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
+## Fix: Railway `Unexpected identifier 'task'` in gina.js
+
+Orphan Candidate File / TEAM prompt prose (with backticks around 'task') was pasted into `gina.js` outside a string.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/repair-gina-js-syntax.mjs ~/lyday-gina-backend/gina-backend
+node --check ~/lyday-gina-backend/gina-backend/gina.js
+cd ~/lyday-gina-backend
+git add gina-backend/gina.js
+git status
+git commit -m "Repair gina.js prompt syntax (Candidate File / TEAM rules)"
+git pull origin main --rebase
+git push origin main
+```
+
+Prompt patches now inject rules only via `const GINA_TEAM_RULES = \`...\`` (never raw paste).
+
 ## Fix: Railway `Cannot find module '/app/routes/agents/command-agent.tool.js'`
 
 `routes/candidate-files.js` (or another route) imported `./agents/...` instead of `../agents/...`.

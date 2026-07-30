@@ -53,26 +53,62 @@ let gina = fs.readFileSync(ginaPath, "utf8");
 const bak = `${ginaPath}.bak-cf-cmd-${Date.now()}`;
 fs.copyFileSync(ginaPath, bak);
 
-// Ensure prompt rule text is present
-const rule = fs.readFileSync(
-  path.join(ginaDir, "GINA_TEAM_PROMPT_RULE.txt"),
-  "utf8",
-);
-if (!/CANDIDATE FILE \(required when Kimberley asks\)/.test(gina)) {
-  if (/GINA TEAM COMMAND RULE/.test(gina)) {
-    // Replace existing team rule block start through a blank line stretch — append CF section near TEAM COMMAND
-    gina = gina.replace(
-      /GINA TEAM COMMAND RULE[\s\S]*?(?=\n{2,}[A-Z]{3,}|\nexport |\nconst |\nfunction |$)/,
-      () => rule.trim() + "\n\n",
-    );
-  } else if (/You are Gina/i.test(gina)) {
-    gina = gina.replace(/You are Gina[^\n]*/, (m) => `${m}\n\n${rule.trim()}\n`);
-  } else {
-    gina = `${rule.trim()}\n\n${gina}`;
+function canParse(code) {
+  const tmp = `${ginaPath}.parse-tmp-${Date.now()}.mjs`;
+  fs.writeFileSync(tmp, code, "utf8");
+  const r = spawnSync(process.execPath, ["--check", tmp], { encoding: "utf8" });
+  try {
+    fs.unlinkSync(tmp);
+  } catch {
+    /* ignore */
   }
-  console.log("Injected Candidate File rule into gina.js");
+  return r.status === 0;
+}
+
+// If already broken from raw prompt paste, repair first
+if (!canParse(gina)) {
+  console.log("gina.js does not parse — running repair-gina-js-syntax first…");
+  const repair = path.join(__dirname, "repair-gina-js-syntax.mjs");
+  const r = spawnSync(process.execPath, [repair, ginaDir], {
+    encoding: "utf8",
+    stdio: "inherit",
+  });
+  if (r.status !== 0) process.exit(2);
+  gina = fs.readFileSync(ginaPath, "utf8");
+}
+
+// Ensure prompt rule text is present via SAFE const (never raw paste — backticks break Railway)
+const rule = fs
+  .readFileSync(path.join(ginaDir, "GINA_TEAM_PROMPT_RULE.txt"), "utf8")
+  .trim()
+  .replace(/`/g, "'");
+const rulesConst = `const GINA_TEAM_RULES = \`${rule}\`;`;
+
+if (/const GINA_TEAM_RULES\s*=/.test(gina)) {
+  // Merge candidate-file guidance into existing rules const if missing
+  if (!/CANDIDATE FILE \(required when Kimberley asks\)/.test(gina)) {
+    gina = gina.replace(/const GINA_TEAM_RULES\s*=\s*`[\s\S]*?`;/, rulesConst);
+    console.log("Refreshed GINA_TEAM_RULES with Candidate File section");
+  } else {
+    console.log("Candidate File rule already in GINA_TEAM_RULES");
+  }
 } else {
-  console.log("Candidate File rule already in gina.js");
+  if (/^import .+$/m.test(gina)) {
+    const lastImport = [...gina.matchAll(/^import .+$/gm)].pop();
+    const idx = lastImport.index + lastImport[0].length;
+    gina = gina.slice(0, idx) + "\n\n" + rulesConst + "\n" + gina.slice(idx);
+  } else {
+    gina = rulesConst + "\n\n" + gina;
+  }
+  console.log("Inserted Candidate File rule as const GINA_TEAM_RULES (safe)");
+}
+
+if (!/\$\{GINA_TEAM_RULES\}/.test(gina)) {
+  if (/systemPrompt\s*=\s*`/.test(gina)) {
+    gina = gina.replace(/systemPrompt\s*=\s*`/, "systemPrompt = `${GINA_TEAM_RULES}\n\n` + `");
+  } else if (/const\s+SYSTEM\s*=\s*`/.test(gina)) {
+    gina = gina.replace(/const\s+SYSTEM\s*=\s*`/, "const SYSTEM = `${GINA_TEAM_RULES}\n\n");
+  }
 }
 
 // Import + register tool if tools array exists
