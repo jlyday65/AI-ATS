@@ -96,9 +96,22 @@ Commit/push that Gina repo, confirm Railway root dir, redeploy, **new chat**.
 
 ## Fix: Check for actions skips Maria / unknown action type
 
+After a nuclear App.jsx restore, re-wire handlers (esbuild-gated):
+
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-node gina-express/frontend/patch-apply-command-actions.mjs ~/lyday-gina-backend
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+Then commit `gina-backend/frontend/src/App.jsx` (+ routes/agents/lib if copied), `git pull origin main --rebase`, `git push origin main`.
+
+If the patch says `Expected "(" but found "applyAgentAction"`, pull again — that was a bad await rewriter (fixed). Do **not** skip the patch; Check for actions will keep saying Unknown action type without it.
+
+Also restore toolbar after nuclear restore:
+
+```bash
+node gina-express/frontend/patch-ats-toolbar-links.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
 cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 ```
 

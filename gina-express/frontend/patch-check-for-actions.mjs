@@ -333,53 +333,92 @@ if (!before.ok) {
 // Remove existing BOT_NAMES + applyAgentAction blocks (keep one clean copy)
 for (let guard = 0; guard < 8; guard++) {
   const bot = src.search(/const BOT_NAMES\s*=\s*new Set/);
-  const fn = src.search(/(?:async\s+)?function applyAgentAction\b/);
-  if (bot < 0 && fn < 0) break;
-  let start = bot >= 0 && fn >= 0 ? Math.min(bot, fn) : bot >= 0 ? bot : fn;
-  // Prefer including BOT_NAMES when near the function
-  if (bot >= 0 && fn >= 0 && Math.abs(fn - bot) < 500) start = Math.min(bot, fn);
-  const fnAt = src.search(/(?:async\s+)?function applyAgentAction\b/);
+  const fnAt = src.search(/(?:async\s+)?function\s+(?:await\s+)?applyAgentAction\b/);
+  if (bot < 0 && fnAt < 0) break;
   if (fnAt < 0) {
-    // orphan BOT_NAMES
-    const semi = src.indexOf(";", bot);
-    if (semi > bot) src = src.slice(0, bot) + src.slice(semi + 1);
+    // orphan BOT_NAMES (+ optional isBotMatch)
+    const isBot = src.search(/function\s+isBotMatch\b/);
+    let end = src.indexOf(";", bot);
+    if (isBot > bot && isBot - bot < 200) {
+      const braceAt = src.indexOf("{", isBot);
+      const be = braceEnd(src, braceAt);
+      if (be > 0) end = be - 1;
+    }
+    if (end > bot) src = src.slice(0, bot) + "\n" + src.slice(end + 1);
     continue;
   }
+  let start = fnAt;
+  if (bot >= 0 && bot < fnAt && fnAt - bot < 500) start = bot;
   const braceAt = src.indexOf("{", fnAt);
   const end = braceEnd(src, braceAt);
   if (end < 0) {
     console.error("Could not find end of applyAgentAction");
     process.exit(2);
   }
-  // If BOT_NAMES sits just above, extend start upward
-  if (bot >= 0 && bot < fnAt && fnAt - bot < 400) start = bot;
-  else start = fnAt;
   src = src.slice(0, start) + "\n" + src.slice(end);
 }
 
-// Insert clean function near CandidateTracker helpers — after last removed spot,
-// prefer before export default or near other helpers.
-if (/function\s+findCandidateByMatch\b/.test(src)) {
-  src = src.replace(
-    /(function\s+findCandidateByMatch\b[\s\S]*?\n\})/,
-    `$1\n\n${CLEAN}\n`,
-  );
-} else if (/export\s+default\s+function\s+App\b|function\s+CandidateTracker\b|function\s+App\b/.test(src)) {
-  src = src.replace(
-    /(function\s+(?:App|CandidateTracker)\b)/,
-    `\n${CLEAN}\n\n$1`,
-  );
-} else {
-  src += `\n${CLEAN}\n`;
+function insertClean(srcText, clean) {
+  // Prefer AFTER findCandidateByMatch (usually inside App, near other helpers)
+  const findAt = srcText.search(/function\s+findCandidateByMatch\b/);
+  if (findAt >= 0) {
+    const braceAt = srcText.indexOf("{", findAt);
+    const end = braceEnd(srcText, braceAt);
+    if (end > 0) {
+      return srcText.slice(0, end) + "\n\n" + clean + "\n" + srcText.slice(end);
+    }
+  }
+
+  // Else: inside App / CandidateTracker, just before `return (`
+  const host =
+    srcText.search(/export\s+default\s+function\s+(?:App|CandidateTracker)\b/) >= 0
+      ? srcText.search(/export\s+default\s+function\s+(?:App|CandidateTracker)\b/)
+      : srcText.search(/function\s+(?:App|CandidateTracker)\b/);
+  if (host >= 0) {
+    const hostBrace = srcText.indexOf("{", host);
+    if (hostBrace >= 0) {
+      const hostEnd = braceEnd(srcText, hostBrace);
+      const body = srcText.slice(hostBrace, hostEnd);
+      // last top-level-ish `return (` in the host (prefer before final return JSX)
+      const returnRe = /\n(\s*)return\s*\(/g;
+      let last = null;
+      let m;
+      while ((m = returnRe.exec(body))) last = m;
+      if (last && last.index > 0) {
+        const at = hostBrace + last.index;
+        return (
+          srcText.slice(0, at) +
+          "\n\n" +
+          clean +
+          "\n" +
+          srcText.slice(at)
+        );
+      }
+    }
+  }
+
+  return srcText + "\n" + clean + "\n";
 }
 
-// Ensure Check for actions awaits applyAgentAction
+src = insertClean(src, CLEAN);
+
+// Call sites only — NEVER rewrite `async function applyAgentAction(action)`
+// (old lookbehind `(?<!await\s)` alone produced: Expected "(" but found "applyAgentAction")
 src = src.replace(
-  /(?<!await\s)applyAgentAction\s*\(\s*action\s*\)/g,
+  /async\s+function\s+await\s+applyAgentAction/g,
+  "async function applyAgentAction",
+);
+src = src.replace(
+  /(?<!function\s)(?<!async\s+function\s)(?<!await\s)\bapplyAgentAction\s*\(\s*action\s*\)/g,
   "await applyAgentAction(action)",
 );
-// Avoid double await
 src = src.replace(/await\s+await\s+applyAgentAction/g, "await applyAgentAction");
+
+if (/async\s+function\s+await\s+applyAgentAction/.test(src)) {
+  console.error("REFUSING: await rewriter corrupted applyAgentAction declaration");
+  fs.copyFileSync(bak, appPath);
+  process.exit(2);
+}
 
 if (!/type === "command_agent"/.test(src) && !/type === 'command_agent'/.test(src)) {
   console.error("REFUSING: command_agent handler missing after insert");
