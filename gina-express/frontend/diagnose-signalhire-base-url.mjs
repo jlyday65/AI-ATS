@@ -47,6 +47,22 @@ console.log("HTTP", res.status);
 console.log("Body:", text.slice(0, 400));
 
 if (res.status === 404) {
+  if (/ERR_NGROK_3200|endpoint .+ is offline/i.test(text)) {
+    console.error(`
+FAIL: ngrok tunnel is OFFLINE (ERR_NGROK_3200).
+
+On your Mac (two terminals):
+  1) cd ~/AI-ATS && npm run dev
+  2) ngrok http 3000
+
+Then:
+  - Copy the https://….ngrok-free.dev URL
+  - Set Gina Railway SIGNALHIRE_BASE_URL to that URL (no trailing slash)
+  - Redeploy Gina
+  - Re-run: node diagnose-signalhire-base-url.mjs <that-url>
+`);
+    process.exit(2);
+  }
   console.error(`
 FAIL: 404 — this host does not serve /api/maria/source.
 Deploy AI-ATS (this repo) and set Gina Railway SIGNALHIRE_BASE_URL to that URL.

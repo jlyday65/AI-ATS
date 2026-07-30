@@ -49,6 +49,26 @@ Maria (Gina)
 3. Optional dry-run: open `/maria` → Ask Maria to source.
 4. In Gina ATS → Agent → **Check for actions**.
 
+## Local tunnel (ngrok) — keep it alive
+
+Maria on Railway Gina calls your laptop via `SIGNALHIRE_BASE_URL`.
+If ngrok shows **ERR_NGROK_3200 / endpoint is offline**, Check for actions will 404.
+
+```bash
+# Terminal A
+cd ~/AI-ATS && npm run dev
+
+# Terminal B
+ngrok http 3000
+```
+
+Probe, then set Gina Railway `SIGNALHIRE_BASE_URL` to the https ngrok URL
+(update it whenever ngrok issues a new subdomain):
+
+```bash
+node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-SUBDOMAIN.ngrok-free.dev
+```
+
 ## Auth notes
 
 - Send **one** `X-Relay-Secret` header only (not also `x-relay-secret`).

@@ -122,7 +122,36 @@ Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩�
 
 Queue/role parsing worked; Gina called the wrong host for Maria sourcing (or `SIGNALHIRE_BASE_URL` is unset/localhost). Gina must call **AI-ATS** `POST /api/maria/source`, not Gina itself.
 
-1) Find / deploy your AI-ATS public URL, then probe it:
+### If the URL is `*.ngrok-free.dev` and you see ERR_NGROK_3200 / offline
+
+The tunnel is down. Gina cannot reach your laptop until both AI-ATS and ngrok are running.
+
+**Terminal A — AI-ATS:**
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f && npm run dev
+```
+
+**Terminal B — tunnel:**
+```bash
+ngrok http 3000
+```
+
+Copy the `https://….ngrok-free.dev` URL. Probe it:
+
+```bash
+node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-SUBDOMAIN.ngrok-free.dev
+```
+
+Expect JSON with `"agent":"maria"`. Then set Gina Railway:
+
+- `SIGNALHIRE_BASE_URL=https://YOUR-SUBDOMAIN.ngrok-free.dev` (no trailing slash; update if ngrok gave you a new subdomain)
+- `RELAY_SECRET` = same value as SignalHire `/ats`
+
+Redeploy Gina, leave both terminals running, then Check for actions again.
+
+### If you use a permanent host (Vercel)
+
+1) Probe:
 
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
