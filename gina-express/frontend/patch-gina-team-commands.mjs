@@ -25,6 +25,9 @@ function walk(dir, out = []) {
   if (!fs.existsSync(dir)) return out;
   for (const name of fs.readdirSync(dir)) {
     if (["node_modules", ".git", "dist", ".next"].includes(name)) continue;
+    // Never touch the React ATS UI — pasting the command rule into App.jsx
+    // breaks Vite: Expected ";" but found "TEAM".
+    if (/^App\.jsx$/i.test(name) || /\.jsx$/i.test(name)) continue;
     const p = path.join(dir, name);
     let st;
     try {
@@ -33,7 +36,7 @@ function walk(dir, out = []) {
       continue;
     }
     if (st.isDirectory()) walk(p, out);
-    else if (/\.(js|mjs|cjs|ts|tsx|jsx|md|txt)$/i.test(name)) out.push(p);
+    else if (/\.(js|mjs|cjs|ts|tsx|md|txt)$/i.test(name)) out.push(p);
   }
   return out;
 }

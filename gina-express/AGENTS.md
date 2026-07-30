@@ -104,6 +104,27 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Railway: `SIGNALHIRE_BASE_URL` + `RELAY_SECRET`. Redeploy, re-ask Gina, Check for actions.
 
+## Fix: Vite build `Expected ";" but found "TEAM"`
+
+Orphan **GINA TEAM COMMAND RULE** prose was pasted into `App.jsx` (not a string). Strip it, then rebuild:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/strip-app-jsx-prose.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+If build still fails, nuclear-restore + re-patch Check for actions + toolbar:
+
+```bash
+node gina-express/frontend/nuclear-restore-app-jsx.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/patch-ats-toolbar-links.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+`patch-gina-team-commands.mjs` / `patch-gina-chat-tools.mjs` now **skip `*.jsx`** so this does not repeat.
+
 ## Env (Railway Gina)
 
 - `RELAY_SECRET` — shared with SignalHire  

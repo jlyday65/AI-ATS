@@ -55,6 +55,8 @@ function walk(dir, out = []) {
   for (const name of fs.readdirSync(dir)) {
     if (["node_modules", ".git", "dist", ".next"].includes(name)) continue;
     if (name.endsWith(".bak") || name.includes(".bak-")) continue;
+    // Never paste prompt rules into App.jsx (Vite: Expected ";" but found "TEAM").
+    if (/^App\.jsx$/i.test(name) || /\.jsx$/i.test(name)) continue;
     const p = path.join(dir, name);
     let st;
     try {
@@ -63,7 +65,7 @@ function walk(dir, out = []) {
       continue;
     }
     if (st.isDirectory()) walk(p, out);
-    else if (/\.(js|mjs|cjs|ts|tsx|jsx|md|txt|json)$/i.test(name)) out.push(p);
+    else if (/\.(js|mjs|cjs|ts|tsx|md|txt|json)$/i.test(name)) out.push(p);
   }
   return out;
 }
