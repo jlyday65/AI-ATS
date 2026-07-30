@@ -120,21 +120,24 @@ Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩�
 
 ## Fix: Chat HTTP 500 `{"error":"pool is not defined"}`
 
-Gina chat tried to queue an Ashton/Maria/etc. action but `gina.js` used `pool` without importing it (often after nuclear restore).
+Gina chat tried to queue an Ashton/Maria/etc. action but a backend file used `pool` without a **top-level** import (often after nuclear restore). Older fixes could wrongly skip files that only had `function foo({ pool })`.
+
+**Must push Gina repo + wait for Railway** after the script. Kit-only pull does not change production.
 
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-node gina-express/frontend/fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend --diagnose
+node gina-express/frontend/fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend --force
 node --check ~/lyday-gina-backend/gina-backend/gina.js
 cd ~/lyday-gina-backend
-git add gina-backend/gina.js gina-backend/server.js gina-backend/lib
+git add -u gina-backend
 git status
-git commit -m "Fix pool is not defined in Gina chat/queue path"
+git commit -m "Fix pool is not defined — recursive top-level import"
 git pull origin main --rebase
 git push origin main
 ```
 
-Then retest: "Gina please get an update from Ashton on his projects"
+Look for `Fixed:` or `MISSING IMPORT` in the script output. If everything says `BOUND` but chat still 500s, paste that diagnose output back. After Railway finishes deploying, retest: "Gina please get an update from Ashton on his projects"
 
 ## Fix: Railway `Unexpected identifier 'task'` in gina.js
 

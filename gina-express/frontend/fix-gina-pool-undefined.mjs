@@ -2,18 +2,34 @@
 /**
  * Fix Railway/chat HTTP 500: {"error":"pool is not defined"}
  *
- * Usually gina.js (or calendar/agentActivity) calls pool.query to queue
- * ats_actions after nuclear restore dropped `import { pool } from "./db.js"`.
+ * Root cause: a module calls pool.query (queue Ashton/Maria actions, notes, etc.)
+ * without a TOP-LEVEL import of pool. Earlier versions of this script falsely
+ * treated `function foo({ pool })` as a binding and skipped the fix.
  *
- * ONE LINE:
+ * ONE LINE (fix everything):
  *   node gina-express/frontend/fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend
+ *
+ * Diagnose only (no writes):
+ *   node gina-express/frontend/fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend --diagnose
+ *
+ * Force re-inject even if a stale import line exists:
+ *   node gina-express/frontend/fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend --force
  */
 
 import fs from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
+import { fileURLToPath } from "url";
 
-const raw = String(process.argv[2] || "")
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const args = process.argv.slice(2).filter(Boolean);
+const flags = new Set(args.filter((a) => a.startsWith("--")));
+const diagnoseOnly = flags.has("--diagnose") || flags.has("-n");
+const force = flags.has("--force");
+const pos = args.filter((a) => !a.startsWith("--"));
+
+const raw = String(pos[0] || "")
   .trim()
   .replace(/^~(?=$|\/|\\)/, process.env.HOME || "");
 const root = path.resolve(raw);
@@ -24,12 +40,25 @@ const ginaDir = fs.existsSync(path.join(root, "gina.js"))
     : root;
 
 const ginaPath = path.join(ginaDir, "gina.js");
-if (!fs.existsSync(ginaPath)) {
+if (!raw || !fs.existsSync(ginaPath)) {
   console.error(
-    "Usage (one line): node fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend",
+    "Usage (one line):\n" +
+      "  node fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend\n" +
+      "  node fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend --diagnose\n" +
+      "  node fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend --force",
   );
   process.exit(1);
 }
+
+const SKIP_DIR = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".next",
+  "coverage",
+  "frontend", // Vite UI — pool lives on the Express side
+]);
 
 function canParse(file, code) {
   const tmp = `${file}.parse-tmp-${Date.now()}.mjs`;
@@ -40,195 +69,352 @@ function canParse(file, code) {
   } catch {
     /* ignore */
   }
-  return r.status === 0;
+  return { ok: r.status === 0, err: (r.stderr || r.stdout || "").trim() };
 }
 
+/**
+ * True if the file has a real pool binding.
+ * - Import / require of pool
+ * - `const pool = …` (top-level or local like deps.pool)
+ * Does NOT treat function params like `function foo({ pool })` as enough —
+ * that false-positive left chat 500ing after the first fix.
+ */
 function hasPoolBinding(src) {
+  if (
+    /^import\s*\{[^}\n]*\bpool\b[^}\n]*\}\s*from\s*["'][^"']+["']\s*;?\s*$/m.test(
+      src,
+    )
+  ) {
+    return true;
+  }
+  if (/^import\s+pool\s+from\s*["'][^"']+["']\s*;?\s*$/m.test(src)) {
+    return true;
+  }
+  if (
+    /(?:const|let|var)\s*\{[^}\n]*\bpool\b[^}\n]*\}\s*=\s*require\s*\(\s*["'][^"']+["']\s*\)/.test(
+      src,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /(?:const|let|var)\s+pool\s*=\s*require\s*\(\s*["'][^"']+["']\s*\)/.test(
+      src,
+    )
+  ) {
+    return true;
+  }
+  // Real assignment (not a function parameter)
+  if (/\b(?:export\s+)?(?:const|let|var)\s+pool\s*=/.test(src)) {
+    return true;
+  }
+  return false;
+}
+
+function usesPoolStrict(src) {
+  // Strip comments so commented queue snippets don't trigger false positives
+  const stripped = src
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
   return (
-    /import\s*\{[^}]*\bpool\b[^}]*\}\s*from\s*["'][^"']+db\.js["']/.test(src) ||
-    /import\s+pool\s+from\s*["'][^"']+db\.js["']/.test(src) ||
-    /const\s+pool\s*=/.test(src) ||
-    /let\s+pool\s*=/.test(src) ||
-    /var\s+pool\s*=/.test(src) ||
-    /function\s+[^(]*\([^)]*\bpool\b/.test(src)
+    /\bpool\.(query|connect|end|on|totalCount)\b/.test(stripped) ||
+    /\bawait\s+pool\b/.test(stripped)
   );
 }
 
-function usesPool(src) {
-  return /\bpool\.(query|connect|end|on)\b/.test(src) || /\bawait\s+pool\b/.test(src);
+function walkJsFiles(dir, out = []) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const ent of entries) {
+    if (ent.name.startsWith(".") && ent.name !== ".env") continue;
+    if (SKIP_DIR.has(ent.name)) continue;
+    if (/\.bak/i.test(ent.name) || /\.parse-tmp-/i.test(ent.name)) continue;
+    const full = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
+      walkJsFiles(full, out);
+      continue;
+    }
+    if (!/\.(js|mjs|cjs)$/i.test(ent.name)) continue;
+    out.push(full);
+  }
+  return out;
 }
 
 function detectDbImportStyle(ginaDir) {
-  const dbPath = path.join(ginaDir, "db.js");
-  if (!fs.existsSync(dbPath)) {
-    // try lib/db.js
-    const libDb = path.join(ginaDir, "lib", "db.js");
-    if (fs.existsSync(libDb)) return { rel: "./lib/db.js", named: true };
-    return null;
+  const candidates = [
+    path.join(ginaDir, "db.js"),
+    path.join(ginaDir, "lib", "db.js"),
+    path.join(ginaDir, "database.js"),
+    path.join(ginaDir, "lib", "database.js"),
+    path.join(ginaDir, "pg.js"),
+  ];
+  for (const dbPath of candidates) {
+    if (!fs.existsSync(dbPath)) continue;
+    const db = fs.readFileSync(dbPath, "utf8");
+    const rel = "./" + path.relative(ginaDir, dbPath).split(path.sep).join("/");
+    const named =
+      /export\s*\{[^}]*\bpool\b/.test(db) ||
+      /\bexport\s+const\s+pool\b/.test(db) ||
+      /\bexports\.pool\s*=/.test(db) ||
+      /module\.exports\s*=\s*\{[^}]*\bpool\b/.test(db);
+    const def =
+      /export\s+default\s+pool\b/.test(db) ||
+      /module\.exports\s*=\s*pool\b/.test(db);
+    if (named) return { rel, named: true, dbPath };
+    if (def) return { rel, named: false, dbPath };
+    // File exists but unclear — prefer named import (kit convention)
+    return { rel, named: true, dbPath, unclear: true };
   }
-  const db = fs.readFileSync(dbPath, "utf8");
-  const named = /export\s*\{[^}]*\bpool\b|\bexport\s+const\s+pool\b|\bexport\s+\{?\s*pool/.test(
-    db,
-  );
-  const def =
-    /export\s+default\s+pool\b|export\s+default\s+\{[^}]*pool/.test(db) ||
-    /module\.exports\s*=\s*pool/.test(db);
-  // Prefer named if present; many Gina apps use `export const pool` or `export { pool }`
-  if (named || /export\s+const\s+pool|exports\.pool/.test(db)) {
-    return { rel: "./db.js", named: true };
-  }
-  if (def) return { rel: "./db.js", named: false };
-  // Default guess used across kit
-  return { rel: "./db.js", named: true };
+  return null;
 }
 
-function ensurePoolImport(src, style, fromFile) {
-  if (!usesPool(src)) return { src, changed: false, reason: "no pool usage" };
-  if (hasPoolBinding(src)) return { src, changed: false, reason: "already bound" };
+function ensureDbJs(ginaDir) {
+  const dbPath = path.join(ginaDir, "db.js");
+  if (fs.existsSync(dbPath)) return { created: false, path: dbPath };
+  const body = `import pg from "pg";
+
+const { Pool } = pg;
+
+const connectionString =
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.PGDATABASE_URL ||
+  "";
+
+if (!connectionString) {
+  console.warn(
+    "[db.js] DATABASE_URL is not set — pool queries will fail at runtime",
+  );
+}
+
+export const pool = new Pool(
+  connectionString
+    ? { connectionString, ssl: process.env.PGSSL === "false" ? false : { rejectUnauthorized: false } }
+    : undefined,
+);
+
+export default pool;
+`;
+  if (diagnoseOnly) {
+    console.log("Would CREATE missing db.js at", dbPath);
+    return { created: false, path: dbPath, missing: true };
+  }
+  fs.writeFileSync(dbPath, body, "utf8");
+  console.log("Created missing db.js:", dbPath);
+  return { created: true, path: dbPath };
+}
+
+function relImportFrom(file, styleRel) {
+  const absDb = path.resolve(ginaDir, styleRel);
+  let rel = path.relative(path.dirname(file), absDb).split(path.sep).join("/");
+  if (!rel.startsWith(".")) rel = "./" + rel;
+  return rel;
+}
+
+function ensurePoolImport(src, style, file) {
+  if (!usesPoolStrict(src)) {
+    return { src, changed: false, reason: "no pool usage" };
+  }
+  const already = hasPoolBinding(src);
+  if (already && !force) {
+    return { src, changed: false, reason: "already has pool binding" };
+  }
   if (!style) {
     return { src, changed: false, reason: "db.js missing — cannot auto-import" };
   }
 
-  // Relative path from file to db
-  let rel = style.rel;
-  if (fromFile.includes(`${path.sep}lib${path.sep}`) && rel === "./db.js") {
-    rel = "../db.js";
-  } else if (fromFile.includes(`${path.sep}routes${path.sep}`) && rel === "./db.js") {
-    rel = "../db.js";
-  } else if (fromFile.includes(`${path.sep}lib${path.sep}`) && rel === "./lib/db.js") {
-    rel = "./db.js";
-  }
-
+  const rel = relImportFrom(file, style.rel);
   const importLine = style.named
-    ? `import { pool } from "${rel}";\n`
-    : `import pool from "${rel}";\n`;
+    ? `import { pool } from "${rel}";`
+    : `import pool from "${rel}";`;
 
   let next = src;
+  // Drop broken / duplicate pool imports so --force is clean
+  next = next.replace(
+    /^import\s*(?:\{[^}]*\bpool\b[^}]*\}|pool)\s*from\s*["'][^"']+["']\s*;?\s*\n?/gm,
+    "",
+  );
+  next = next.replace(
+    /^(?:const|let|var)\s*(?:\{[^}]*\bpool\b[^}]*\}|pool)\s*=\s*require\s*\(\s*["'][^"']+["']\s*\)\s*;?\s*\n?/gm,
+    "",
+  );
+
   if (/^import\s+/m.test(next)) {
-    // insert after last import
     const matches = [...next.matchAll(/^import .+$/gm)];
     const last = matches[matches.length - 1];
     const idx = last.index + last[0].length;
-    next = next.slice(0, idx) + "\n" + importLine + next.slice(idx);
+    next = next.slice(0, idx) + "\n" + importLine + "\n" + next.slice(idx);
   } else {
-    next = importLine + next;
+    next = importLine + "\n" + next;
   }
-  return { src: next, changed: true, reason: `added ${importLine.trim()}` };
+  return {
+    src: next,
+    changed: next !== src,
+    reason: already ? `re-injected ${importLine}` : `added ${importLine}`,
+  };
 }
 
-/**
- * Soft-guard: wrap bare pool.query in a helper if import still impossible.
- */
-function addPoolGuardFallback(src) {
-  if (hasPoolBinding(src) || !usesPool(src)) return { src, changed: false };
-  if (/function\s+requirePool\b|const\s+requirePool\b/.test(src)) {
-    return { src, changed: false };
+function listPoolCallSites(src) {
+  const lines = src.split(/\n/);
+  const hits = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/\bpool\.(query|connect|end|on)\b/.test(lines[i])) {
+      hits.push({ line: i + 1, text: lines[i].trim().slice(0, 120) });
+    }
   }
-  const guard = `
-function requirePool() {
-  if (typeof pool === "undefined" || !pool) {
-    throw new Error(
-      "Database pool is not configured. Ensure db.js exports pool and gina.js imports it: import { pool } from \\"./db.js\\"",
-    );
-  }
-  return pool;
-}
-`.trim();
-
-  let next = src;
-  // Don't rewrite inside strings aggressively — only replace pool.query( with requirePool().query(
-  next = next.replace(/\bpool\.query\s*\(/g, "requirePool().query(");
-  if (next === src) return { src, changed: false };
-  if (/^import\s+/m.test(next)) {
-    const last = [...next.matchAll(/^import .+$/gm)].pop();
-    const idx = last.index + last[0].length;
-    next = next.slice(0, idx) + "\n\n" + guard + "\n" + next.slice(idx);
-  } else {
-    next = guard + "\n\n" + next;
-  }
-  return { src: next, changed: true };
+  return hits;
 }
 
-const style = detectDbImportStyle(ginaDir);
+// --- main ---
 console.log("Gina dir:", ginaDir);
+console.log("Mode:", diagnoseOnly ? "diagnose" : force ? "force-fix" : "fix");
+
+let style = detectDbImportStyle(ginaDir);
+if (!style) {
+  const created = ensureDbJs(ginaDir);
+  if (created.missing && diagnoseOnly) {
+    console.error("DIAGNOSE: db.js is MISSING — that alone explains pool failures after restore.");
+  }
+  style = detectDbImportStyle(ginaDir);
+}
 console.log(
   "db.js style:",
-  style ? `${style.named ? "named" : "default"} from ${style.rel}` : "NOT FOUND",
+  style
+    ? `${style.named ? "named" : "default"} from ${style.rel}${style.unclear ? " (export shape unclear)" : ""}`
+    : "NOT FOUND",
 );
 
-const targets = [
+const allFiles = walkJsFiles(ginaDir);
+const priority = [
   ginaPath,
   path.join(ginaDir, "server.js"),
-  path.join(ginaDir, "lib", "calendar.js"),
-  path.join(ginaDir, "lib", "agentActivity.js"),
-  path.join(ginaDir, "calendar.js"),
-].filter((p) => fs.existsSync(p));
+  path.join(ginaDir, "index.js"),
+  path.join(ginaDir, "app.js"),
+];
+const ordered = [
+  ...priority.filter((p) => fs.existsSync(p)),
+  ...allFiles.filter((p) => !priority.includes(p)),
+];
+
+console.log(`Scanning ${ordered.length} JS files…\n`);
 
 let fixed = 0;
-for (const file of targets) {
-  const src = fs.readFileSync(file, "utf8");
-  if (!usesPool(src)) {
-    console.log("Skip (no pool use):", path.relative(ginaDir, file));
+let broken = 0;
+const report = [];
+
+for (const file of ordered) {
+  let src;
+  try {
+    src = fs.readFileSync(file, "utf8");
+  } catch {
     continue;
   }
-  console.log("\nChecking", path.relative(ginaDir, file));
-  console.log("  uses pool:", true, "| has binding:", hasPoolBinding(src));
+  if (!usesPoolStrict(src)) continue;
 
-  let next = src;
-  let note = "";
-  const imp = ensurePoolImport(next, style, file);
-  if (imp.changed) {
-    next = imp.src;
-    note = imp.reason;
-  } else if (imp.reason === "db.js missing — cannot auto-import") {
-    const guard = addPoolGuardFallback(next);
-    if (guard.changed) {
-      next = guard.src;
-      note = "added requirePool() guard (db.js missing)";
-    } else {
-      console.warn("  WARNING: pool used but db.js not found and guard not applied");
-      continue;
-    }
-  } else {
-    console.log("  OK:", imp.reason);
+  const rel = path.relative(ginaDir, file);
+  const bound = hasPoolBinding(src);
+  const sites = listPoolCallSites(src);
+  const status = bound ? "BOUND" : "MISSING IMPORT";
+  report.push({ rel, bound, sites: sites.length });
+
+  console.log(`${status}: ${rel} (${sites.length} pool.* call site(s))`);
+  for (const s of sites.slice(0, 5)) {
+    console.log(`    L${s.line}: ${s.text}`);
+  }
+  if (sites.length > 5) console.log(`    … +${sites.length - 5} more`);
+
+  if (bound && !force) {
+    console.log("  OK: pool binding present\n");
     continue;
   }
 
-  if (!canParse(file, next)) {
+  const imp = ensurePoolImport(src, style, file);
+  if (!imp.changed) {
+    console.log("  SKIP:", imp.reason, "\n");
+    if (!bound) broken += 1;
+    continue;
+  }
+
+  const check = canParse(file, imp.src);
+  if (!check.ok) {
     console.error("  REFUSING: fix would not parse");
+    console.error("   ", check.err.split("\n")[0]);
+    broken += 1;
+    console.log("");
     continue;
   }
+
+  if (diagnoseOnly) {
+    console.log("  WOULD FIX:", imp.reason, "\n");
+    broken += 1;
+    continue;
+  }
+
   const bak = `${file}.bak-pool-${Date.now()}`;
   fs.copyFileSync(file, bak);
-  fs.writeFileSync(file, next, "utf8");
+  fs.writeFileSync(file, imp.src, "utf8");
   fixed += 1;
-  console.log("  Fixed:", note);
-  console.log("  Backup:", bak);
+  console.log("  Fixed:", imp.reason);
+  console.log("  Backup:", bak, "\n");
 }
 
-// Verify gina.js
+// Final verify on gina.js
 const gina = fs.readFileSync(ginaPath, "utf8");
-if (usesPool(gina) && !hasPoolBinding(gina)) {
+const ginaNeeds =
+  usesPoolStrict(gina) && !hasPoolBinding(gina) ? true : false;
+const ginaParse = canParse(ginaPath, gina);
+
+console.log("──────── summary ────────");
+console.log(`files with pool usage: ${report.length}`);
+console.log(
+  `missing pool binding: ${report.filter((r) => !r.bound).length}`,
+);
+console.log(`fixed this run: ${fixed}`);
+if (diagnoseOnly) {
+  console.log("(diagnose only — no files written)");
+}
+
+if (ginaNeeds) {
   console.error("\nFAILED: gina.js still uses pool without a binding");
   process.exit(2);
 }
-if (!canParse(ginaPath, gina)) {
-  console.error("\nFAILED: gina.js does not parse after fix");
+if (!ginaParse.ok) {
+  console.error("\nFAILED: gina.js does not parse:", ginaParse.err.split("\n")[0]);
+  process.exit(2);
+}
+if (!diagnoseOnly && broken > 0 && fixed === 0) {
+  console.error(
+    `\nFAILED: ${broken} file(s) still need a pool import and could not be fixed automatically.`,
+  );
   process.exit(2);
 }
 
-console.log(`
-OK: fixed ${fixed} file(s). pool binding present where needed.
+if (!diagnoseOnly) {
+  console.log(`
+OK: pool binding present where needed (fixed ${fixed} file(s)).
 
-Retest chat:
-  "Gina please get an update from Ashton on his projects"
+VERIFY the script printed "Fixed:" for at least one file, or every usage is BOUND.
+If chat still 500s after Railway redeploy, re-run with --force and paste the diagnose output.
 
-Next:
+Next (one line each):
+  node --check ${ginaPath}
   cd ~/lyday-gina-backend
-  node --check gina-backend/gina.js
-  git add gina-backend/gina.js gina-backend/server.js gina-backend/lib
+  git add -u gina-backend
   git status
-  git commit -m "Fix pool is not defined in Gina chat/queue path"
+  git commit -m "Fix pool is not defined — recursive top-level import"
   git pull origin main --rebase
   git push origin main
+
+Then wait for Railway redeploy and retest Ashton update in Gina chat.
 `);
+} else if (report.some((r) => !r.bound)) {
+  console.log(`
+Re-run without --diagnose to apply imports:
+  node ${path.relative(process.cwd(), path.join(__dirname, "fix-gina-pool-undefined.mjs")) || "fix-gina-pool-undefined.mjs"} ${raw} --force
+`);
+  process.exit(3);
+}
