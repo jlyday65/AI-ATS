@@ -54,7 +54,12 @@
           return {
             ok: false,
             reason:
-              (data.error || data.reason || `Command failed (${res.status})`) + dbg,
+              (data.error ||
+                data.reason ||
+                data.summary ||
+                data.message ||
+                data.result?.error ||
+                `Command failed (${res.status})`) + dbg,
           };
         }
         return {

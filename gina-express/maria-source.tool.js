@@ -11,11 +11,42 @@
  *                           (local: http://host.docker.internal:3000)
  */
 
-const SIGNALHIRE_BASE_URL = (
-  process.env.SIGNALHIRE_BASE_URL ||
-  process.env.AI_ATS_BASE_URL ||
-  "http://localhost:3000"
-).replace(/\/$/, "");
+function resolveSignalHireBaseUrl() {
+  const raw = (
+    process.env.SIGNALHIRE_BASE_URL ||
+    process.env.AI_ATS_BASE_URL ||
+    process.env.SIGNALHIRE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    ""
+  )
+    .trim()
+    .replace(/\/$/, "");
+
+  if (!raw) {
+    throw new Error(
+      "SIGNALHIRE_BASE_URL is not set on Gina. Set it to your AI-ATS / SignalHire public URL (the host that serves POST /api/maria/source), then redeploy. Example: https://your-ai-ats.vercel.app",
+    );
+  }
+
+  const withProto = raw.includes("://") ? raw : `https://${raw}`;
+
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(withProto)) {
+    const onRailway = Boolean(
+      process.env.RAILWAY_ENVIRONMENT ||
+        process.env.RAILWAY_PROJECT_ID ||
+        process.env.RAILWAY_SERVICE_ID,
+    );
+    if (onRailway) {
+      throw new Error(
+        `SIGNALHIRE_BASE_URL is ${withProto}, which is not reachable from Railway. Set it to your public AI-ATS URL (Vercel/tunnel), not localhost.`,
+      );
+    }
+  }
+
+  return withProto.replace(/\/$/, "");
+}
+
+export { resolveSignalHireBaseUrl };
 
 const ROLE_NOISE = new Set(
   [
@@ -238,48 +269,72 @@ export async function mariaSourceViaSignalHire(input = {}) {
   // Kimberley asked for Operations Manager). Only forward jobId when it is the
   // sole selector or when no roleTitle was resolved.
   const jobId = input.jobId || input.context?.jobId;
-  const response = await fetch(`${SIGNALHIRE_BASE_URL}/api/maria/source`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // Send ONE header only — Express joins duplicates into "secret, secret".
-      "X-Relay-Secret": secret,
-      // ngrok free tier otherwise returns an interstitial HTML page to server fetches
-      "ngrok-skip-browser-warning": "true",
-    },
-    body: JSON.stringify({
-      roleTitle,
-      roleDescription: input.roleDescription || input.description || taskText || undefined,
-      requiredSkills: input.requiredSkills,
-      preferredSkills: input.preferredSkills,
-      location: input.location,
-      seniority: input.seniority,
-      resumesRequired,
-      pushToGina: input.pushToGina !== false,
-      pushTopN: input.pushTopN ?? 5,
-      limit: input.limit ?? 24,
-      // roleTitle is authoritative when present — omit jobId so SignalHire
-      // cannot source the wrong open requisition from the ATS board selection.
-      ...(roleTitle ? {} : jobId ? { jobId } : {}),
-      platformIds: input.platformIds,
-    }),
-  });
+  const baseUrl = resolveSignalHireBaseUrl();
+  const sourceUrl = `${baseUrl}/api/maria/source`;
+  let response;
+  try {
+    response = await fetch(sourceUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Send ONE header only — Express joins duplicates into "secret, secret".
+        "X-Relay-Secret": secret,
+        // ngrok free tier otherwise returns an interstitial HTML page to server fetches
+        "ngrok-skip-browser-warning": "true",
+      },
+      body: JSON.stringify({
+        roleTitle,
+        roleDescription:
+          input.roleDescription || input.description || taskText || undefined,
+        requiredSkills: input.requiredSkills,
+        preferredSkills: input.preferredSkills,
+        location: input.location,
+        seniority: input.seniority,
+        resumesRequired,
+        pushToGina: input.pushToGina !== false,
+        pushTopN: input.pushTopN ?? 5,
+        limit: input.limit ?? 24,
+        // roleTitle is authoritative when present — omit jobId so SignalHire
+        // cannot source the wrong open requisition from the ATS board selection.
+        ...(roleTitle ? {} : jobId ? { jobId } : {}),
+        platformIds: input.platformIds,
+      }),
+    });
+  } catch (err) {
+    throw new Error(
+      `Maria could not reach SignalHire at ${sourceUrl}: ${err?.message || err}. Check SIGNALHIRE_BASE_URL on Gina Railway.`,
+    );
+  }
 
-  const json = await response.json().catch(() => ({}));
+  const rawText = await response.text().catch(() => "");
+  let json = {};
+  try {
+    json = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    json = {};
+  }
   if (!response.ok) {
-    const detail =
-      json.error ||
+    const snippet = rawText.replace(/\s+/g, " ").trim().slice(0, 160);
+    let detail =
+      (typeof json.error === "string" && json.error) ||
       json.hint ||
-      `SignalHire Maria source failed (${response.status})`;
+      `SignalHire Maria source failed (${response.status}) at ${sourceUrl}`;
+    if (response.status === 404) {
+      detail = `SignalHire Maria source 404 at ${sourceUrl}. SIGNALHIRE_BASE_URL must be your AI-ATS public URL (serves GET/POST /api/maria/source), not Gina and not a dead Vercel host. ${snippet ? `Body: ${snippet}` : ""}`;
+    } else if (response.status === 401) {
+      detail = `SignalHire rejected RELAY_SECRET (${json.hint || "unauthorized"}) for ${sourceUrl}. Gina RELAY_SECRET must match SignalHire /ats secret.`;
+    }
     const err = new Error(detail);
     err.status = response.status;
     err.body = json;
+    err.url = sourceUrl;
     throw err;
   }
 
   return {
     ok: true,
     ...json,
+    sourceUrl,
     nextStep:
       json.nextStep ||
       "In Gina ATS → Agent → Check for actions to import the shortlist.",

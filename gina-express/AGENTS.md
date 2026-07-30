@@ -118,6 +118,42 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
+## Fix: Skipped action — SignalHire Maria source failed (404)
+
+Queue/role parsing worked; Gina called the wrong host for Maria sourcing (or `SIGNALHIRE_BASE_URL` is unset/localhost). Gina must call **AI-ATS** `POST /api/maria/source`, not Gina itself.
+
+1) Find / deploy your AI-ATS public URL, then probe it:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-AI-ATS.vercel.app
+```
+
+Expect JSON with `"agent":"maria"`. A 404 means that host is not AI-ATS.
+
+2) On **Gina Railway** set:
+
+- `SIGNALHIRE_BASE_URL=https://YOUR-AI-ATS.vercel.app` (no trailing slash)
+- `RELAY_SECRET` = same value as SignalHire `/ats`
+
+3) Copy improved errors + UI reason handling:
+
+```bash
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git commit -m "Clearer Maria SignalHire 404 errors + command_agent error field"
+git pull origin main --rebase
+git push origin main
+```
+
+Redeploy Gina, then Check for actions again (87–89).
+
+## Fix: Skipped action — Command failed (200)
+
+`command_agent` returned `ok: false` with a message but the UI only showed `Command failed (200)`. The same `patch-check-for-actions` step above surfaces `error` / `summary` / `result.error`.
+
 ## Fix: Skipped action — Maria needs a roleTitle / missing targetAgent
 
 Live queue rows (e.g. 88/89) look like:

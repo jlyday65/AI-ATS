@@ -348,6 +348,10 @@ router.post("/run-command", async (req, res) => {
 
       return res.json({
         ok: result.ok !== false,
+        error:
+          result.ok === false
+            ? result.error || result.message || "Team command failed"
+            : undefined,
         summary:
           result.message ||
           `${result.agent} update filed in Kimberley's Note Panel`,
