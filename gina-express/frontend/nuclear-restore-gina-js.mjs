@@ -145,11 +145,28 @@ function injectSafeRules(code) {
   );
 
   if (!/\$\{GINA_TEAM_RULES\}/.test(next)) {
-    if (/systemPrompt\s*=\s*`/.test(next)) {
+    if (/const\s+SYSTEM_PROMPT\s*=\s*`/.test(next)) {
+      next = next.replace(
+        /const\s+SYSTEM_PROMPT\s*=\s*`/,
+        "const SYSTEM_PROMPT = `${GINA_TEAM_RULES}\n\n",
+      );
+    } else if (/systemPrompt\s*=\s*`/.test(next)) {
       next = next.replace(/systemPrompt\s*=\s*`/, "systemPrompt = `${GINA_TEAM_RULES}\n\n` + `");
     } else if (/const\s+SYSTEM\s*=\s*`/.test(next)) {
       next = next.replace(/const\s+SYSTEM\s*=\s*`/, "const SYSTEM = `${GINA_TEAM_RULES}\n\n");
     }
+  }
+
+  // If chat uses SYSTEM_PROMPT but the const is gone, add a binder after rules
+  if (
+    /\bSYSTEM_PROMPT\b/.test(next) &&
+    !/\b(?:const|let|var)\s+SYSTEM_PROMPT\s*=/.test(next)
+  ) {
+    const binder = `const SYSTEM_PROMPT = \`You are Gina, the ATS orchestrator for Lyday Talent Partners.\\n\\n\${GINA_TEAM_RULES}\`;`;
+    next = next.replace(
+      /const GINA_TEAM_RULES\s*=\s*`[\s\S]*?`;/,
+      (m) => `${m}\n\n${binder}`,
+    );
   }
 
   next = next.replace(
@@ -299,6 +316,25 @@ if (
   });
   if (r.status !== 0) {
     console.warn("Warning: anthropic fix exited", r.status);
+  }
+}
+
+// Ensure SYSTEM_PROMPT if chat references it
+const sysPromptFix = path.join(
+  __dirname,
+  "fix-gina-system-prompt-undefined.mjs",
+);
+const afterAnthropic = fs.readFileSync(target, "utf8");
+if (fs.existsSync(sysPromptFix) && /\bSYSTEM_PROMPT\b/.test(afterAnthropic)) {
+  console.log(
+    "\nEnsuring SYSTEM_PROMPT (avoids HTTP 500 SYSTEM_PROMPT is not defined)…",
+  );
+  const r = spawnSync(process.execPath, [sysPromptFix, ginaDir, "--force"], {
+    encoding: "utf8",
+    stdio: "inherit",
+  });
+  if (r.status !== 0) {
+    console.warn("Warning: SYSTEM_PROMPT fix exited", r.status);
   }
 }
 

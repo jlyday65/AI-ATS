@@ -142,6 +142,24 @@ That copies updated `maria-source.tool.js` + `routes/run-command.js` and patches
 
 Do not reuse the empty/failed row; ask Gina to queue a fresh action.
 
+## Fix: Chat HTTP 500 `{"error":"SYSTEM_PROMPT is not defined"}`
+
+Gina chat still references `SYSTEM_PROMPT` after a restore stripped `const SYSTEM_PROMPT = \`...\``. (Same class of break as `pool` / `anthropic`.)
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-gina-system-prompt-undefined.mjs ~/lyday-gina-backend/gina-backend --force
+node --check ~/lyday-gina-backend/gina-backend/gina.js
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git status
+git commit -m "Fix SYSTEM_PROMPT is not defined in Gina chat"
+git pull origin main --rebase
+git push origin main
+```
+
+The script restores from a `gina.js.bak*` / git copy when possible, otherwise builds from `GINA_TEAM_RULES` / the kit prompt rule. Wait for Railway, then re-ask Gina to queue Maria.
+
 ## Fix: Chat HTTP 500 `{"error":"anthropic is not defined"}`
 
 Gina chat calls `anthropic.messages.create` but lost the SDK client after a restore:
