@@ -118,9 +118,9 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
-## Fix: Kelley update must hit Notes AND pipeline summary
+## Fix: Bot updates must hit Notes AND pipeline summary
 
-Kelley’s Check-for-actions reply is dual-filed:
+Every bot Check-for-actions reply (Maria / Michelle / Kelley / Ashton) is dual-filed:
 
 1. **Kimberley's Notes** (full text)
 2. **Gina pipeline summary → Team updates (Kimberley Notes)**
@@ -134,8 +134,12 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 Then commit agents/routes/briefing/lib/gina.js (+ App.jsx/server.js if patched), pull --rebase, push, Railway redeploy.
 
 Retest (new Gina chat):
-1. Ask Gina: Ask Kelly for an update → Check for actions → Kimberley Notes
-2. Ask Gina: Give me the pipeline summary → expect Kelley under Team updates
+1. Ask Gina for an update from any bot → Check for actions → Kimberley Notes
+2. Ask Gina: Give me the pipeline summary → expect that bot under Team updates
+
+## Fix: Kelley update must hit Notes AND pipeline summary
+
+Kelley’s Check-for-actions reply is dual-filed (same as all bots — use patch above).
 
 ## Fix: Kelley update missing from Gina pipeline summary
 
@@ -147,7 +151,7 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Then commit `gina.js` + briefing/routes/lib (+ App.jsx if patched), pull --rebase, push, Railway redeploy.
 
-Retest: Ask Kelly for an update → Check for actions → ask Gina for pipeline summary → expect **Team updates (Kimberley Notes)** to list Kelley.
+Retest: Ask any bot for an update → Check for actions → ask Gina for pipeline summary → expect **Team updates (Kimberley Notes)** to list them.
 
 Railway: `SIGNALHIRE_BASE_URL` + `RELAY_SECRET`. Redeploy, re-ask Gina, Check for actions.
 

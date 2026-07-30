@@ -5,6 +5,9 @@
  * Communication contract:
  * - Every reply names the bot, echoes Kimberley's ask, states status, and names the next handoff.
  * - Queue acks are short; execute replies are the working update filed in Kimberley's Notes.
+ * - Every executed bot reply is dual-filed:
+ *     1) Kimberley's Notes (full text)
+ *     2) Gina pipeline summary → Team updates (Kimberley Notes)
  */
 
 function stamp() {
@@ -17,6 +20,17 @@ function stamp() {
 
 function bullets(lines) {
   return lines.filter(Boolean).map((l) => `• ${l}`).join("\n");
+}
+
+/** Dual-file destinations — every bot update must hit both. */
+function filedToBothBlock() {
+  return [
+    "Filed to:",
+    bullets([
+      "Kimberley's Notes (full update)",
+      "Gina's Pipeline Stage Counts summary → Team updates (Kimberley Notes)",
+    ]),
+  ].join("\n");
 }
 
 function extractQuotedNames(task = "") {
@@ -58,8 +72,9 @@ export function buildQueuedAck({ agentId, agentName, task } = {}) {
     "",
     bullets([
       `Gina queued this for ${name}.`,
-      "Run Agent → Check for actions to execute (Maria hits SignalHire; others file a working update here).",
-      "Result reply will replace this ack in Kimberley's Notes for the same action.",
+      "Run Check for actions to execute (Maria hits SignalHire; others file a working update here).",
+      "Result reply replaces this ack in Kimberley's Notes for the same action.",
+      "Executed reply also rolls into Gina's pipeline summary → Team updates.",
     ]),
   ].join("\n");
 }
@@ -76,6 +91,8 @@ export function buildMariaReply({ task, result, error } = {}) {
         `SignalHire / Maria tool error: ${error}`,
         "Check RELAY_SECRET + SIGNALHIRE_BASE_URL on Gina, then re-run Check for actions.",
       ]),
+      "",
+      filedToBothBlock(),
       "",
       "Handoff: Kimberley → Gina once env is fixed; then Maria can push shortlists again.",
     ].join("\n");
@@ -113,11 +130,14 @@ export function buildMariaReply({ task, result, error } = {}) {
     names.length ? `Top names: ${names.join(", ")}` : null,
     pushed != null ? `Pushed/queued to Gina board: ${pushed}` : null,
     "",
+    filedToBothBlock(),
+    "",
     "Handoff:",
     bullets([
-      "Kimberley → Gina ATS → Agent → Check for actions to import any remaining candidates.",
+      "Kimberley → Gina ATS → Check for actions to import any remaining candidates.",
       "Add shortlisted candidates + resumes into the open Candidate File (/candidate-file).",
       "Then ask Michelle to screen the new shortlist (same role) and record Q&A on that file.",
+      "Ask Gina for the pipeline summary to confirm this Maria update under Team updates.",
       "Kelley handles stage moves; Ashton drafts outreach after Kimberley approves.",
     ]),
   ]
@@ -132,9 +152,11 @@ export function buildMichelleReply({ task, result } = {}) {
     result?.reviewedCount ??
     result?.candidateCount ??
     (names.length || null);
+  const isStatusUpdate =
+    /\b(update|status|progress|report|check[- ]?in)\b/i.test(String(task || ""));
 
   return [
-    `Michelle — screening update (${stamp()})`,
+    `Michelle — ${isStatusUpdate ? "status" : "screening"} update (${stamp()})`,
     "",
     `Request: ${task}`,
     role ? `Role focus: ${role}` : null,
@@ -150,12 +172,15 @@ export function buildMichelleReply({ task, result } = {}) {
       "No auto-reject without Kimberley approval on edge cases.",
     ]),
     "",
+    filedToBothBlock(),
+    "",
     "Handoff:",
     bullets([
       "Strong fits → Kelley for unambiguous stage moves.",
       "Gaps / edge cases → Kimberley's Notes until Kimberley decides.",
       "When Q&A is complete → Export Candidate File for client review.",
       "Approved outreach targets → Ashton for draft follow-ups.",
+      "Ask Gina for the pipeline summary to confirm this Michelle update under Team updates.",
     ]),
   ]
     .filter((l) => l != null)
@@ -186,11 +211,7 @@ export function buildKelleyReply({ task, result } = {}) {
         "Target: status note before end of day with what's live, in draft, and due next.",
       ]),
       "",
-      "Filed to:",
-      bullets([
-        "Kimberley's Notes (full update)",
-        "Gina's Pipeline Stage Counts summary → Team updates (Kimberley Notes)",
-      ]),
+      filedToBothBlock(),
       "",
       "Handoff: Kimberley reads Notes; ask Gina for the pipeline summary to see this in Team updates.",
     ].join("\n");
@@ -210,11 +231,7 @@ export function buildKelleyReply({ task, result } = {}) {
         "Anything needing Kimberley's decision will be listed explicitly in Notes.",
       ]),
       "",
-      "Filed to:",
-      bullets([
-        "Kimberley's Notes (full update)",
-        "Gina's Pipeline Stage Counts summary → Team updates (Kimberley Notes)",
-      ]),
+      filedToBothBlock(),
       "",
       "Handoff:",
       bullets([
@@ -242,11 +259,7 @@ export function buildKelleyReply({ task, result } = {}) {
       "Anything needing Kimberley's call will stay in Notes until approved.",
     ]),
     "",
-    "Filed to:",
-    bullets([
-      "Kimberley's Notes (full update)",
-      "Gina's Pipeline Stage Counts summary → Team updates (Kimberley Notes)",
-    ]),
+    filedToBothBlock(),
     "",
     "Handoff:",
     bullets([
@@ -260,7 +273,9 @@ export function buildKelleyReply({ task, result } = {}) {
 }
 
 export function buildAshtonReply({ task, result } = {}) {
-  const isProject = /project status|status update|project/i.test(String(task || ""));
+  const isProject = /project status|status update|project|update|progress|report|check[- ]?in/i.test(
+    String(task || ""),
+  );
   const names = extractQuotedNames(task);
   const role = extractRoleHint(task) || result?.roleTitle || "";
 
@@ -275,10 +290,11 @@ export function buildAshtonReply({ task, result } = {}) {
         "Compiling current workstreams: active outreach, pending replies, and follow-ups due.",
         "Will separate: On track / At risk / Blocked with owners.",
         "Client-facing drafts stay in Approvals until Kimberley signs off.",
-        "Full status brief will refresh Kimberley's Note Panel and the morning pipeline summary.",
       ]),
       "",
-      "Handoff: Kimberley approves drafts → Ashton queues sends → Kelley keeps stages in sync.",
+      filedToBothBlock(),
+      "",
+      "Handoff: Kimberley approves drafts → Ashton queues sends → Kelley keeps stages in sync. Ask Gina for the pipeline summary to confirm this Ashton update under Team updates.",
     ].join("\n");
   }
 
@@ -295,14 +311,16 @@ export function buildAshtonReply({ task, result } = {}) {
         ? `Drafting or queueing outreach / follow-ups for ${names.join(", ")}.`
         : "Drafting or queueing outreach / follow-ups tied to ATS records.",
       "Nothing sends externally without Kimberley approval when Approvals is enabled.",
-      "Completed drafts appear here and feed Gina's briefing roll-up.",
     ]),
+    "",
+    filedToBothBlock(),
     "",
     "Handoff:",
     bullets([
       "Kimberley reviews drafts in Approvals / Notes.",
       "After send/approval, Kelley can advance stage (e.g. Screening → Interview).",
       "Michelle owns screen notes if a reply changes fit.",
+      "Ask Gina for the pipeline summary to confirm this Ashton update under Team updates.",
     ]),
   ]
     .filter((l) => l != null)
@@ -333,7 +351,9 @@ export function buildBotReply({ agentId, task, result, error, phase } = {}) {
     `Team update (${stamp()})`,
     "",
     `Request: ${task || "(none)"}`,
-    "Acknowledged — follow-up will appear in Kimberley's Note Panel.",
+    "Acknowledged.",
+    "",
+    filedToBothBlock(),
   ].join("\n");
 }
 

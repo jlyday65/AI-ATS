@@ -27,6 +27,18 @@ describe("bot replies for Kimberley Notes", () => {
     assert.match(reply, /Handoff/);
   });
 
+  it("dual-files Maria / Michelle / Ashton replies too", () => {
+    for (const [id, task] of [
+      ["maria", "Provide a sourcing status update for Kimberley"],
+      ["michelle", "Provide a screening status update for Kimberley"],
+      ["ashton", "Provide a project status update for Kimberley"],
+    ]) {
+      const reply = buildBotReply({ agentId: id, task });
+      assert.match(reply, /Kimberley's Notes/, id);
+      assert.match(reply, /Team updates|pipeline summary/i, id);
+    }
+  });
+
   it("files an Ashton project status update", () => {
     const reply = buildAshtonReply({
       task: "give me an update on the project status",

@@ -54,20 +54,22 @@ copy("GINA_TEAM_PROMPT_RULE.txt");
 copy("lib/kimberley-notes.js");
 
 const RULE = `
-KELLEY / KELLY UPDATE RULE (required):
-When Kimberley asks Gina for an update/status from Kelley or Kelly
-(e.g. "ask Kelly for an update", "get a status update from Kelley"),
-you MUST queue command_agent with targetAgent "kelley" (alias kelly is OK)
-and a clear task like "Provide a pipeline ops status update for Kimberley".
-Do NOT answer as Kelley yourself. Do NOT stay silent. Do NOT use update_stage
-with match.name Kelley/Kelly.
+TEAM BOT UPDATE RULE (required — Maria / Michelle / Kelley / Ashton):
+When Kimberley asks Gina for an update/status from ANY team bot
+(e.g. "ask Maria for an update", "get a status from Michelle",
+"ask Kelly for an update", "ask Ashton for a project status"),
+you MUST queue command_agent with the correct targetAgent
+(maria | michelle | kelley | ashton; kelly → kelley)
+and a clear task like "Provide a status update for Kimberley".
+Do NOT answer as that bot yourself. Do NOT stay silent.
+Do NOT use update_stage / add_note with match.name set to a bot.
 After queuing, tell Kimberley to run Check for actions.
-Kelley's executed reply is filed to BOTH:
+EVERY executed bot reply is dual-filed to BOTH:
   1) Kimberley's Notes (full update)
   2) Gina pipeline summary → Team updates (Kimberley Notes)
 When Kimberley later asks for a pipeline summary, you MUST pull live Team updates
-from /ats/kimberley-notes/briefing or /ats/pipeline-briefing and include Kelley —
-never reply with stage counts alone.
+from /ats/kimberley-notes/briefing or /ats/pipeline-briefing and include ALL bots
+that have filed notes — never reply with stage counts alone.
 `;
 
 const ginaPath = path.join(ginaDir, "gina.js");
@@ -75,8 +77,8 @@ let gina = fs.readFileSync(ginaPath, "utf8");
 const bak = `${ginaPath}.bak-kelley-${Date.now()}`;
 fs.copyFileSync(ginaPath, bak);
 
-if (!/KELLEY \/ KELLY UPDATE RULE/.test(gina)) {
-  if (/GINA TEAM COMMAND RULE|CANDIDATE FILE \(required/.test(gina)) {
+if (!/TEAM BOT UPDATE RULE|KELLEY \/ KELLY UPDATE RULE/.test(gina)) {
+  if (/GINA TEAM COMMAND RULE|CANDIDATE FILE \(required|DUAL-FILE RULE/.test(gina)) {
     gina = gina.replace(
       /(GINA TEAM COMMAND RULE[\s\S]*?)(\n{2,}(?=[A-Z])|\nexport |\nconst |\nfunction |$)/,
       (_, a, b) => `${a.trim()}\n${RULE.trim()}\n${b}`,
@@ -86,9 +88,15 @@ if (!/KELLEY \/ KELLY UPDATE RULE/.test(gina)) {
   } else {
     gina = `${RULE.trim()}\n\n${gina}`;
   }
-  console.log("Injected KELLEY / KELLY UPDATE RULE into gina.js");
+  console.log("Injected TEAM BOT UPDATE RULE into gina.js");
+} else if (/KELLEY \/ KELLY UPDATE RULE/.test(gina) && !/TEAM BOT UPDATE RULE/.test(gina)) {
+  gina = gina.replace(
+    /KELLEY \/ KELLY UPDATE RULE[\s\S]*?(?=\n{2,}[A-Z]{3,}|\nexport |\nconst |\nfunction |$)/,
+    `${RULE.trim()}\n`,
+  );
+  console.log("Replaced Kelley-only rule with TEAM BOT UPDATE RULE");
 } else {
-  console.log("Kelley update rule already present");
+  console.log("Team bot update rule already present");
 }
 
 // Refresh team prompt block if present as a file paste
@@ -139,20 +147,21 @@ if (fs.existsSync(briefPatch)) {
 }
 
 console.log(`
-OK: Kelley replies file to Kimberley's Notes AND Gina pipeline Team updates.
+OK: ALL bot replies (Maria / Michelle / Kelley / Ashton) dual-file to
+Kimberley's Notes AND Gina pipeline Team updates.
 
 Next:
   cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
   cd ~/lyday-gina-backend
   git add gina-backend/agents gina-backend/routes gina-backend/briefing gina-backend/lib gina-backend/GINA_TEAM_PROMPT_RULE.txt gina-backend/gina.js gina-backend/frontend/src/App.jsx gina-backend/server.js
   git status
-  git commit -m "Kelley updates go to Kimberley Notes and Gina pipeline summary"
+  git commit -m "All bot updates go to Kimberley Notes and Gina pipeline summary"
   git pull origin main --rebase
   git push origin main
 
 After Railway redeploy (new Gina chat):
-  1) Ask Gina: Ask Kelly for an update
-  2) Check for actions → Kimberley Notes (full Kelley reply)
-  3) Ask Gina: Give me the pipeline summary
-     Expect Team updates (Kimberley Notes) to list Kelley
+  Ask Gina for an update from Maria / Michelle / Kelley / Ashton
+  → Check for actions → Kimberley Notes
+  → Ask Gina for the pipeline summary
+  Expect each bot under Team updates (Kimberley Notes)
 `);
