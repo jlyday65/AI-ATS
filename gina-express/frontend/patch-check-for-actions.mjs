@@ -49,6 +49,7 @@ function copy(rel) {
 }
 
 copy("routes/run-command.js");
+copy("routes/kimberley-notes.js");
 copy("agents/command-agent.tool.js");
 copy("agents/bot-replies.js");
 copy("agents/registry.js");

@@ -118,6 +118,28 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
+## Fix: Duplicate replies in Kimberley's Notes
+
+Ack + working update (or double Check for actions) created two rows for the same `action_id`. Notes now upsert by action id, collapse dupes on list, and expose a one-shot cleanup.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git commit -m "Dedupe Kimberley Notes by action id"
+git pull origin main --rebase
+git push origin main
+```
+
+After Railway redeploy, clean existing duplicates (while logged into Gina):
+
+```bash
+curl -sS -X POST https://lyday-gina-backend-production.up.railway.app/ats/kimberley-notes/dedupe -H "Content-Type: application/json" -b "YOUR_SESSION_COOKIE"
+```
+
+Or open Kimberley's Notes → Refresh (list already hides same-action duplicates). New Check for actions runs replace the ack instead of adding a second card.
+
 ## Fix: Skipped action — SignalHire Maria source failed (404)
 
 Queue/role parsing worked; Gina called the wrong host for Maria sourcing (or `SIGNALHIRE_BASE_URL` is unset/localhost). Gina must call **AI-ATS** `POST /api/maria/source`, not Gina itself.
