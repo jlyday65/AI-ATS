@@ -66,14 +66,15 @@ describe("bot replies for Kimberley Notes", () => {
 describe("kimberley notes upsert by action", () => {
   it("replaces ack with execute reply for same actionId", async () => {
     const notes = createKimberleyNotes();
+    const actionId = `act_dup_${Date.now()}`;
     const ack = await notes.insertNote({
       fromAgent: "Kelley",
       agentRole: "Pipeline ops",
       task: "move Ava to Interview",
       reply: "Kelley — queued",
-      actionId: "act_dup_1",
+      actionId,
     });
-    const done = await notes.upsertByActionId("act_dup_1", {
+    const done = await notes.upsertByActionId(actionId, {
       fromAgent: "Kelley",
       agentRole: "Pipeline ops",
       task: "move Ava to Interview",
@@ -81,8 +82,8 @@ describe("kimberley notes upsert by action", () => {
     });
     assert.equal(done.id, ack.id);
     assert.match(done.reply, /pipeline ops update/);
-    const listed = await notes.listNotes({ agent: "Kelley", limit: 20 });
-    assert.equal(listed.filter((n) => n.actionId === "act_dup_1").length, 1);
+    const listed = await notes.listNotes({ agent: "Kelley", limit: 50 });
+    assert.equal(listed.filter((n) => n.actionId === actionId).length, 1);
   });
 });
 
@@ -110,14 +111,31 @@ describe("Pipeline Stage Counts formatter", () => {
       teamUpdates: [
         {
           from: "Kelley",
-          reply: "Kelley — weekly blogs update\nDraft topics confirmed",
+          reply:
+            "Kelley — status update\nRequest: ask Kelly for an update\nPipeline ops status:\n- Reviewing open ATS actions\n- Flagging stuck stages",
         },
       ],
     });
     assert.match(brief, /Pipeline Stage Counts/);
     assert.match(brief, /Team updates \(Kimberley Notes\)/);
     assert.match(brief, /Kelley/);
+    assert.match(brief, /Reviewing open ATS actions|Flagging stuck stages|ask Kelly for an update/);
     assert.match(brief, /Reminders due/);
+  });
+
+  it("includes Kelly alias updates in briefing", () => {
+    const brief = formatMorningPipelineBriefing({
+      stageCounts: { new: 0 },
+      teamUpdates: [
+        {
+          from: "Kelly",
+          role: "Pipeline ops",
+          reply: "Kelly — status update\n- Weekly ops checklist in progress",
+        },
+      ],
+    });
+    assert.match(brief, /Kelley/);
+    assert.match(brief, /Weekly ops checklist/);
   });
 });
 

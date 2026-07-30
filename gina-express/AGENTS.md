@@ -116,7 +116,19 @@ node gina-express/frontend/patch-bot-nav-branding.mjs ~/lyday-gina-backend/gina-
 cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 ```
 
-Nav labels become: 🗂️ Gina · 🔍 Maria · ✅ Michelle · 📣 Kelley · 📋 Ashton
+Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
+
+## Fix: Kelley update missing from Gina pipeline summary
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-pipeline-include-team-updates.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+Then commit `gina.js` + briefing/routes/lib (+ App.jsx if patched), pull --rebase, push, Railway redeploy.
+
+Retest: Ask Kelly for an update → Check for actions → ask Gina for pipeline summary → expect **Team updates (Kimberley Notes)** to list Kelley.
 
 Railway: `SIGNALHIRE_BASE_URL` + `RELAY_SECRET`. Redeploy, re-ask Gina, Check for actions.
 

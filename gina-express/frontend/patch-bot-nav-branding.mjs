@@ -31,15 +31,15 @@ if (!target || !fs.existsSync(target)) {
   process.exit(1);
 }
 
-/** Role-matched emojis for the recruiting team nav */
+/** Role-matched face emojis for the recruiting team nav */
 const LABELS = {
-  agent: "🗂️ Gina",
-  gina: "🗂️ Gina",
-  maria: "🔍 Maria",
-  michelle: "✅ Michelle",
-  kelly: "📣 Kelley",
-  kelley: "📣 Kelley",
-  ashton: "📋 Ashton",
+  agent: "👩🏿 Gina",
+  gina: "👩🏿 Gina",
+  maria: "👩🏻 Maria",
+  michelle: "👩🏾 Michelle",
+  kelly: "👩🏼 Kelley",
+  kelley: "👩🏼 Kelley",
+  ashton: "👨 Ashton",
 };
 
 function loadEsbuild(appFile) {
@@ -97,7 +97,8 @@ for (const [key, label] of Object.entries(LABELS)) {
 
 // Common heading / tab leftovers that still say plain "Agent"
 const headingReplacements = [
-  [/<(h[1-3]|div|span|button)([^>]*)>\s*Agent\s*</g, "<$1$2>🗂️ Gina<"],
+  [/<(h[1-3]|div|span|button)([^>]*)>\s*(?:🗂️\s*)?Agent\s*</g, "<$1$2>👩🏿 Gina<"],
+  [/<(h[1-3]|div|span|button)([^>]*)>\s*🗂️\s*Gina\s*</g, "<$1$2>👩🏿 Gina<"],
   [/placeholder=["']Ask Agent/g, 'placeholder="Ask Gina'],
   [/Sync with Agent/g, "Sync with Gina"],
   [/Failed to reach Agent:/g, "Failed to reach Gina:"],

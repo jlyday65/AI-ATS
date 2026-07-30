@@ -128,10 +128,17 @@ export function createKimberleyNotes(deps = {}) {
           params.push(status);
           clauses.push(`status = $${params.length}`);
         }
-        if (agent) {
-          params.push(String(agent).toLowerCase());
-          clauses.push(`lower(from_agent) = $${params.length}`);
-        }
+    if (agent) {
+      params.push(String(agent).toLowerCase());
+      // Kelly ↔ Kelley alias
+      if (/^kell[ey]+$/.test(String(agent).toLowerCase())) {
+        clauses.push(
+          `(lower(from_agent) = 'kelley' OR lower(from_agent) = 'kelly' OR lower(from_agent) = $${params.length})`,
+        );
+      } else {
+        clauses.push(`lower(from_agent) = $${params.length}`);
+      }
+    }
         if (briefingOnly) {
           clauses.push(`include_in_briefing = TRUE`);
         }
@@ -156,7 +163,11 @@ export function createKimberleyNotes(deps = {}) {
     if (status) rows = rows.filter((r) => r.status === status);
     if (agent) {
       const key = String(agent).toLowerCase();
-      rows = rows.filter((r) => r.fromAgent.toLowerCase() === key);
+      rows = rows.filter((r) => {
+        const from = r.fromAgent.toLowerCase();
+        if (/^kell[ey]+$/.test(key)) return from === "kelley" || from === "kelly";
+        return from === key;
+      });
     }
     if (briefingOnly) rows = rows.filter((r) => r.includeInBriefing);
     return rows.slice(0, Math.min(Number(limit) || 50, 200));
@@ -236,8 +247,11 @@ export function createKimberleyNotes(deps = {}) {
         includeInBriefing: input.includeInBriefing !== false,
         createdAt: memory[idx].createdAt,
       });
+      // Collapse any duplicate rows for the same actionId
+      memory = memory.filter((r, i) => i === idx || String(r.actionId) !== key);
+      const newIdx = memory.findIndex((r) => String(r.actionId) === key);
       memory = [...memory];
-      memory[idx] = updated;
+      memory[newIdx >= 0 ? newIdx : 0] = updated;
       saveFile(memory);
       return updated;
     }
