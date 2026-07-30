@@ -22,23 +22,89 @@ const pkg = path.join(__dirname, "..");
 
 const raw = String(process.argv[2] || "")
   .trim()
-  .replace(/^~/, process.env.HOME || "");
+  .replace(/^~(?=$|\/|\\)/, process.env.HOME || "");
 let target = path.resolve(raw);
-if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
-  const cand = path.join(target, "gina.js");
-  if (fs.existsSync(cand)) target = cand;
-  else {
-    const cand2 = path.join(target, "gina-backend", "gina.js");
-    if (fs.existsSync(cand2)) target = cand2;
+
+function findGinaJs(start) {
+  const tried = [];
+  const candidates = [
+    start,
+    path.join(start, "gina.js"),
+    path.join(start, "gina-backend", "gina.js"),
+    path.join(start, "gina-backend", "gina-backend", "gina.js"),
+  ];
+  // If start is lyday-gina-backend root
+  if (path.basename(start) === "lyday-gina-backend") {
+    candidates.push(path.join(start, "gina-backend", "gina.js"));
   }
+  for (const cand of candidates) {
+    tried.push(cand);
+    try {
+      if (fs.existsSync(cand) && fs.statSync(cand).isFile() && /\.js$/i.test(cand)) {
+        return { file: cand, tried };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  // Shallow search for gina.js under start (max depth 3)
+  function walk(dir, depth) {
+    if (depth < 0 || !fs.existsSync(dir)) return null;
+    let st;
+    try {
+      st = fs.statSync(dir);
+    } catch {
+      return null;
+    }
+    if (!st.isDirectory()) return null;
+    let names;
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      return null;
+    }
+    if (names.includes("gina.js")) {
+      const p = path.join(dir, "gina.js");
+      tried.push(p);
+      if (fs.statSync(p).isFile()) return p;
+    }
+    for (const name of names) {
+      if (["node_modules", ".git", "dist", "frontend", "routes", "agents"].includes(name)) {
+        continue;
+      }
+      const hit = walk(path.join(dir, name), depth - 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (fs.existsSync(start) && fs.statSync(start).isDirectory()) {
+    const hit = walk(start, 3);
+    if (hit) return { file: hit, tried };
+  }
+  return { file: null, tried };
 }
 
-if (!target || !fs.existsSync(target)) {
+const resolved = findGinaJs(target);
+if (resolved.file) {
+  target = resolved.file;
+}
+
+if (
+  !target ||
+  !fs.existsSync(target) ||
+  fs.statSync(target).isDirectory() ||
+  !/\.js$/i.test(target)
+) {
   console.error(
     "Usage (one line): node repair-gina-js-syntax.mjs ~/lyday-gina-backend/gina-backend",
   );
+  console.error("Could not find a gina.js file to repair.");
+  console.error("Tried:");
+  for (const t of resolved.tried || [target]) console.error("  -", t);
   process.exit(1);
 }
+
+console.log("Using:", target);
 
 function canParse(code) {
   const tmp = `${target}.parse-tmp-${Date.now()}.mjs`;
