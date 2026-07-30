@@ -283,6 +283,25 @@ if (fs.existsSync(poolFix) && /\bpool\.(query|connect)\b/.test(restored)) {
   }
 }
 
+// Ensure Anthropic client if chat uses anthropic.messages
+const anthropicFix = path.join(__dirname, "fix-gina-anthropic-undefined.mjs");
+const afterPool = fs.readFileSync(target, "utf8");
+if (
+  fs.existsSync(anthropicFix) &&
+  /\banthropic\.(messages|completions)\b/.test(afterPool)
+) {
+  console.log(
+    "\nEnsuring Anthropic client (avoids HTTP 500 anthropic is not defined)…",
+  );
+  const r = spawnSync(process.execPath, [anthropicFix, ginaDir, "--force"], {
+    encoding: "utf8",
+    stdio: "inherit",
+  });
+  if (r.status !== 0) {
+    console.warn("Warning: anthropic fix exited", r.status);
+  }
+}
+
 console.log(`
 Next:
   node --check ${target}

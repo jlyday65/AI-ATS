@@ -142,6 +142,30 @@ That copies updated `maria-source.tool.js` + `routes/run-command.js` and patches
 
 Do not reuse the empty/failed row; ask Gina to queue a fresh action.
 
+## Fix: Chat HTTP 500 `{"error":"anthropic is not defined"}`
+
+Gina chat calls `anthropic.messages.create` but lost the SDK client after a restore:
+
+```js
+import Anthropic from "@anthropic-ai/sdk";
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+```
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-gina-anthropic-undefined.mjs ~/lyday-gina-backend/gina-backend --force
+node --check ~/lyday-gina-backend/gina-backend/gina.js
+cd ~/lyday-gina-backend/gina-backend && npm install @anthropic-ai/sdk
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git status
+git commit -m "Fix anthropic is not defined in Gina chat"
+git pull origin main --rebase
+git push origin main
+```
+
+Confirm Railway env has `ANTHROPIC_API_KEY`, wait for redeploy, then re-ask Gina to queue Maria.
+
 ## Fix: Chat HTTP 500 `{"error":"pool is not defined"}`
 
 Gina chat tried to queue an Ashton/Maria/etc. action but a backend file used `pool` without a **top-level** import (often after nuclear restore). Older fixes could wrongly skip files that only had `function foo({ pool })`.
