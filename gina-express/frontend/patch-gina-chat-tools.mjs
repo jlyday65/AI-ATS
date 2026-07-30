@@ -57,6 +57,8 @@ function walk(dir, out = []) {
     if (name.endsWith(".bak") || name.includes(".bak-")) continue;
     // Never paste prompt rules into App.jsx (Vite: Expected ";" but found "TEAM").
     if (/^App\.jsx$/i.test(name) || /\.jsx$/i.test(name)) continue;
+    // Never paste into Express webhooks/routes (Railway: Unexpected identifier 'TEAM').
+    if (/^webhooks\.js$/i.test(name) || name === "routes") continue;
     const p = path.join(dir, name);
     let st;
     try {

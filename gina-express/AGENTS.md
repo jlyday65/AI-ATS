@@ -118,6 +118,24 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
+## Fix: Railway `Unexpected identifier 'TEAM'` in webhooks.js
+
+Orphan **TEAM BOT UPDATE RULE** / **GINA TEAM COMMAND RULE** prose was pasted into `routes/webhooks.js` (not inside a string). Strip it:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/repair-js-orphan-prose.mjs ~/lyday-gina-backend/gina-backend
+node --check ~/lyday-gina-backend/gina-backend/routes/webhooks.js
+cd ~/lyday-gina-backend
+git add gina-backend/routes/webhooks.js
+git status
+git commit -m "Strip orphan TEAM prompt prose from webhooks.js"
+git pull origin main --rebase
+git push origin main
+```
+
+Team prompt patches now **skip `routes/` and `webhooks.js`** so this does not repeat.
+
 ## Fix: Bot updates must hit Notes AND pipeline summary
 
 Every bot Check-for-actions reply (Maria / Michelle / Kelley / Ashton) is dual-filed:

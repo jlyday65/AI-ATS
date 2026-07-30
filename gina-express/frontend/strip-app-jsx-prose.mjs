@@ -63,10 +63,13 @@ fs.copyFileSync(target, bak);
 const markers = [
   "SOURCE_CANDIDATES RULE",
   "GINA TEAM COMMAND RULE",
+  "TEAM BOT UPDATE RULE",
   "CRITICAL TOOL RULE:",
   "KELLEY / KELLY UPDATE RULE",
+  "DUAL-FILE RULE",
   "CANDIDATE FILE (required when Kimberley asks)",
   "PIPELINE BRIEFING FORMAT RULE",
+  "PIPELINE BRIEFING — TEAM UPDATES RULE",
 ];
 
 let cut = -1;

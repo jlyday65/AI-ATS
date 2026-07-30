@@ -28,6 +28,9 @@ function walk(dir, out = []) {
     // Never touch the React ATS UI — pasting the command rule into App.jsx
     // breaks Vite: Expected ";" but found "TEAM".
     if (/^App\.jsx$/i.test(name) || /\.jsx$/i.test(name)) continue;
+    // Never paste prompt rules into Express route/webhook files —
+    // breaks Railway: Unexpected identifier 'TEAM' in webhooks.js.
+    if (/^webhooks\.js$/i.test(name)) continue;
     const p = path.join(dir, name);
     let st;
     try {
@@ -35,8 +38,13 @@ function walk(dir, out = []) {
     } catch {
       continue;
     }
-    if (st.isDirectory()) walk(p, out);
-    else if (/\.(js|mjs|cjs|ts|tsx|md|txt)$/i.test(name)) out.push(p);
+    if (st.isDirectory()) {
+      if (name === "routes" || name === "frontend" || name === "node_modules") {
+        // still walk agents/lib/briefing but skip routes/* entirely
+        if (name === "routes" || name === "frontend") continue;
+      }
+      walk(p, out);
+    } else if (/\.(js|mjs|cjs|ts|tsx|md|txt)$/i.test(name)) out.push(p);
   }
   return out;
 }
@@ -175,6 +183,9 @@ const files = walk(ginaDir);
 for (const file of files) {
   if (file.includes(`${path.sep}agents${path.sep}`)) continue;
   if (file.endsWith("GINA_TEAM_PROMPT_RULE.txt")) continue;
+  // Prompt rules belong in gina.js / chat prompt hosts — never routes/*.js
+  if (file.includes(`${path.sep}routes${path.sep}`)) continue;
+  if (/webhooks\.js$/i.test(file)) continue;
   let src;
   try {
     src = fs.readFileSync(file, "utf8");
@@ -182,12 +193,12 @@ for (const file of files) {
     continue;
   }
 
+  const base = path.basename(file);
   const looksLikePromptHost =
-    /create_candidate/.test(src) ||
+    base === "gina.js" ||
     /system prompt/i.test(src) ||
     /You are Gina/i.test(src) ||
-    (/Maria/.test(src) && /Michelle|Kelley|Ashton|Kelly/.test(src)) ||
-    /Allowed (ATS )?actions/i.test(src);
+    (/create_candidate/.test(src) && /Allowed (ATS )?actions/i.test(src));
 
   if (!looksLikePromptHost) continue;
   if (/GINA TEAM COMMAND RULE/.test(src) && /command_agent/.test(src)) continue;
