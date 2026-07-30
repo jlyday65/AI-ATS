@@ -122,6 +122,19 @@ Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩�
 
 Queue/role parsing worked; Gina called the wrong host for Maria sourcing (or `SIGNALHIRE_BASE_URL` is unset/localhost). Gina must call **AI-ATS** `POST /api/maria/source`, not Gina itself.
 
+### Correct URL shape (common mistake)
+
+WRONG — Gina's Railway host (or glued onto ngrok):
+```
+https://lyday-gina-backend-production.up.railway.app
+https://lyday-gina-backend-production.up.railway.app.ngrok-free.dev
+```
+
+RIGHT — copy the https URL from the ngrok window after `ngrok http 3000`:
+```
+https://some-random-words.ngrok-free.dev
+```
+
 ### If the URL is `*.ngrok-free.dev` and you see ERR_NGROK_3200 / offline
 
 The tunnel is down. Gina cannot reach your laptop until both AI-ATS and ngrok are running.

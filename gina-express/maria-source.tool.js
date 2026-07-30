@@ -24,11 +24,33 @@ function resolveSignalHireBaseUrl() {
 
   if (!raw) {
     throw new Error(
-      "SIGNALHIRE_BASE_URL is not set on Gina. Set it to your AI-ATS / SignalHire public URL (the host that serves POST /api/maria/source), then redeploy. Example: https://your-ai-ats.vercel.app",
+      "SIGNALHIRE_BASE_URL is not set on Gina. Set it to your AI-ATS / SignalHire public URL (the host that serves POST /api/maria/source), then redeploy. Example: https://abcd.ngrok-free.dev — NOT Gina's Railway URL.",
     );
   }
 
-  const withProto = raw.includes("://") ? raw : `https://${raw}`;
+  const withProto = (raw.includes("://") ? raw : `https://${raw}`).replace(
+    /\/$/,
+    "",
+  );
+
+  let host = "";
+  try {
+    host = new URL(withProto).hostname;
+  } catch {
+    throw new Error(`SIGNALHIRE_BASE_URL is not a valid URL: ${raw}`);
+  }
+
+  if (/railway\.app\.ngrok/i.test(host)) {
+    throw new Error(
+      `SIGNALHIRE_BASE_URL looks like Gina's Railway host glued onto ngrok (${host}). Use the https://….ngrok-free.dev URL printed by "ngrok http 3000" while AI-ATS runs on port 3000.`,
+    );
+  }
+
+  if (/gina|lyday-gina-backend/i.test(host) && /railway\.app$/i.test(host)) {
+    throw new Error(
+      `SIGNALHIRE_BASE_URL points at Gina (${host}). It must point at AI-ATS (ngrok/Vercel), e.g. https://abcd.ngrok-free.dev`,
+    );
+  }
 
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(withProto)) {
     const onRailway = Boolean(
@@ -38,12 +60,12 @@ function resolveSignalHireBaseUrl() {
     );
     if (onRailway) {
       throw new Error(
-        `SIGNALHIRE_BASE_URL is ${withProto}, which is not reachable from Railway. Set it to your public AI-ATS URL (Vercel/tunnel), not localhost.`,
+        `SIGNALHIRE_BASE_URL is ${withProto}, which is not reachable from Railway. Set it to your public AI-ATS URL (ngrok/Vercel), not localhost.`,
       );
     }
   }
 
-  return withProto.replace(/\/$/, "");
+  return withProto;
 }
 
 export { resolveSignalHireBaseUrl };

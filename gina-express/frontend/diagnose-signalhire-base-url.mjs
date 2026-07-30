@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * Diagnose Gina → SignalHire Maria bridge (404 / 401).
+ * Diagnose Gina → SignalHire (AI-ATS) Maria bridge.
  *
- * ONE LINE:
- *   node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-AI-ATS.vercel.app
+ * RIGHT (AI-ATS via ngrok):
+ *   node gina-express/frontend/diagnose-signalhire-base-url.mjs https://abcd-1234.ngrok-free.dev
  *
- * Or read from env:
- *   SIGNALHIRE_BASE_URL=https://… node gina-express/frontend/diagnose-signalhire-base-url.mjs
+ * WRONG (do not use Gina's Railway host):
+ *   … https://lyday-gina-backend-production.up.railway.app
+ *   … https://lyday-gina-backend-production.up.railway.app.ngrok-free.dev
  */
 
 const raw = String(
@@ -16,26 +17,97 @@ const raw = String(
     "",
 )
   .trim()
-  .replace(/\/$/, "");
+  .replace(/\/$/, "")
+  .replace(/\/+$/, "");
 
 if (!raw) {
   console.error(`Usage:
-  node diagnose-signalhire-base-url.mjs https://YOUR-AI-ATS.vercel.app
+  node diagnose-signalhire-base-url.mjs https://YOUR-SUBDOMAIN.ngrok-free.dev
 
-This must be the AI-ATS / SignalHire public host (serves /api/maria/source),
-NOT Gina (lyday-gina-backend-production.up.railway.app).`);
+SIGNALHIRE_BASE_URL must be AI-ATS (this repo on your Mac via ngrok, or Vercel).
+It must NOT be Gina:
+  https://lyday-gina-backend-production.up.railway.app   ← Gina (wrong)
+`);
   process.exit(1);
 }
 
-const base = raw.includes("://") ? raw : `https://${raw}`;
-const url = `${base.replace(/\/$/, "")}/api/maria/source`;
+const base = (raw.includes("://") ? raw : `https://${raw}`).replace(/\/$/, "");
+let host = "";
+try {
+  host = new URL(base).hostname;
+} catch {
+  console.error("FAIL: not a valid URL:", raw);
+  process.exit(1);
+}
 
+// Common mistakes
+if (/railway\.app\.ngrok/i.test(host) || /\.railway\.app\.ngrok-/i.test(host)) {
+  console.error(`
+FAIL: You glued Gina's Railway hostname onto .ngrok-free.dev:
+
+  ${base}
+
+That is not a real ngrok URL (TLS cert will also fail).
+
+Do this instead:
+  Terminal A:  cd ~/AI-ATS && npm run dev
+  Terminal B:  ngrok http 3000
+
+ngrok prints a URL like:
+  https://some-random-words.ngrok-free.dev
+
+Probe THAT url (copy/paste from the ngrok window — do not invent it):
+  node gina-express/frontend/diagnose-signalhire-base-url.mjs https://some-random-words.ngrok-free.dev
+
+Then set Gina Railway:
+  SIGNALHIRE_BASE_URL=https://some-random-words.ngrok-free.dev
+`);
+  process.exit(1);
+}
+
+if (/gina|lyday-gina-backend/i.test(host) && /railway\.app$/i.test(host)) {
+  console.error(`
+FAIL: ${host} is Gina (Railway ATS), not AI-ATS / SignalHire.
+
+Gina calls SIGNALHIRE_BASE_URL to reach Maria sourcing.
+Set SIGNALHIRE_BASE_URL to your AI-ATS tunnel/Vercel URL, for example:
+  https://some-random-words.ngrok-free.dev
+`);
+  process.exit(1);
+}
+
+if (/ngrok\.(io|app|dev|free\.dev)$/i.test(host) === false && /vercel\.app$/i.test(host) === false) {
+  console.log(
+    "Note: host is not *.ngrok-free.dev or *.vercel.app — continuing anyway.\n",
+  );
+}
+
+const url = `${base}/api/maria/source`;
 console.log("Probing GET", url);
+console.log("(This must be AI-ATS, not Gina.)\n");
 
-const res = await fetch(url, {
-  headers: { "ngrok-skip-browser-warning": "true", Accept: "application/json" },
-});
-const text = await res.text();
+let res;
+let text;
+try {
+  res = await fetch(url, {
+    headers: {
+      "ngrok-skip-browser-warning": "true",
+      Accept: "application/json",
+    },
+  });
+  text = await res.text();
+} catch (err) {
+  const msg = String(err?.cause?.message || err?.message || err);
+  console.error("FAIL: fetch failed —", msg);
+  if (/ALTNAME_INVALID|certificate/i.test(msg)) {
+    console.error(`
+TLS/hostname mismatch usually means the URL is wrong (not a real ngrok host).
+Copy the https URL exactly from the ngrok terminal after: ngrok http 3000
+`);
+  }
+  process.exit(1);
+}
+
 let json = null;
 try {
   json = JSON.parse(text);
@@ -51,47 +123,46 @@ if (res.status === 404) {
     console.error(`
 FAIL: ngrok tunnel is OFFLINE (ERR_NGROK_3200).
 
-On your Mac (two terminals):
-  1) cd ~/AI-ATS && npm run dev
-  2) ngrok http 3000
+  Terminal A:  cd ~/AI-ATS && npm run dev
+  Terminal B:  ngrok http 3000
 
-Then:
-  - Copy the https://….ngrok-free.dev URL
-  - Set Gina Railway SIGNALHIRE_BASE_URL to that URL (no trailing slash)
-  - Redeploy Gina
-  - Re-run: node diagnose-signalhire-base-url.mjs <that-url>
+Leave both running, then re-probe the NEW https://….ngrok-free.dev URL.
 `);
     process.exit(2);
   }
   console.error(`
 FAIL: 404 — this host does not serve /api/maria/source.
-Deploy AI-ATS (this repo) and set Gina Railway SIGNALHIRE_BASE_URL to that URL.
+Make sure Terminal A is running: cd ~/AI-ATS && npm run dev
+And ngrok targets port 3000: ngrok http 3000
 `);
   process.exit(2);
 }
 
 if (json?.endpoint === "POST /api/maria/source" || json?.agent === "maria") {
   console.log(`
-OK: SignalHire Maria endpoint is reachable.
+OK: AI-ATS Maria endpoint is reachable.
 relayConfigured: ${json.relayConfigured}
-Set on Gina Railway:
-  SIGNALHIRE_BASE_URL=${base.replace(/\/$/, "")}
+
+Set on Gina Railway (Variables), then redeploy:
+  SIGNALHIRE_BASE_URL=${base}
   RELAY_SECRET=<same secret as SignalHire /ats>
-Then redeploy Gina and re-run Check for actions.
+
+Then Check for actions again.
 `);
   process.exit(0);
 }
 
 if (res.status === 401 && json?.hint) {
   console.log(`
-Partial: host responded (not 404) but requires auth on GET.
-If this is AI-ATS with a custom gate, try POST with X-Relay-Secret.
-Gina Railway SIGNALHIRE_BASE_URL=${base.replace(/\/$/, "")}
+Partial: host responded (not 404) but GET required auth.
+If relayConfigured looks fine, still set:
+  SIGNALHIRE_BASE_URL=${base}
 `);
   process.exit(0);
 }
 
 console.warn(`
-Unexpected response. Expected JSON like { agent: "maria", endpoint: "POST /api/maria/source" }.
+Unexpected response. Expected JSON like { "agent": "maria", "endpoint": "POST /api/maria/source" }.
+If this HTML is an ngrok interstitial, retry with the skip header (this script already sends it).
 `);
 process.exit(3);
