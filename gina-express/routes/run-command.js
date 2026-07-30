@@ -14,10 +14,14 @@ import { kimberleyNotes } from "../lib/kimberley-notes.js";
 import {
   extractLocationFromText,
   extractRoleTitleFromText,
+  extractTargetAgentFromText,
   mariaSourceViaSignalHire,
 } from "../maria-source.tool.js";
 
 const router = Router();
+
+const BOT_NAME_RE =
+  /^(maria|michelle|kelley|kelly|ashton|gina|update|status)$/i;
 
 function parsePayload(raw) {
   if (!raw) return {};
@@ -52,6 +56,20 @@ function collectText(value, out = [], depth = 0) {
   return out;
 }
 
+function looksLikeJobTitle(value) {
+  const s = String(value || "").trim();
+  if (!s || BOT_NAME_RE.test(s)) return false;
+  return s.length >= 3 && s.length <= 80;
+}
+
+function requirementsNeedResume(requirements) {
+  if (requirements == null) return false;
+  if (Array.isArray(requirements)) {
+    return requirements.some((r) => /resume/i.test(String(r)));
+  }
+  return /resume/i.test(String(requirements));
+}
+
 function normalizeSourcePayload(payload = {}, body = {}) {
   // Payload may itself be a JSON string, or nested under action.payload
   let flat = parsePayload(payload);
@@ -84,29 +102,23 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     actionRow.task ||
     actionRow.summary ||
     "";
-  const task =
-    primaryTask || body.taskHint || flat.notes || flat.text || blob;
 
+  // Gina often queues { role, location, requirements } with no task string
+  const roleFromField = looksLikeJobTitle(flat.role) ? String(flat.role).trim() : "";
   const roleTitle = String(
     flat.roleTitle ||
       flat.role_title ||
       flat.context?.roleTitle ||
+      roleFromField ||
       flat.job?.title ||
       flat.job?.name ||
       flat.requisition?.title ||
       extractRoleTitleFromText(primaryTask) ||
-      extractRoleTitleFromText(task) ||
       extractRoleTitleFromText(blob) ||
       extractRoleTitleFromText(body.taskHint || "") ||
       flat.jobTitle ||
       flat.job_title ||
-      // Only use bare `title` when it looks like a job title (not "update"/bot names)
-      (flat.title &&
-      !/^(update|status|maria|michelle|kelley|kelly|ashton|gina)$/i.test(
-        String(flat.title).trim(),
-      )
-        ? flat.title
-        : "") ||
+      (looksLikeJobTitle(flat.title) ? flat.title : "") ||
       "",
   ).trim();
 
@@ -114,8 +126,49 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     flat.location ||
     flat.Location ||
     flat.context?.location ||
-    extractLocationFromText(task) ||
+    extractLocationFromText(primaryTask) ||
     extractLocationFromText(blob) ||
+    extractLocationFromText(body.taskHint || "") ||
+    "";
+
+  const resumesRequired = Boolean(
+    flat.resumesRequired === true ||
+      flat.context?.resumesRequired === true ||
+      requirementsNeedResume(flat.requirements) ||
+      /resume/i.test(primaryTask) ||
+      /resume/i.test(blob),
+  );
+
+  let task = primaryTask || body.taskHint || flat.notes || flat.text || "";
+  if (!String(task).trim() && roleTitle) {
+    task = [
+      `Source a ${roleTitle} candidate`,
+      location ? `in ${location}` : "",
+      resumesRequired ? "Resumes required." : "",
+      Array.isArray(flat.requirements)
+        ? flat.requirements.join("; ")
+        : flat.requirements
+          ? String(flat.requirements)
+          : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+  }
+  if (!String(task).trim()) task = blob;
+
+  const targetAgent =
+    flat.targetAgent ||
+    flat.assignedTo ||
+    flat.AssignedTo ||
+    flat.agent ||
+    flat.Agent ||
+    flat.bot ||
+    flat.to ||
+    extractTargetAgentFromText(primaryTask) ||
+    extractTargetAgentFromText(task) ||
+    extractTargetAgentFromText(blob) ||
+    extractTargetAgentFromText(body.taskHint || "") ||
     "";
 
   return {
@@ -123,11 +176,12 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     task,
     roleTitle,
     location,
-    roleDescription: flat.roleDescription || task,
-    resumesRequired:
-      flat.resumesRequired ??
-      flat.context?.resumesRequired ??
-      (/resume/i.test(task) || /resume/i.test(blob)),
+    targetAgent,
+    roleDescription:
+      flat.roleDescription ||
+      (typeof flat.requirements === "string" ? flat.requirements : "") ||
+      task,
+    resumesRequired,
     _debugKeys: Object.keys(flat),
     _taskPreview: String(task || "").slice(0, 240),
   };
@@ -233,7 +287,7 @@ router.post("/run-command", async (req, res) => {
       const result = await createCandidateFileFromInstruction({
         task: payload.task || payload.instruction || "",
         requestedBy: payload.requestedBy || "Kimberley",
-        roleTitle: payload.roleTitle || payload.jobTitle,
+        roleTitle: payload.roleTitle || payload.jobTitle || payload.role,
         jobDescription: payload.jobDescription || payload.description,
         salary: payload.salary,
         location: payload.location,
@@ -252,18 +306,18 @@ router.post("/run-command", async (req, res) => {
     }
 
     if (type === "command_agent") {
-      const target =
-        payload.targetAgent ||
-        payload.assignedTo ||
-        payload.AssignedTo ||
-        payload.agent ||
-        payload.to ||
-        "";
-      if (!String(target).trim()) {
+      const target = String(payload.targetAgent || "").trim();
+      if (!target) {
         return res.status(400).json({
           ok: false,
           error:
             'command_agent requires targetAgent (maria | michelle | kelley | ashton). Refusing to default to Maria.',
+          debug: {
+            keys: payload._debugKeys,
+            taskPreview: payload._taskPreview || String(payload.task || "").slice(0, 240),
+            hint:
+              'Queue with targetAgent/agent: "maria" (or michelle/kelley/ashton), plus task.',
+          },
         });
       }
       const task = payload.task || "";
@@ -271,6 +325,10 @@ router.post("/run-command", async (req, res) => {
         return res.status(400).json({
           ok: false,
           error: "command_agent requires task (what the bot should do).",
+          debug: {
+            keys: payload._debugKeys,
+            roleTitle: payload.roleTitle || null,
+          },
         });
       }
 

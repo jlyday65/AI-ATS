@@ -118,9 +118,11 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
-## Fix: Skipped action — Maria needs a roleTitle
+## Fix: Skipped action — Maria needs a roleTitle / missing targetAgent
 
-Action was queued as `source_candidates_signalhire` (or Maria command) without a usable `roleTitle`, and inference failed on phrasing like "source candidates for Warehouse Assistant Manager".
+Live queue rows (e.g. 88/89) look like:
+`{ "role": "Warehouse Assistant Manager", "agent": "Maria", "location": "Atlanta, Georgia", "requirements": ["Must have a resume"] }`
+— no `roleTitle` / `targetAgent` / `task`. run-command now accepts those aliases and builds a task.
 
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
@@ -129,18 +131,12 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 cd ~/lyday-gina-backend
 git add -u gina-backend
 git status
-git commit -m "Infer Maria roleTitle from source candidates for … phrasing"
+git commit -m "Accept role/agent aliases on Maria source + command_agent"
 git pull origin main --rebase
 git push origin main
 ```
 
-That copies updated `maria-source.tool.js` + `routes/run-command.js` and patches App.jsx to send `taskHint`.
-
-**Action 89 already failed** — re-queue with an explicit title, then Check for actions again:
-
-> Ask Maria to source a Warehouse Assistant Manager candidate in Atlanta; resumes required
-
-Do not reuse the empty/failed row; ask Gina to queue a fresh action.
+After Railway redeploy, **Check for actions again** — pending 88/89 should run without re-queueing if they still have `role` + `location`.
 
 ## Fix: Chat HTTP 500 `{"error":"SYSTEM_PROMPT is not defined"}`
 

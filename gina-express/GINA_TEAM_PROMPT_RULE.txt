@@ -89,7 +89,9 @@ For Kelley / Kelly status updates specifically, prefer task:
   }
 }
 
-Empty payloads are invalid. If you omit roleTitle, Check for actions will fail.
+Empty payloads are invalid. Prefer roleTitle (alias "role" is also accepted by
+Check for actions). ALWAYS include location + task when sourcing. If you omit
+both roleTitle and role, Check for actions will fail.
 
 For Maria sourcing, set context.resumesRequired=true when Kimberley requires resumes.
 After queuing, confirm which bot was commanded and the next step

@@ -78,11 +78,13 @@ export function extractRoleTitleFromText(text = "") {
   if (!t) return "";
 
   const patterns = [
-    // Explicit fields (JSON fragments / notes)
+    // Explicit fields (JSON fragments / notes) — Gina often queues "role" not "roleTitle"
+    // Note: do NOT use \b before " — `{`/`"` are both non-word so \b"role" never matches.
+    /"roleTitle"\s*:\s*"([^"]+)"/gi,
+    /"jobTitle"\s*:\s*"([^"]+)"/gi,
+    /"role"\s*:\s*"([^"]+)"/gi,
     /\brole(?:\s*title)?\s*[:=]\s*["']?([^"'\n,}+]+)/gi,
     /\bjob(?:\s*title)?\s*[:=]\s*["']?([^"'\n,}+]+)/gi,
-    /\b"roleTitle"\s*:\s*"([^"]+)"/gi,
-    /\b"jobTitle"\s*:\s*"([^"]+)"/gi,
     // "… for the Warehouse Assistant Manager role"
     /\bfor\s+(?:the\s+)?(.+?)\s+role\b/gi,
     // "source candidates for X" / "find candidates for X"
@@ -110,8 +112,34 @@ export function extractRoleTitleFromText(text = "") {
 }
 
 export function extractLocationFromText(text = "") {
-  const m = String(text || "").match(/\bin\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)/i);
+  const t = String(text || "");
+  const jsonLoc = t.match(/"location"\s*:\s*"([^"]+)"/i);
+  if (jsonLoc?.[1]) {
+    return jsonLoc[1].replace(/[?.!,;:]+$/g, "").trim();
+  }
+  const m = t.match(/\bin\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)/i);
   return (m?.[1] || "").replace(/[?.!,;:]+$/g, "").trim();
+}
+
+/** Infer bot id from free text / payload aliases. */
+export function extractTargetAgentFromText(text = "") {
+  const t = String(text || "");
+  const patterns = [
+    /"agent"\s*:\s*"([^"]+)"/i,
+    /"targetAgent"\s*:\s*"([^"]+)"/i,
+    /"assignedTo"\s*:\s*"([^"]+)"/i,
+    /\b(?:ask|tell|have|get(?:\s+an?\s+update\s+from)?|from)\s+(maria|michelle|kelley|kelly|ashton)\b/i,
+    /\b(maria|michelle|kelley|kelly|ashton)\b/i,
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m?.[1]) {
+      const id = String(m[1]).trim().toLowerCase();
+      if (id === "kelly") return "kelley";
+      if (["maria", "michelle", "kelley", "ashton"].includes(id)) return id;
+    }
+  }
+  return "";
 }
 
 /**
@@ -172,6 +200,13 @@ export async function mariaSourceViaSignalHire(input = {}) {
     input.roleTitle ||
       input.role_title ||
       input.context?.roleTitle ||
+      // Gina chat often queues { role: "Warehouse Assistant Manager", … }
+      (input.role &&
+      !/^(maria|michelle|kelley|kelly|ashton|gina|update|status)$/i.test(
+        String(input.role).trim(),
+      )
+        ? input.role
+        : "") ||
       extractRoleTitleFromText(taskText) ||
       extractRoleTitleFromText(blob) ||
       input.jobTitle ||

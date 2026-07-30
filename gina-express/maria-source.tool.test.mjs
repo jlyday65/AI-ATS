@@ -51,6 +51,17 @@ const cases = [
     "Warehouse Assistant Manager",
     "",
   ],
+  // Live Gina queue shape (actions 88/89) — role not roleTitle
+  [
+    '{"role":"Warehouse Assistant Manager","agent":"Maria","location":"Atlanta, Georgia","requirements":["Must have a resume"]}',
+    "Warehouse Assistant Manager",
+    "Atlanta, Georgia",
+  ],
+  [
+    '{"role":"Warehouse Assistant Manager","location":"Atlanta, Georgia","requirements":"All candidates must have a resume on file."}',
+    "Warehouse Assistant Manager",
+    "Atlanta, Georgia",
+  ],
   ["source candidates in Atlanta", "", "Atlanta"],
 ];
 
