@@ -248,46 +248,68 @@ const after = canParse(next);
 console.log("Parses after fix:", after.ok ? "yes" : "no");
 if (!after.ok) {
   console.log(after.err.split("\n").slice(0, 12).join("\n"));
+  console.log("\nStrip left backtick damage — trying parseable backups as-is…");
+
   const dir = path.dirname(target);
   const base = path.basename(target);
   const backups = fs
     .readdirSync(dir)
-    .filter((n) => n.startsWith(base + ".bak"))
+    .filter((n) => n.startsWith(base + ".bak") && !n.includes(".parse-tmp-"))
     .map((n) => path.join(dir, n))
-    .sort()
-    .reverse();
+    .map((p) => ({ p, mtime: fs.statSync(p).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime);
 
-  for (const bak of backups) {
-    let fixed = fs.readFileSync(bak, "utf8");
-    // Strip orphan prose from backup too
-    fixed = extractOrphanProse(fixed).kept;
-    if (!/const GINA_TEAM_RULES\s*=/.test(fixed)) {
-      fixed = rulesConst + "\n" + fixed;
-    }
-    fixed = fixed.replace(
-      /enum\s*:\s*\[\s*["']create_candidate["']\s*,\s*["']update_stage["']\s*,\s*["']add_note["']\s*\]/g,
-      'enum: ["create_candidate", "update_stage", "add_note", "command_agent", "source_candidates_signalhire", "import_candidate", "create_candidate_file"]',
-    );
-    const check = canParse(fixed);
-    if (check.ok) {
-      const outBak = `${target}.bak-broken-${Date.now()}`;
-      fs.copyFileSync(target, outBak);
-      fs.writeFileSync(target, fixed, "utf8");
-      console.log("Restored+fixed from backup:", bak);
-      console.log("Broken file saved as:", outBak);
-      console.log(`
+  for (const { p: bak } of backups) {
+    const rawBak = fs.readFileSync(bak, "utf8");
+    // Prefer untouched parseable backup
+    if (canParse(rawBak).ok) {
+      let fixed = rawBak;
+      if (!/const GINA_TEAM_RULES\s*=/.test(fixed)) {
+        const trial = rulesConst + "\n" + fixed;
+        if (canParse(trial).ok) fixed = trial;
+      }
+      // Expand enum if safe
+      const withEnum = fixed.replace(
+        /enum\s*:\s*\[\s*["']create_candidate["']\s*,\s*["']update_stage["']\s*,\s*["']add_note["']\s*\]/g,
+        'enum: ["create_candidate", "update_stage", "add_note", "command_agent", "source_candidates_signalhire", "import_candidate", "create_candidate_file"]',
+      );
+      if (canParse(withEnum).ok) fixed = withEnum;
+
+      if (canParse(fixed).ok) {
+        const outBak = `${target}.bak-broken-${Date.now()}`;
+        fs.copyFileSync(target, outBak);
+        fs.writeFileSync(target, fixed, "utf8");
+        console.log("Restored parseable backup as-is:", bak);
+        console.log("Broken file saved as:", outBak);
+        console.log(`
 Next:
   node --check "${target}"
   cd ~/lyday-gina-backend
   git add gina-backend/gina.js
-  git commit -m "Repair gina.js prompt syntax (Candidate File / TEAM rules)"
+  git commit -m "Restore parseable gina.js from backup"
   git pull origin main --rebase
   git push origin main
 `);
-      process.exit(0);
+        process.exit(0);
+      }
     }
   }
-  console.error("\nCould not auto-repair. Manually delete orphan prompt lines near the error in gina.js.");
+
+  // Last resort: nuclear restore script
+  const nuclear = path.join(__dirname, "nuclear-restore-gina-js.mjs");
+  if (fs.existsSync(nuclear)) {
+    console.log("\nNo usable bak — running nuclear-restore-gina-js.mjs…");
+    const r = spawnSync(process.execPath, [nuclear, path.dirname(target)], {
+      encoding: "utf8",
+      stdio: "inherit",
+    });
+    process.exit(r.status || 0);
+  }
+
+  console.error("\nCould not auto-repair. Run:");
+  console.error(
+    "  node gina-express/frontend/nuclear-restore-gina-js.mjs ~/lyday-gina-backend/gina-backend",
+  );
   process.exit(1);
 }
 
