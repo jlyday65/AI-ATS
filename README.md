@@ -58,29 +58,43 @@ curl -s http://localhost:3000/api/ats/gina/test | jq
 | GET | `/api/platforms` | Platform catalog + coverage summary |
 | GET/POST | `/api/ats` | List providers / save ATS connection |
 | GET/POST | `/api/sourcing` | List runs / execute AI sourcing (+ optional ATS push) |
+| GET/POST | `/api/maria/source` | Maria people sourcing (+ Gina push); relay auth |
+| GET/POST | `/api/maria/market` | Maria job-market intel (Coresignal + Bright Data Jobs) |
 | GET | `/api/sync` | ATS sync event feed |
+
+## Data providers (jobs + people)
+
+Two tracks — see [docs/DATA-PROVIDERS.md](docs/DATA-PROVIDERS.md):
+
+1. **Job market intel** — Coresignal Multi-source Jobs + Bright Data Jobs → `POST /api/maria/market`
+2. **Candidate sourcing** — Coresignal Multi-source Employee (+ optional Bright Data LinkedIn URL enrichment), demo fallback → `POST /api/maria/source`
+
+Set `CORESIGNAL_API_KEY` / `BRIGHTDATA_API_KEY` in `.env.local`. Without keys, both tracks use deterministic demo data.
 
 ## Architecture
 
 ```
 src/
   lib/
-    platforms/   # 45+ platform catalog + search adapters
-    ats/         # Claude ATS + marketplace providers
-    ai/          # ranking / sourcing brief
-    sourcing/    # end-to-end agent orchestration
-    store.ts     # in-memory multi-tenant demo data
+    platforms/        # 45+ platform catalog + demo search
+    people-sourcing/  # Coresignal Employee + Bright Data people
+    jobs-market/      # Coresignal + Bright Data Jobs APIs
+    ats/              # Claude ATS + marketplace providers
+    ai/               # ranking / sourcing brief
+    sourcing/         # end-to-end agent orchestration
+    maria/            # Maria source + market entrypoints
+    store.ts          # in-memory multi-tenant demo data
   app/
-    api/         # REST surface for B2B product + integrations
-    dashboard/   # org workspace
-    platforms/   # coverage map
-    ats/         # connection manager
-    sourcing/    # AI console
+    api/              # REST surface for B2B product + integrations
+    dashboard/        # org workspace
+    platforms/        # coverage map
+    ats/              # connection manager
+    sourcing/         # AI console
 ```
 
 ## Next hardening steps
 
 1. Persist orgs/jobs/candidates in Postgres
-2. Add real OAuth/API connectors per platform
+2. Expand live people discovery (Bright Data keyword discover) beyond URL enrichment
 3. Swap heuristic ranking for hosted LLM scoring
 4. Add SSO (SAML/OIDC) for enterprise B2B login

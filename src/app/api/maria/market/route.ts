@@ -6,44 +6,33 @@ import {
   readRelaySecretFromRequest,
   resolveSignalHireRelaySecret,
 } from "@/lib/maria/auth";
-import { runMariaSourcing } from "@/lib/maria/source";
-import { peopleProviderStatus } from "@/lib/people-sourcing/service";
+import { runMariaMarketResearch } from "@/lib/maria/market";
+import { jobsMarketProviderStatus } from "@/lib/jobs-market/service";
 
 const schema = z.object({
-  jobId: z.string().optional(),
-  roleTitle: z.string().optional(),
-  roleDescription: z.string().optional(),
-  requiredSkills: z.array(z.string()).optional(),
-  preferredSkills: z.array(z.string()).optional(),
+  roleTitle: z.string().min(1),
   location: z.string().optional(),
-  seniority: z.string().optional(),
-  platformIds: z.array(z.string()).optional(),
-  limit: z.number().int().min(1).max(100).optional(),
-  resumesRequired: z.boolean().optional(),
-  pushToGina: z.boolean().optional(),
-  pushTopN: z.number().int().min(1).max(50).optional(),
+  keywords: z.array(z.string()).optional(),
+  limit: z.number().int().min(1).max(40).optional(),
+  providers: z.array(z.enum(["coresignal", "brightdata", "demo"])).optional(),
+  forceDemo: z.boolean().optional(),
 });
 
 export async function GET() {
   const expected = resolveSignalHireRelaySecret();
   return NextResponse.json({
     agent: "maria",
-    endpoint: "POST /api/maria/source",
+    endpoint: "POST /api/maria/market",
     auth: "X-Relay-Secret (same value as Gina RELAY_SECRET)",
     relayConfigured: Boolean(expected),
     relayFingerprint: fingerprintSecret(expected),
-    providers: peopleProviderStatus(),
-    related: {
-      market: "POST /api/maria/market — job postings intel (Coresignal + Bright Data Jobs)",
-    },
+    providers: jobsMarketProviderStatus(),
+    note: "Job market intel via Coresignal Multi-source Jobs + Bright Data Jobs. Not candidate/people search — use /api/maria/source for that.",
     body: {
-      roleTitle: "Warehouse Mechanic",
+      roleTitle: "Operations Manager",
       location: "Atlanta, GA",
-      roleDescription: "All candidates must have a resume on file.",
-      resumesRequired: true,
-      requiredSkills: ["hydraulics", "preventive maintenance"],
-      pushToGina: true,
-      pushTopN: 5,
+      keywords: ["warehouse", "logistics"],
+      limit: 12,
     },
   });
 }
@@ -79,11 +68,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await runMariaSourcing(parsed.data);
+    const result = await runMariaMarketResearch(parsed.data);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Maria sourcing failed" },
+      {
+        error:
+          error instanceof Error ? error.message : "Maria market research failed",
+      },
       { status: 400 },
     );
   }

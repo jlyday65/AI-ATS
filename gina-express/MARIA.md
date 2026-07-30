@@ -25,12 +25,20 @@ Manual fallback: paste `MARIA_SOURCE_PROMPT_RULE.txt` into Maria’s system prom
 ## Flow
 
 ```
-Maria (Gina) 
+Maria (Gina) — people
   → POST {SIGNALHIRE}/api/maria/source   (header: X-Relay-Secret)
-  → SignalHire multi-platform demo search (resume text on file when resumesRequired)
+  → Coresignal Employee / Bright Data people / demo fallback
   → POST Gina /ats/import-candidates
   → Gina Agent → Check for actions → import_candidate
+
+Maria (Gina) — job market intel
+  → POST {SIGNALHIRE}/api/maria/market   (header: X-Relay-Secret)
+  → Coresignal Multi-source Jobs + Bright Data Jobs (demo if no keys)
+  → insights: competing employers, title variants, salary samples
 ```
+
+Jobs APIs are **not** people search. Use `/api/maria/market` for market research and
+`/api/maria/source` for candidate shortlists. See `docs/DATA-PROVIDERS.md`.
 
 ## Gina setup
 
@@ -77,6 +85,8 @@ node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-SUBDOMA
 
 ## Example curl (from Gina host / laptop)
 
+People sourcing:
+
 ```bash
 curl -sS -X POST "$SIGNALHIRE_BASE_URL/api/maria/source" \
   -H "Content-Type: application/json" \
@@ -88,3 +98,19 @@ curl -sS -X POST "$SIGNALHIRE_BASE_URL/api/maria/source" \
     "pushTopN": 5
   }'
 ```
+
+Job market intel:
+
+```bash
+curl -sS -X POST "$SIGNALHIRE_BASE_URL/api/maria/market" \
+  -H "Content-Type: application/json" \
+  -H "X-Relay-Secret: $RELAY_SECRET" \
+  -d '{
+    "roleTitle": "Operations Manager",
+    "location": "Atlanta, GA",
+    "keywords": ["warehouse", "logistics"],
+    "limit": 12
+  }'
+```
+
+Gina tool drop-in for market: `maria-market.tool.js` (`research_job_market_signalhire`).

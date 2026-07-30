@@ -7,6 +7,8 @@ import {
 } from "@/lib/platforms/connector";
 import type { JobRequisition } from "@/lib/types";
 
+process.env.PEOPLE_SOURCING_FORCE_DEMO = "1";
+
 const job: JobRequisition = {
   id: "job_test",
   orgId: "org_test",
