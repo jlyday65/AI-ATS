@@ -267,7 +267,7 @@ export async function runQueuedCommandAgent(action) {
 export const commandAgentTool = {
   name: "command_agent",
   description:
-    "REQUIRED when Kimberley (or any user) asks Gina to tell/ask/have/command Maria, Michelle, Kelley, or Ashton to do something. Queues the task for that bot; Check for actions executes it and files the reply in Kimberley's Note Panel (also rolls into the morning pipeline briefing). For Maria sourcing tasks, Check for actions triggers SignalHire. Never say you cannot command team bots.",
+    "REQUIRED when Kimberley (or any user) asks Gina to tell/ask/have/command Maria, Michelle, Kelley/Kelly, or Ashton to do something — including status updates (e.g. ask Kelly for an update). Queues the task for that bot; Check for actions executes it and files the reply in Kimberley's Note Panel (also rolls into the morning pipeline briefing). For Maria sourcing tasks, Check for actions triggers SignalHire. Never say you cannot command team bots. Never skip Kelley/Kelly update requests.",
   parameters: {
     type: "object",
     required: ["targetAgent", "task"],

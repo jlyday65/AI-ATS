@@ -163,7 +163,12 @@ export function buildMichelleReply({ task, result } = {}) {
 }
 
 export function buildKelleyReply({ task, result } = {}) {
-  const isBlog = /blog/i.test(String(task || ""));
+  const text = String(task || "");
+  const isBlog = /blog/i.test(text);
+  const isStatusUpdate =
+    /\b(update|status|progress|report|check[- ]?in|what(?:'s| is) (?:the )?status)\b/i.test(
+      text,
+    ) && !isBlog;
   const names = extractQuotedNames(task);
   const stage = extractStageHint(task) || result?.stage || "";
 
@@ -182,6 +187,30 @@ export function buildKelleyReply({ task, result } = {}) {
       ]),
       "",
       "Handoff: This update rolls into Gina's morning Pipeline Stage Counts briefing.",
+    ].join("\n");
+  }
+
+  if (isStatusUpdate) {
+    return [
+      `Kelley — status update (${stamp()})`,
+      "",
+      `Request: ${task}`,
+      "",
+      "Pipeline ops status:",
+      bullets([
+        "Reviewing open ATS actions: stages waiting on moves, notes due, and blocked items.",
+        "New / Screening / Interview / Offer — flagging anything stuck or missing owners.",
+        "Candidate File handoffs (Maria → Michelle) stay on /candidate-file when present.",
+        "Anything needing Kimberley's decision will be listed explicitly in Notes.",
+      ]),
+      "",
+      "Handoff:",
+      bullets([
+        "Kimberley — read this Notes update; ask Gina for a deeper dive on any stuck stage.",
+        "Michelle — re-screen if new resumes landed since last pass.",
+        "Ashton — outreach only after Kimberley clears the list.",
+        "This update is included in Gina's morning Pipeline Stage Counts briefing.",
+      ]),
     ].join("\n");
   }
 

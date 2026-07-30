@@ -42,10 +42,22 @@ When Kimberley says things like:
 - "Ask Maria to source a Warehouse Mechanic in Atlanta; resumes required"
 - "Have Michelle screen the new Warehouse Mechanic candidates"
 - "Tell Kelley to move Ava Chen to Phone Screen"
+- "Ask Kelly / Kelley for an update" / "Get a status update from Kelley"
 - "Get Ashton to send a follow-up to the Atlanta shortlist"
 
 You MUST queue type "command_agent" or "source_candidates_signalhire"
-(not add_note / update_stage). ALWAYS include roleTitle + location + task:
+(not add_note / update_stage). ALWAYS include roleTitle + location + task when sourcing.
+
+For Kelley / Kelly status updates, queue:
+{
+  "type": "command_agent",
+  "payload": {
+    "targetAgent": "kelley",
+    "requestedBy": "Kimberley",
+    "task": "Provide a pipeline ops status update for Kimberley"
+  }
+}
+(alias "kelly" is fine — normalize to kelley). Then tell Kimberley to run Agent → Check for actions and open Kimberley's Notes.
 
 {
   "type": "source_candidates_signalhire",
