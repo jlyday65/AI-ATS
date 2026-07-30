@@ -47,6 +47,9 @@ copy("agents/registry.js");
 copy("agents/bot-replies.js");
 copy("agents/command-agent.tool.js");
 copy("routes/run-command.js");
+copy("routes/pipeline-briefing.js");
+copy("routes/kimberley-notes.js");
+copy("briefing/format-pipeline-stage-counts.js");
 copy("GINA_TEAM_PROMPT_RULE.txt");
 copy("lib/kimberley-notes.js");
 
@@ -57,8 +60,14 @@ When Kimberley asks Gina for an update/status from Kelley or Kelly
 you MUST queue command_agent with targetAgent "kelley" (alias kelly is OK)
 and a clear task like "Provide a pipeline ops status update for Kimberley".
 Do NOT answer as Kelley yourself. Do NOT stay silent. Do NOT use update_stage
-with match.name Kelley/Kelly. After queuing, tell Kimberley to run
-Agent → Check for actions, then open Kimberley's Notes for Kelley's reply.
+with match.name Kelley/Kelly.
+After queuing, tell Kimberley to run Check for actions.
+Kelley's executed reply is filed to BOTH:
+  1) Kimberley's Notes (full update)
+  2) Gina pipeline summary → Team updates (Kimberley Notes)
+When Kimberley later asks for a pipeline summary, you MUST pull live Team updates
+from /ats/kimberley-notes/briefing or /ats/pipeline-briefing and include Kelley —
+never reply with stage counts alone.
 `;
 
 const ginaPath = path.join(ginaDir, "gina.js");
@@ -111,17 +120,39 @@ if (check.status !== 0) {
 
 console.log("OK: gina.js passes node --check");
 console.log("Backup:", bak);
+
+// Also wire pipeline briefing so Kelley notes appear under Team updates
+const briefPatch = path.join(__dirname, "patch-pipeline-include-team-updates.mjs");
+if (fs.existsSync(briefPatch)) {
+  console.log("\nWiring Kelley notes into Gina pipeline summary…");
+  const brief = spawnSync(process.execPath, [briefPatch, ginaDir], {
+    encoding: "utf8",
+    stdio: "inherit",
+  });
+  if (brief.status !== 0) {
+    console.warn(
+      "Warning: pipeline team-updates patch exited",
+      brief.status,
+      "— re-run patch-pipeline-include-team-updates.mjs if summary still omits Kelley",
+    );
+  }
+}
+
 console.log(`
+OK: Kelley replies file to Kimberley's Notes AND Gina pipeline Team updates.
+
 Next:
+  cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
   cd ~/lyday-gina-backend
-  git add gina-backend/agents gina-backend/routes/run-command.js gina-backend/GINA_TEAM_PROMPT_RULE.txt gina-backend/lib/kimberley-notes.js gina-backend/gina.js
+  git add gina-backend/agents gina-backend/routes gina-backend/briefing gina-backend/lib gina-backend/GINA_TEAM_PROMPT_RULE.txt gina-backend/gina.js gina-backend/frontend/src/App.jsx gina-backend/server.js
   git status
-  git commit -m "Fix Kelley/Kelly status updates via Gina command_agent"
+  git commit -m "Kelley updates go to Kimberley Notes and Gina pipeline summary"
   git pull origin main --rebase
   git push origin main
 
 After Railway redeploy (new Gina chat):
-  Ask Gina: "Ask Kelly for an update"
-  Then: Agent → Check for actions → Kimberley Notes
-  Expect a note from Kelley (status update).
+  1) Ask Gina: Ask Kelly for an update
+  2) Check for actions → Kimberley Notes (full Kelley reply)
+  3) Ask Gina: Give me the pipeline summary
+     Expect Team updates (Kimberley Notes) to list Kelley
 `);

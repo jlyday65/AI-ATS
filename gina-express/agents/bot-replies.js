@@ -186,7 +186,13 @@ export function buildKelleyReply({ task, result } = {}) {
         "Target: status note before end of day with what's live, in draft, and due next.",
       ]),
       "",
-      "Handoff: This update rolls into Gina's morning Pipeline Stage Counts briefing.",
+      "Filed to:",
+      bullets([
+        "Kimberley's Notes (full update)",
+        "Gina's Pipeline Stage Counts summary → Team updates (Kimberley Notes)",
+      ]),
+      "",
+      "Handoff: Kimberley reads Notes; ask Gina for the pipeline summary to see this in Team updates.",
     ].join("\n");
   }
 
@@ -204,12 +210,18 @@ export function buildKelleyReply({ task, result } = {}) {
         "Anything needing Kimberley's decision will be listed explicitly in Notes.",
       ]),
       "",
+      "Filed to:",
+      bullets([
+        "Kimberley's Notes (full update)",
+        "Gina's Pipeline Stage Counts summary → Team updates (Kimberley Notes)",
+      ]),
+      "",
       "Handoff:",
       bullets([
-        "Kimberley — read this Notes update; ask Gina for a deeper dive on any stuck stage.",
+        "Kimberley — open Kimberley's Notes for this full reply.",
+        "Kimberley — ask Gina for the pipeline summary; this update must appear under Team updates.",
         "Michelle — re-screen if new resumes landed since last pass.",
         "Ashton — outreach only after Kimberley clears the list.",
-        "This update is included in Gina's morning Pipeline Stage Counts briefing.",
       ]),
     ].join("\n");
   }
@@ -230,11 +242,17 @@ export function buildKelleyReply({ task, result } = {}) {
       "Anything needing Kimberley's call will stay in Notes until approved.",
     ]),
     "",
+    "Filed to:",
+    bullets([
+      "Kimberley's Notes (full update)",
+      "Gina's Pipeline Stage Counts summary → Team updates (Kimberley Notes)",
+    ]),
+    "",
     "Handoff:",
     bullets([
       "After stage moves, Michelle can re-screen if new resumes land.",
       "Ashton drafts outreach only for stages Kimberley has cleared.",
-      "Follow-up lands in Kimberley's Note Panel and the morning briefing.",
+      "Ask Gina for the pipeline summary to confirm this update is listed under Team updates.",
     ]),
   ]
     .filter((l) => l != null)

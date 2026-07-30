@@ -22,6 +22,8 @@ describe("bot replies for Kimberley Notes", () => {
       task: "Provide a pipeline ops status update for Kimberley",
     });
     assert.match(reply, /Kelley — status update/);
+    assert.match(reply, /Kimberley's Notes/);
+    assert.match(reply, /pipeline summary|Team updates/i);
     assert.match(reply, /Handoff/);
   });
 

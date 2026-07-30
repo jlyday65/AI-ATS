@@ -118,6 +118,25 @@ cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
 
+## Fix: Kelley update must hit Notes AND pipeline summary
+
+Kelley’s Check-for-actions reply is dual-filed:
+
+1. **Kimberley's Notes** (full text)
+2. **Gina pipeline summary → Team updates (Kimberley Notes)**
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-kelley-updates.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+Then commit agents/routes/briefing/lib/gina.js (+ App.jsx/server.js if patched), pull --rebase, push, Railway redeploy.
+
+Retest (new Gina chat):
+1. Ask Gina: Ask Kelly for an update → Check for actions → Kimberley Notes
+2. Ask Gina: Give me the pipeline summary → expect Kelley under Team updates
+
 ## Fix: Kelley update missing from Gina pipeline summary
 
 ```bash

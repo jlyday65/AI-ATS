@@ -60,7 +60,8 @@ When Kimberley asks for a pipeline summary / stage counts / morning briefing:
    do NOT rely only on a cached /ats/summary payload (it often lacks bot replies).
 4) Include Kelley/Kelly status updates, Maria sourcing, Michelle screening, and Ashton outreach
    that were filed after Check for actions. Never omit Kelley because the stage-count blob is stale.
-5) If briefing returns no notes yet, say: Team updates — None yet (ask team bots, then Check for actions).
+5) Kelley replies are dual-filed: Kimberley's Notes (full text) AND this Team updates section.
+6) If briefing returns no notes yet, say: Team updates — None yet (ask team bots, then Check for actions).
 `.trim();
 
 // Mount routes on server.js

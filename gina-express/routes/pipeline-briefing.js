@@ -21,13 +21,31 @@ const router = Router();
 
 async function loadTeamUpdates() {
   try {
-    const rows = await kimberleyNotes.listNotes({ limit: 20, briefingOnly: true });
-    return rows.map((n) => ({
+    // Prefer briefing-flagged notes; if empty, still surface recent bot replies
+    // so Kelley updates always reach Gina's pipeline summary.
+    let rows = await kimberleyNotes.listNotes({ limit: 30, briefingOnly: true });
+    if (!rows.length) {
+      rows = await kimberleyNotes.listNotes({ limit: 30 });
+    }
+    const bots = new Set([
+      "maria",
+      "michelle",
+      "kelley",
+      "kelly",
+      "ashton",
+      "gina",
+    ]);
+    const filtered = rows.filter((n) =>
+      bots.has(String(n.fromAgent || "").trim().toLowerCase()),
+    );
+    const use = filtered.length ? filtered : rows;
+    return use.map((n) => ({
       from: n.fromAgent,
       role: n.agentRole,
       task: n.task,
       reply: n.reply,
       at: n.createdAt,
+      includeInBriefing: n.includeInBriefing !== false,
     }));
   } catch {
     return [];

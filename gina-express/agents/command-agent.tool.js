@@ -130,12 +130,14 @@ async function executeAgentWork({ agent, task, requestedBy, context, actionId })
     reply,
     kimberleyNoteId: note?.id || null,
     message: error
-      ? `${agent.displayName} hit an error — filed in Kimberley's Note Panel.`
-      : `${agent.displayName} responded. Filed in Kimberley's Note Panel${note?.id ? ` (#${note.id})` : ""}.`,
+      ? `${agent.displayName} hit an error — filed in Kimberley's Notes (and flagged for pipeline Team updates).`
+      : `${agent.displayName} responded. Filed to Kimberley's Notes${note?.id ? ` (#${note.id})` : ""} and Gina's pipeline summary Team updates.`,
     nextStep:
       agent.id === "maria"
-        ? "In Gina ATS → Agent → Check for actions to import the shortlist (if still queued). Read Kimberley's Notes for Maria's status. Then ask Michelle to screen."
-        : "Open Kimberley's Notes. This update is included in Gina's Pipeline Stage Counts morning briefing.",
+        ? "In Gina ATS → Check for actions to import the shortlist (if still queued). Read Kimberley's Notes for Maria's status. Then ask Michelle to screen."
+        : agent.id === "kelley"
+          ? "Open Kimberley's Notes for Kelley's full reply. Then ask Gina for the pipeline summary — Kelley's update must appear under Team updates (Kimberley Notes)."
+          : "Open Kimberley's Notes for the full reply. Ask Gina for the pipeline summary to see it under Team updates.",
   };
 }
 

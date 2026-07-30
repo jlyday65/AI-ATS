@@ -57,7 +57,11 @@ For Kelley / Kelly status updates, queue:
     "task": "Provide a pipeline ops status update for Kimberley"
   }
 }
-(alias "kelly" is fine — normalize to kelley). Then tell Kimberley to run Agent → Check for actions and open Kimberley's Notes.
+(alias "kelly" is fine — normalize to kelley). Then tell Kimberley to run Check for actions.
+Kelley's executed reply MUST appear in BOTH:
+1) Kimberley's Notes (full text)
+2) Gina's pipeline summary → section "Team updates (Kimberley Notes)"
+(Gina must pull live notes from /ats/kimberley-notes/briefing or /ats/pipeline-briefing — never stage counts alone.)
 
 {
   "type": "source_candidates_signalhire",
