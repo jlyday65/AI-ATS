@@ -114,3 +114,14 @@ curl -sS -X POST "$SIGNALHIRE_BASE_URL/api/maria/market" \
 ```
 
 Gina tool drop-in for market: `maria-market.tool.js` (`research_job_market_signalhire`).
+
+## Save / Export + Maria reuse
+
+After Michelle finishes screening, use ATS **Save / Export** (or `/job-save`) to
+download Board + Candidate File as one `.txt` (save to your external drive).
+
+That export also posts people to AI-ATS `POST /api/talent-pool/archive`. The next
+time Maria sources a **similar** role, matching archived resumes are merged into
+her shortlist automatically.
+
+See `gina-express/JOB-SAVE-EXPORT.md`.

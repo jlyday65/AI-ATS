@@ -124,6 +124,7 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
     brief: result.brief,
     runId: result.run.id,
     candidateCount: result.matches.length,
+    talentPoolHits: result.talentPoolHits ?? 0,
     topCandidates: result.matches.slice(0, input.pushTopN ?? 5).map((match) => ({
       name: match.candidate.fullName,
       email: match.candidate.email,
@@ -133,6 +134,7 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
       score: match.score,
       platforms: match.platformHits,
       reasons: match.reasons,
+      fromTalentPool: match.platformHits.includes("talent_pool"),
     })),
     atsSync: result.atsSync,
     nextStep: result.atsSync?.ok

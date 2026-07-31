@@ -4,12 +4,16 @@ import { pushCandidatesToAts } from "@/lib/ats/providers";
 import { searchCandidatePlatforms } from "@/lib/platforms/connector";
 import { listLivePlatforms } from "@/lib/platforms/catalog";
 import {
+  talentMatchToProfile,
+  talentMatchesForJob,
+} from "@/lib/talent-pool/service";
+import {
   addSyncEvent,
   getAtsConnection,
   getJob,
   saveSourcingRun,
 } from "@/lib/store";
-import type { MatchResult, SourcingRun } from "@/lib/types";
+import type { CandidateProfile, MatchResult, SourcingRun } from "@/lib/types";
 
 export interface RunSourcingInput {
   orgId: string;
@@ -20,17 +24,38 @@ export interface RunSourcingInput {
   resumesRequired?: boolean;
   pushToAtsConnectionId?: string;
   pushTopN?: number;
+  /** Include archived Board/Candidate File talent that matches the JD (default true) */
+  includeTalentPool?: boolean;
 }
 
 export interface RunSourcingResult {
   run: SourcingRun;
   brief: string;
   matches: MatchResult[];
+  talentPoolHits?: number;
   atsSync?: {
     ok: boolean;
     message: string;
     externalIds: string[];
   };
+}
+
+function mergeCandidates(
+  primary: CandidateProfile[],
+  extras: CandidateProfile[],
+): CandidateProfile[] {
+  const seen = new Set<string>();
+  const out: CandidateProfile[] = [];
+  for (const candidate of [...extras, ...primary]) {
+    const key = (
+      candidate.email?.trim().toLowerCase() ||
+      candidate.fullName.trim().toLowerCase()
+    );
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(candidate);
+  }
+  return out;
 }
 
 export async function runSourcingAgent(input: RunSourcingInput): Promise<RunSourcingResult> {
@@ -45,12 +70,25 @@ export async function runSourcingAgent(input: RunSourcingInput): Promise<RunSour
       : listLivePlatforms().map((platform) => platform.id);
 
   const startedAt = new Date().toISOString();
-  const candidates = await searchCandidatePlatforms({
+  const limit = input.limit ?? 30;
+  const liveCandidates = await searchCandidatePlatforms({
     job,
     platforms,
-    limit: input.limit ?? 30,
+    limit,
   });
-  const matches = rankCandidates(job, candidates).slice(0, input.limit ?? 30);
+
+  let talentPoolHits = 0;
+  let candidates = liveCandidates;
+  if (input.includeTalentPool !== false) {
+    const poolMatches = talentMatchesForJob(job, Math.min(12, limit));
+    talentPoolHits = poolMatches.length;
+    const poolProfiles = poolMatches.map((m) =>
+      talentMatchToProfile(m, job.id),
+    );
+    candidates = mergeCandidates(liveCandidates, poolProfiles);
+  }
+
+  const matches = rankCandidates(job, candidates).slice(0, limit);
 
   const run: SourcingRun = {
     id: `run_${randomUUID().slice(0, 8)}`,
@@ -124,6 +162,7 @@ export async function runSourcingAgent(input: RunSourcingInput): Promise<RunSour
     run,
     brief: buildSourcingBrief(job),
     matches,
+    talentPoolHits,
     atsSync,
   };
 }

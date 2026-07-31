@@ -60,6 +60,8 @@ curl -s http://localhost:3000/api/ats/gina/test | jq
 | GET/POST | `/api/sourcing` | List runs / execute AI sourcing (+ optional ATS push) |
 | GET/POST | `/api/maria/source` | Maria people sourcing (+ Gina push); relay auth |
 | GET/POST | `/api/maria/market` | Maria job-market intel (Coresignal + Bright Data Jobs) |
+| GET/POST | `/api/talent-pool/archive` | Archive Board/Candidate File people for Maria reuse |
+| POST | `/api/talent-pool/match` | Preview talent-pool matches for a role |
 | GET | `/api/sync` | ATS sync event feed |
 
 ## Data providers (jobs + people)
