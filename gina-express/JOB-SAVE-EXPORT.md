@@ -24,12 +24,26 @@ Export is a **snapshot**. It does **not** clear the Board, lock the Candidate Fi
 
 Gina on Railway cannot write to your Mac external drive. Download → Save As on the drive.
 
-## Mac install
+## If Railway crashes: `Cannot find module .../job-save-page.route.js`
+
+Rollback first, push, wait for healthy, then re-install the fixed kit:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/rollback-job-save-export.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend
+git add gina-backend/server.js
+git commit -m "Rollback job-save-page.route import (restore Railway)"
+git pull origin main --rebase
+git push origin main
+```
+
+## Mac install (fixed — no separate page file)
 
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
 
-# API + /job-save page
+# API + /job-save page (from routes/job-save-export.js)
 node gina-express/frontend/patch-job-save-export.mjs ~/lyday-gina-backend/gina-backend
 
 # ATS Board toolbar button
@@ -37,7 +51,14 @@ node gina-express/frontend/patch-job-save-toolbar.mjs ~/lyday-gina-backend/gina-
 cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 
 cd ~/lyday-gina-backend
-git add -u gina-backend
+git add gina-backend/server.js \
+        gina-backend/routes/job-save-export.js \
+        gina-backend/lib/job-save-export.js \
+        gina-backend/frontend/job-save.html \
+        gina-backend/frontend/public/job-save.html \
+        gina-backend/frontend/src/App.jsx \
+        gina-backend/frontend/dist
+git status   # confirm routes + lib are staged — not only server.js
 git commit -m "Save/Export Board + Candidate File; talent pool for Maria"
 git pull origin main --rebase
 git push origin main
