@@ -81,6 +81,29 @@ export function buildQueuedAck({ agentId, agentName, task } = {}) {
 
 export function buildMariaReply({ task, result, error } = {}) {
   if (error) {
+    const looksLikeStatusAsk =
+      /\bstatus\s+update\b/i.test(task || "") ||
+      /\bupdate\s+on\b/i.test(task || "") ||
+      /\bpending\s+review\b/i.test(task || "");
+    const roleTitleMiss = /roleTitle/i.test(String(error || ""));
+    if (looksLikeStatusAsk && roleTitleMiss) {
+      return [
+        `Maria — status update (${stamp()})`,
+        "",
+        `Request: ${task || "Status update"}`,
+        "",
+        "Status: needs clearer ask",
+        bullets([
+          "This looked like a status update, but Gina routed it as a source job.",
+          "Re-ask: \"Ask Maria for an update on Home Depot sourcing\" (do not say email Maria).",
+          "After the Gina patch that treats status updates as non-sourcing, Check for actions will file a real status reply here.",
+        ]),
+        "",
+        filedToBothBlock(),
+        "",
+        "Handoff: Kimberley → Gina with a status ask (not send_email / not source).",
+      ].join("\n");
+    }
     return [
       `Maria — sourcing update (${stamp()})`,
       "",

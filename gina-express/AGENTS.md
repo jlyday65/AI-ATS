@@ -160,6 +160,22 @@ After deploy: Agent → **Check for actions** on the queued email (e.g. #242) �
 
 Correct ask: “Ask Maria for an update on Home Depot sourcing” (not “send Maria an email”).
 
+If Kimberley's Notes show **Status: blocked / Maria needs a roleTitle** on a Home Depot
+*status* ask, Gina still has the old command-agent. Re-run:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+# that copies agents/command-agent.tool.js + bot-replies.js
+cd ~/lyday-gina-backend
+git add gina-backend/agents/command-agent.tool.js gina-backend/agents/bot-replies.js
+git commit -m "Maria status updates are not source jobs (Home Depot Sourcing)"
+git pull origin main --rebase
+git push origin main
+```
+
+Then ask again: “Ask Maria for an update on Home Depot sourcing” → Check for actions.
+
 ## Fix: Skipped action — N candidates share that name
 
 Check for actions tried `update_stage` / `add_note` with only a **name**, and several Board cards share it.

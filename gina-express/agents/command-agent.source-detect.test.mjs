@@ -16,6 +16,12 @@ describe("looksLikeSourceTask", () => {
       ),
       false,
     );
+    assert.equal(
+      looksLikeSourceTask(
+        "Kimberley is requesting a full status update on the Home Depot sourcing project. Please provide details on any candidates sourced, shortlisted, or pending review as soon as possible.",
+      ),
+      false,
+    );
   });
 
   it("still detects real Maria source asks", () => {
