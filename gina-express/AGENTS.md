@@ -186,46 +186,47 @@ Build log looks like:
 railpack process exited with an error
 ```
 
-Gina is a **nested app**. Railway must build `gina-backend/`, not the monorepo root.
+**Meaning:** the folder Railway is building has no usable `package.json` → `scripts.start`
+(and often no `package.json` at all). Gina lives in a **nested** folder.
 
-### 1) Railway UI (fastest)
+### One-line Mac fix (do this first)
 
-Service → **Settings**:
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-railway-start.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend
+git add gina-backend/package.json gina-backend/railway.json
+git commit -m "Railway: ensure npm start + railway.json for Railpack"
+git pull origin main --rebase && git push origin main
+```
+
+### Railway UI (required — code alone is not enough)
+
+Gina service → **Settings** → save, then **Redeploy**:
 
 | Setting | Value |
 |---|---|
 | **Root Directory** | `gina-backend` |
-| **Start Command** | `npm start` (or `node server.js`) |
-| **Build Command** | leave empty, or `npm run build` if you build the frontend in deploy |
+| **Custom Start Command** | `npm start` |
+| **Connected repo** | `lyday-gina-backend` (not `AI-ATS`) |
 
-Redeploy.
+Wrong Root Directory values that cause this exact error:
 
-### 2) Confirm locally before push
+- blank / `.` when `package.json` is only under `gina-backend/`
+- `gina-express` (AI-ATS kit folder — **no** `package.json`)
+- any path that does not contain `package.json` + `server.js`
+
+### Confirm locally
 
 ```bash
 cd ~/lyday-gina-backend/gina-backend
-test -f package.json && test -f server.js && echo "OK: package.json + server.js"
-node -e "const p=require('./package.json'); console.log('start=', p.scripts&&p.scripts.start); console.log('main=', p.main)"
+ls package.json server.js
+node -e "console.log(require('./package.json').scripts.start)"
 ```
 
-`start` should be something like `node server.js`. If missing:
+Expect: `node server.js` (or similar).
 
-```bash
-# in gina-backend/package.json → scripts
-"start": "node server.js"
-```
-
-Optional: copy kit example into the app root Railway builds:
-
-```bash
-cp ~/AI-ATS/gina-express/railway.json.example ~/lyday-gina-backend/gina-backend/railway.json
-cd ~/lyday-gina-backend
-git add gina-backend/package.json gina-backend/railway.json
-git commit -m "Railway: start command + root is gina-backend"
-git pull origin main --rebase && git push origin main
-```
-
-Do **not** point this Railway service at the AI-ATS repo — Maria’s SignalHire stays on your Mac (ngrok). Only **Gina** (`lyday-gina-backend`) deploys to Railway.
+Do **not** deploy AI-ATS to this Gina Railway service — Maria/SignalHire stays on your Mac via ngrok.
 
 ## Home Depot / “New: 64” but Board shows 0
 
