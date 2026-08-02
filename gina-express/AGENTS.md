@@ -191,40 +191,48 @@ railpack process exited with an error
 
 ### One-line Mac fix (do this first)
 
+Pass the **monorepo root** (not only `gina-backend`). The script adds `scripts.start`
+on the app **and** a root `package.json` so a blank Railway Root Directory still works.
+
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-node gina-express/frontend/fix-railway-start.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/fix-railway-start.mjs ~/lyday-gina-backend
 cd ~/lyday-gina-backend
-git add gina-backend/package.json gina-backend/railway.json
-git commit -m "Railway: ensure npm start + railway.json for Railpack"
+git add package.json railway.json gina-backend/package.json gina-backend/railway.json
+git status   # must show package.json at repo ROOT if nested
+git commit -m "Railway: root + app npm start for Railpack"
 git pull origin main --rebase && git push origin main
 ```
 
 ### Railway UI (required — code alone is not enough)
 
-Gina service → **Settings** → save, then **Redeploy**:
+Gina service → **Settings** → **Save** → **Redeploy**:
 
 | Setting | Value |
 |---|---|
-| **Root Directory** | `gina-backend` |
+| **Root Directory** | **leave blank** (after the script writes root `package.json`) |
 | **Custom Start Command** | `npm start` |
-| **Connected repo** | `lyday-gina-backend` (not `AI-ATS`) |
+| **Connected repo** | Gina repo (`lyday-gina-backend`) — **not** `AI-ATS` |
 
-Wrong Root Directory values that cause this exact error:
+If you prefer nested root: Root Directory = `gina-backend`, Start = `npm start`.
 
-- blank / `.` when `package.json` is only under `gina-backend/`
-- `gina-express` (AI-ATS kit folder — **no** `package.json`)
-- any path that does not contain `package.json` + `server.js`
+Wrong settings that cause this exact error:
 
-### Confirm locally
+- Root Directory = `gina-express` (AI-ATS kit — no `package.json`)
+- Root Directory = `gina-backend` when that folder is empty/missing on GitHub
+- Connected to `jlyday65/AI-ATS` instead of the Gina backend repo
+- Fixed files locally but **not committed/pushed** (Railpack builds GitHub, not your Mac)
+
+### Confirm GitHub has the files Railway needs
 
 ```bash
-cd ~/lyday-gina-backend/gina-backend
-ls package.json server.js
-node -e "console.log(require('./package.json').scripts.start)"
+cd ~/lyday-gina-backend
+git ls-files package.json gina-backend/package.json server.js gina-backend/server.js
 ```
 
-Expect: `node server.js` (or similar).
+You need either:
+- `package.json` + `server.js` at repo root, or
+- `gina-backend/package.json` + `gina-backend/server.js` **and** (recommended) root `package.json` with `"start": "node gina-backend/server.js"`
 
 Do **not** deploy AI-ATS to this Gina Railway service — Maria/SignalHire stays on your Mac via ngrok.
 
