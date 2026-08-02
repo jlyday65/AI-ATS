@@ -13,6 +13,7 @@ describe("candidate platform catalog", () => {
     const ids = new Set(CANDIDATE_PLATFORMS.map((platform) => platform.id));
     for (const required of [
       "linkedin",
+      "peopledatalabs",
       "github",
       "stackoverflow",
       "kaggle",

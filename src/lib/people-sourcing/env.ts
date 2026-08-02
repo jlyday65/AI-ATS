@@ -14,6 +14,15 @@ export function brightDataApiKey(): string {
   );
 }
 
+export function peopleDataLabsApiKey(): string {
+  return (
+    process.env.PEOPLEDATALABS_API_KEY?.trim() ||
+    process.env.PDL_API_KEY?.trim() ||
+    process.env.PEOPLE_DATA_LABS_API_KEY?.trim() ||
+    ""
+  );
+}
+
 /** LinkedIn people profiles dataset (collect by URL). */
 export function brightDataPeopleDatasetId(): string {
   return (
@@ -25,9 +34,11 @@ export function brightDataPeopleDatasetId(): string {
 export function peopleLiveEnabled(): {
   coresignal: boolean;
   brightdata: boolean;
+  peopledatalabs: boolean;
 } {
   return {
     coresignal: Boolean(coresignalApiKey()),
     brightdata: Boolean(brightDataApiKey()),
+    peopledatalabs: Boolean(peopleDataLabsApiKey()),
   };
 }

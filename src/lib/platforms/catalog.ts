@@ -13,6 +13,17 @@ export const CANDIDATE_PLATFORMS: CandidatePlatform[] = [
     supportsEnrichment: true,
   },
   {
+    id: "peopledatalabs",
+    name: "People Data Labs",
+    category: "professional",
+    status: "live",
+    description:
+      "B2B person dataset search (titles, skills, locations) via Person Search API.",
+    homepage: "https://www.peopledatalabs.com",
+    supportsSearch: true,
+    supportsEnrichment: true,
+  },
+  {
     id: "github",
     name: "GitHub",
     category: "developer",

@@ -5,7 +5,7 @@ SignalHire / Maria uses **two tracks**:
 | Track | Purpose | Providers | Endpoint |
 | --- | --- | --- | --- |
 | **Job market intel** | Competing postings, employers, salary/title variants | Coresignal Multi-source Jobs + Bright Data LinkedIn Jobs | `POST /api/maria/market` |
-| **Candidate sourcing** | People / resumes for shortlists | Coresignal Multi-source Employee (+ optional Bright Data LinkedIn profile enrichment) with demo fallback | `POST /api/maria/source` |
+| **Candidate sourcing** | People / resumes for shortlists | Coresignal Multi-source Employee + **People Data Labs** Person Search (+ optional Bright Data LinkedIn profile enrichment) with demo fallback | `POST /api/maria/source` |
 
 Jobs APIs alone do **not** return candidates. Use market for research; use source for people.
 
@@ -14,6 +14,9 @@ Jobs APIs alone do **not** return candidates. Use market for research; use sourc
 ```bash
 # Jobs + people (Coresignal)
 CORESIGNAL_API_KEY=
+
+# People sourcing (People Data Labs Person Search)
+PEOPLEDATALABS_API_KEY=
 
 # Jobs (Bright Data Scrapers) + optional people URL enrichment
 BRIGHTDATA_API_KEY=
@@ -42,4 +45,5 @@ Same relay as Maria source: `X-Relay-Secret` matching Gina `RELAY_SECRET` / Sign
 
 - [Coresignal Multi-source Jobs](https://docs.coresignal.com/jobs-api/multi-source-jobs-api)
 - [Coresignal Multi-source Employee](https://docs.coresignal.com/employee-api/multi-source-employee-api)
+- [People Data Labs Person Search](https://docs.peopledatalabs.com/docs/person-search-api)
 - [Bright Data LinkedIn Jobs discover-by-keyword](https://docs.brightdata.com/api-reference/scrapers/social-media-apis/linkedin-jobs-discover-by-keyword)

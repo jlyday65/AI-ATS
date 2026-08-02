@@ -1,6 +1,7 @@
 import { searchBrightDataPeople } from "@/lib/people-sourcing/brightdata";
 import { searchCoresignalPeople } from "@/lib/people-sourcing/coresignal";
 import { peopleLiveEnabled } from "@/lib/people-sourcing/env";
+import { searchPeopleDataLabs } from "@/lib/people-sourcing/peopledatalabs";
 import type {
   PeopleProviderId,
   PeopleProviderResult,
@@ -31,6 +32,7 @@ async function runProvider(
 ): Promise<PeopleProviderResult> {
   if (id === "coresignal") return searchCoresignalPeople(query);
   if (id === "brightdata") return searchBrightDataPeople(query);
+  if (id === "peopledatalabs") return searchPeopleDataLabs(query);
   const started = Date.now();
   const candidates = await searchDemoCandidatePlatforms({
     job: query.job,
@@ -45,9 +47,13 @@ async function runProvider(
   };
 }
 
+function anyLiveConfigured(live: ReturnType<typeof peopleLiveEnabled>) {
+  return live.coresignal || live.brightdata || live.peopledatalabs;
+}
+
 /**
- * People / candidate sourcing across Coresignal Employee + Bright Data LinkedIn
- * enrichment, with deterministic demo fallback for end-to-end Maria tests.
+ * People / candidate sourcing across Coresignal, People Data Labs, and
+ * Bright Data LinkedIn enrichment, with deterministic demo fallback.
  */
 export async function searchPeopleProviders(
   input: PeopleSearchQuery,
@@ -56,11 +62,11 @@ export async function searchPeopleProviders(
   const requested =
     input.providers?.length
       ? input.providers
-      : (["coresignal", "brightdata"] as PeopleProviderId[]);
+      : (["coresignal", "peopledatalabs", "brightdata"] as PeopleProviderId[]);
 
   let providers: PeopleProviderResult[] = [];
 
-  if (input.forceDemo || (!live.coresignal && !live.brightdata)) {
+  if (input.forceDemo || !anyLiveConfigured(live)) {
     providers = [await runProvider("demo", input)];
   } else {
     providers = await Promise.all(
@@ -90,6 +96,7 @@ export function peopleProviderStatus() {
   const live = peopleLiveEnabled();
   return {
     coresignal: live.coresignal ? "configured" : "missing_api_key",
+    peopledatalabs: live.peopledatalabs ? "configured" : "missing_api_key",
     brightdata: live.brightdata ? "configured" : "missing_api_key",
     brightdataSeedUrls: Boolean(
       process.env.BRIGHTDATA_PEOPLE_SEED_URLS?.trim(),

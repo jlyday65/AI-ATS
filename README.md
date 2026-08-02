@@ -69,9 +69,9 @@ curl -s http://localhost:3000/api/ats/gina/test | jq
 Two tracks — see [docs/DATA-PROVIDERS.md](docs/DATA-PROVIDERS.md):
 
 1. **Job market intel** — Coresignal Multi-source Jobs + Bright Data Jobs → `POST /api/maria/market`
-2. **Candidate sourcing** — Coresignal Multi-source Employee (+ optional Bright Data LinkedIn URL enrichment), demo fallback → `POST /api/maria/source`
+2. **Candidate sourcing** — Coresignal Multi-source Employee + People Data Labs (+ optional Bright Data LinkedIn URL enrichment), demo fallback → `POST /api/maria/source`
 
-Set `CORESIGNAL_API_KEY` / `BRIGHTDATA_API_KEY` in `.env.local`. Without keys, both tracks use deterministic demo data.
+Set `CORESIGNAL_API_KEY` / `PEOPLEDATALABS_API_KEY` / `BRIGHTDATA_API_KEY` in `.env.local`. Without keys, both tracks use deterministic demo data.
 
 ## Architecture
 

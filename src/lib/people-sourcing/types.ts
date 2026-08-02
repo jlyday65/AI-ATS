@@ -1,6 +1,10 @@
 import type { CandidateProfile, JobRequisition } from "@/lib/types";
 
-export type PeopleProviderId = "coresignal" | "brightdata" | "demo";
+export type PeopleProviderId =
+  | "coresignal"
+  | "brightdata"
+  | "peopledatalabs"
+  | "demo";
 
 export interface PeopleSearchQuery {
   job: JobRequisition;
