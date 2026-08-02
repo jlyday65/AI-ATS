@@ -176,6 +176,57 @@ git push origin main
 
 Then ask again: “Ask Maria for an update on Home Depot sourcing” → Check for actions.
 
+## Fix: Railway Railpack — “No start command detected”
+
+Build log looks like:
+
+```text
+⚠ No node package manager detected, using npm
+✖ No start command detected
+railpack process exited with an error
+```
+
+Gina is a **nested app**. Railway must build `gina-backend/`, not the monorepo root.
+
+### 1) Railway UI (fastest)
+
+Service → **Settings**:
+
+| Setting | Value |
+|---|---|
+| **Root Directory** | `gina-backend` |
+| **Start Command** | `npm start` (or `node server.js`) |
+| **Build Command** | leave empty, or `npm run build` if you build the frontend in deploy |
+
+Redeploy.
+
+### 2) Confirm locally before push
+
+```bash
+cd ~/lyday-gina-backend/gina-backend
+test -f package.json && test -f server.js && echo "OK: package.json + server.js"
+node -e "const p=require('./package.json'); console.log('start=', p.scripts&&p.scripts.start); console.log('main=', p.main)"
+```
+
+`start` should be something like `node server.js`. If missing:
+
+```bash
+# in gina-backend/package.json → scripts
+"start": "node server.js"
+```
+
+Optional: copy kit example into the app root Railway builds:
+
+```bash
+cp ~/AI-ATS/gina-express/railway.json.example ~/lyday-gina-backend/gina-backend/railway.json
+cd ~/lyday-gina-backend
+git add gina-backend/package.json gina-backend/railway.json
+git commit -m "Railway: start command + root is gina-backend"
+git pull origin main --rebase && git push origin main
+```
+
+Do **not** point this Railway service at the AI-ATS repo — Maria’s SignalHire stays on your Mac (ngrok). Only **Gina** (`lyday-gina-backend`) deploys to Railway.
+
 ## Home Depot / “New: 64” but Board shows 0
 
 **Ignore emoji pipeline tables like this** — they are invented Gina chat copy, not the Board:
