@@ -140,6 +140,23 @@ curl -sS -X POST https://lyday-gina-backend-production.up.railway.app/ats/kimber
 
 Or open Kimberley's Notes → Refresh (list already hides same-action duplicates). New Check for actions runs replace the ack instead of adding a second card.
 
+## Fix: Skipped action — N candidates share that name
+
+Check for actions tried `update_stage` / `add_note` with only a **name**, and several Board cards share it.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-find-candidate-match.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx
+git commit -m "Disambiguate board match by email/phone/jobTitle"
+git pull origin main --rebase
+git push origin main
+```
+
+Workaround without patch: ask Gina/Kelley to target the person by **email**, or remove duplicate-named cards, then Check for actions again.
+
 ## Fix: Skipped action — SignalHire Maria source failed (404)
 
 Queue/role parsing worked; Gina called the wrong host for Maria sourcing (or `SIGNALHIRE_BASE_URL` is unset/localhost). Gina must call **AI-ATS** `POST /api/maria/source`, not Gina itself.

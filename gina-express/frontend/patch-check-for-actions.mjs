@@ -315,18 +315,38 @@ const CLEAN = `
       }
 
       if (type === "update_stage") {
-        const match = findCandidateByMatch(payload?.match);
+        const match = findCandidateByMatch({
+          ...(payload?.match || {}),
+          email: payload?.match?.email || payload?.email || "",
+          phone: payload?.match?.phone || payload?.phone || "",
+          jobTitle:
+            payload?.match?.jobTitle ||
+            payload?.match?.role ||
+            payload?.jobTitle ||
+            payload?.role ||
+            "",
+        });
         if (!match) return { ok: false, reason: \`No candidate found matching \${JSON.stringify(payload?.match)}.\` };
-        if (match.ambiguous) return { ok: false, reason: \`\${match.count} candidates share that name — ask Gina to match by email instead.\` };
+        if (match.ambiguous) return { ok: false, reason: \`\${match.count} candidates share that name — re-queue with match.email, or clear duplicate names on the Board.\` };
         if (!STAGES.some((s) => s.key === payload?.stage)) return { ok: false, reason: \`"\${payload?.stage}" isn't a valid stage.\` };
         setStage(match.id, payload.stage);
         return { ok: true, summary: \`Moved \${match.name} to \${stageMeta(payload.stage).label}\` };
       }
 
       if (type === "add_note") {
-        const match = findCandidateByMatch(payload?.match);
+        const match = findCandidateByMatch({
+          ...(payload?.match || {}),
+          email: payload?.match?.email || payload?.email || "",
+          phone: payload?.match?.phone || payload?.phone || "",
+          jobTitle:
+            payload?.match?.jobTitle ||
+            payload?.match?.role ||
+            payload?.jobTitle ||
+            payload?.role ||
+            "",
+        });
         if (!match) return { ok: false, reason: \`No candidate found matching \${JSON.stringify(payload?.match)}.\` };
-        if (match.ambiguous) return { ok: false, reason: \`\${match.count} candidates share that name — ask Gina to match by email instead.\` };
+        if (match.ambiguous) return { ok: false, reason: \`\${match.count} candidates share that name — re-queue with match.email, or clear duplicate names on the Board.\` };
         if (!payload?.text) return { ok: false, reason: "Missing note text in payload." };
         addNote(match.id, payload.text);
         return { ok: true, summary: \`Added a note to \${match.name}\` };
