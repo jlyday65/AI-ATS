@@ -164,9 +164,86 @@ const CLEAN = `
     return Boolean(name) && BOT_NAMES.has(name);
   }
 
+  function resolveTeamBotName(raw) {
+    const text = String(raw || "").trim().toLowerCase();
+    if (!text) return null;
+    const first = text.split(/[\\s(,:@<]/).find(Boolean) || "";
+    const key = first.replace(/[^a-z]/g, "");
+    if (BOT_NAMES.has(key)) return key === "kelly" ? "kelley" : key;
+    for (const bot of BOT_NAMES) {
+      if (text === bot || text.startsWith(bot + " ") || text.includes(" " + bot + " ")) {
+        return bot === "kelly" ? "kelley" : bot;
+      }
+    }
+    return null;
+  }
+
+  function isEmailActionType(type) {
+    const t = String(type || "").toLowerCase();
+    return (
+      t === "send_email" ||
+      t === "queue_email" ||
+      t === "compose_email" ||
+      t === "draft_email" ||
+      t === "email" ||
+      /email/.test(t)
+    );
+  }
+
   async function applyAgentAction(action) {
     const { type, payload } = action;
     try {
+      // Never email team bots — rewrite to command_agent
+      if (isEmailActionType(type)) {
+        const toRaw =
+          payload?.to ||
+          payload?.recipient ||
+          payload?.toName ||
+          payload?.name ||
+          payload?.match?.name ||
+          payload?.agent ||
+          "";
+        const bot = resolveTeamBotName(toRaw);
+        if (bot && bot !== "gina") {
+          const task =
+            payload?.body ||
+            payload?.text ||
+            payload?.message ||
+            payload?.subject ||
+            payload?.task ||
+            "Provide a status update for Kimberley";
+          const res = await fetch("/ats/run-command", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              type: "command_agent",
+              actionId: action.id,
+              payload: {
+                targetAgent: bot,
+                task: String(task),
+                requestedBy: "Kimberley",
+              },
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || data.ok === false) {
+            return {
+              ok: false,
+              reason:
+                data.error ||
+                \`Refused email to \${bot} (team bot). Use command_agent + Check for actions.\`,
+            };
+          }
+          return {
+            ok: true,
+            summary:
+              data.summary ||
+              \`Did not email \${bot} (internal bot). Ran team command instead — see Kimberley's Notes.\`,
+          };
+        }
+      }
+
       if (
         type === "command_agent" ||
         type === "source_candidates_signalhire" ||

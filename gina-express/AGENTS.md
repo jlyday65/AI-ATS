@@ -140,6 +140,26 @@ curl -sS -X POST https://lyday-gina-backend-production.up.railway.app/ats/kimber
 
 Or open Kimberley's Notes → Refresh (list already hides same-action duplicates). New Check for actions runs replace the ack instead of adding a second card.
 
+## Fix: Gina emailed Maria (team bots are never emailed)
+
+Maria / Michelle / Kelley / Ashton are internal agents. "Email Maria for an update"
+must queue `command_agent`, not `send_email`.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-no-email-team-bots.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/GINA_TEAM_PROMPT_RULE.txt gina-backend/gina.js gina-backend/frontend/src/App.jsx
+git commit -m "Never email Maria/Michelle/Kelley/Ashton — use command_agent"
+git pull origin main --rebase
+git push origin main
+```
+
+After deploy: Agent → **Check for actions** on the queued email (e.g. #242) — it rewrites to a Maria team command and files the reply in Kimberley's Notes.
+
+Correct ask: “Ask Maria for an update on Home Depot sourcing” (not “send Maria an email”).
+
 ## Fix: Skipped action — N candidates share that name
 
 Check for actions tried `update_stage` / `add_note` with only a **name**, and several Board cards share it.

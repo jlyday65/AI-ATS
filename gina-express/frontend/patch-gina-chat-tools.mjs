@@ -47,6 +47,8 @@ you MUST queue EXACTLY:
 }
 
 Never use update_stage/add_note with match.name "Maria" — Maria is a bot, not a candidate.
+NEVER email Maria / Michelle / Kelley / Ashton / Gina. "Send an email to Maria for an update"
+means queue command_agent for Maria, then Check for actions — not send_email / queue_email.
 After queueing, confirm Action ID and that it is assigned to Maria.
 `.trim();
 
