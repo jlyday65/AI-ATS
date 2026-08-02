@@ -15,6 +15,7 @@
 
 import { Router } from "express";
 import { formatMorningPipelineBriefing } from "../briefing/format-pipeline-stage-counts.js";
+import { countLiveStageCounts } from "../lib/live-stage-counts.js";
 import { kimberleyNotes } from "../lib/kimberley-notes.js";
 
 const router = Router();
@@ -62,12 +63,17 @@ function normalizeCounts(raw = {}) {
 }
 
 async function build(body = {}) {
-  const stageCounts = normalizeCounts(body.stageCounts || body.stage_counts || {});
+  const boardCandidates =
+    body.boardCandidates || body.candidates || body.board || null;
+  const stageCounts = Array.isArray(boardCandidates)
+    ? normalizeCounts(countLiveStageCounts(boardCandidates))
+    : normalizeCounts(body.stageCounts || body.stage_counts || {});
   const teamUpdates = Array.isArray(body.teamUpdates)
     ? body.teamUpdates
     : await loadTeamUpdates();
   const text = formatMorningPipelineBriefing({
     stageCounts,
+    boardCandidates: Array.isArray(boardCandidates) ? boardCandidates : null,
     remindersDue: body.remindersDue || body.reminders_due || [],
     pipelineDetail: body.pipelineDetail || body.pipeline_detail || [],
     teamUpdates,

@@ -178,12 +178,30 @@ Then ask again: “Ask Maria for an update on Home Depot sourcing” → Check f
 
 ## Home Depot / “New: 64” but Board shows 0
 
-**Those 64 Home Depot candidates are not on the Board** — Maria never successfully
-imported a Home Depot shortlist via SignalHire. Home Depot traffic in chat was
-**status-update** asks (often mis-routed / roleTitle-blocked), not a landed shortlist.
+**Ignore emoji pipeline tables like this** — they are invented Gina chat copy, not the Board:
 
-The July 30 Gina chat table (`New: 64`) was a **pipeline summary message**, not a
-live Board inventory. Trust the Board count in the ATS UI.
+```text
+ATS snapshot as of July 30, 2026 … New | 64 … Maria has 64 candidates …
+Suggested Next Step: ask Michelle to begin screening the 64 new candidates
+```
+
+**Those 64 candidates are not on the Board.** Maria never successfully imported a
+Home Depot shortlist via SignalHire. Home Depot traffic was **status-update** asks
+(often mis-routed / roleTitle-blocked), not a landed shortlist. Trust the Board UI (0).
+
+Fix so Gina stops inventing counts:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-live-pipeline-counts.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add -A && git commit -m "Pipeline summary uses live Board counts only (no invented New: 64)"
+git pull origin main --rebase && git push origin main
+```
+
+Then ask again: **Give me the pipeline summary** → expect `New: 0` (or real Board count),
+plain text, no July 30 emoji table.
 
 Successful Maria imports in this project were small demo batches for roles like
 **Warehouse Assistant Manager**, **Operations Manager**, and **Senior Manager**

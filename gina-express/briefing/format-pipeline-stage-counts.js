@@ -2,7 +2,13 @@
  * Format Gina pipeline summary for morning briefings.
  *
  * Canonical section title: "Pipeline Stage Counts"
+ * Counts must reflect the LIVE Board — never invent New: 64 from chat memory.
  */
+
+import {
+  countLiveStageCounts,
+  totalLiveCandidates,
+} from "../lib/live-stage-counts.js";
 
 export const PIPELINE_STAGES = [
   { key: "new", label: "New" },
@@ -12,6 +18,8 @@ export const PIPELINE_STAGES = [
   { key: "hired", label: "Hired" },
   { key: "rejected", label: "Rejected" },
 ];
+
+export { countLiveStageCounts, totalLiveCandidates };
 
 /**
  * @param {Record<string, number>} stageCounts
@@ -97,15 +105,21 @@ function prioritizeTeamUpdates(teamUpdates) {
 
 export function formatMorningPipelineBriefing({
   stageCounts = {},
+  boardCandidates = null,
   remindersDue = [],
   pipelineDetail = [],
   teamUpdates = [],
   asOf = new Date().toISOString(),
 } = {}) {
+  // Prefer live Board cards when provided — blocks invented New: 64 snapshots.
+  const counts = Array.isArray(boardCandidates)
+    ? countLiveStageCounts(boardCandidates)
+    : stageCounts;
   const sections = [];
-  sections.push(`Pipeline briefing — ${asOf}`);
+  sections.push(`Pipeline briefing — ${asOf} (live Board)`);
   sections.push("");
-  sections.push(formatPipelineStageCounts(stageCounts));
+  sections.push(formatPipelineStageCounts(counts));
+  sections.push(`Total on Board: ${totalLiveCandidates(counts)}`);
 
   // Always show reminders section (cleaner than emoji blocks)
   sections.push("");
