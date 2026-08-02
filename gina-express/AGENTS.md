@@ -176,6 +176,45 @@ git push origin main
 
 Then ask again: “Ask Maria for an update on Home Depot sourcing” → Check for actions.
 
+## Fix: Railway `ECONNREFUSED 127.0.0.1:5432` (Postgres)
+
+Start command is fine (`gina-backend@1.0.0 start` → `node server.js`). Gina then crashes because
+it tries to open Postgres on **localhost:5432** inside the container — there is no DB there.
+
+```text
+Failed to initialize database schema: AggregateError [ECONNREFUSED]
+address: '127.0.0.1', port: 5432
+```
+
+**Cause:** `DATABASE_URL` (or `POSTGRES_URL`) is missing / not linked on the Gina service,
+so `pg` falls back to `127.0.0.1:5432`.
+
+### Fix in Railway (no code push required)
+
+1. Project → **New** → **Database** → **PostgreSQL** (or use your existing Postgres service).
+2. Open the **Gina** service → **Variables**.
+3. Add a reference variable (not a hardcoded localhost URL):
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+
+   (In the UI: **Add variable** → **Add reference** → pick the Postgres service → `DATABASE_URL`.)
+
+4. Optional but common for Railway Postgres:
+
+| Variable | Value |
+|---|---|
+| `PGSSL` | leave unset (Gina kit defaults to SSL) |
+
+5. **Redeploy** Gina. Logs should show schema setup succeeding, not `ECONNREFUSED`.
+
+### Quick checks
+
+- Gina and Postgres must be in the **same Railway project**.
+- Do **not** set `DATABASE_URL=postgresql://…@127.0.0.1:5432/…` on Railway.
+- Mac local Gina can use localhost Postgres; Railway cannot.
+
 ## Fix: Railway Railpack — “No start command detected”
 
 Build log looks like:
