@@ -176,22 +176,26 @@ git push origin main
 
 Then ask again: “Ask Maria for an update on Home Depot sourcing” → Check for actions.
 
-## Fix: Skipped action — N candidates share that name
+## Fix: No duplicate Board candidates
 
-Check for actions tried `update_stage` / `add_note` with only a **name**, and several Board cards share it.
+Maria imports must **update in place** — never create Omar Sato × N.
+Cause: Check for actions applied several `import_candidate` rows while React
+still saw a stale `candidates` array, so name/email dedupe missed siblings
+in the same batch.
 
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-node gina-express/frontend/patch-find-candidate-match.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+node gina-express/frontend/patch-no-duplicate-candidates.mjs ~/lyday-gina-backend/gina-backend
 cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 cd ~/lyday-gina-backend
-git add gina-backend/frontend/src/App.jsx
-git commit -m "Disambiguate board match by email/phone/jobTitle"
+git add gina-backend/frontend/src/App.jsx gina-backend/lib/candidate-dedupe.js
+git commit -m "No duplicate Board candidates on Maria import"
 git pull origin main --rebase
 git push origin main
 ```
 
-Workaround without patch: ask Gina/Kelley to target the person by **email**, or remove duplicate-named cards, then Check for actions again.
+After deploy: open Board or run **Check for actions** once — existing duplicate
+cards collapse; new Maria shortlists merge by email/phone/name.
 
 ## Fix: Skipped action — SignalHire Maria source failed (404)
 

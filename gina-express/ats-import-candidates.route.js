@@ -16,8 +16,25 @@ router.post("/import-candidates", requireRelaySecret, async (req, res) => {
   }
 
   try {
-    const ids = [];
+    // Dedupe before queueing — never create Omar Sato × N pending actions.
+    const seen = new Set();
+    const unique = [];
     for (const c of candidates) {
+      const email = String(c.email || "").trim().toLowerCase();
+      const phone = String(c.phone || "").replace(/\D/g, "");
+      const name = String(c.name || c.fullName || "").trim().toLowerCase();
+      const keys = [
+        email ? `e:${email}` : "",
+        phone.length >= 7 ? `p:${phone}` : "",
+        name ? `n:${name}` : "",
+      ].filter(Boolean);
+      if (!keys.length || keys.some((k) => seen.has(k))) continue;
+      for (const k of keys) seen.add(k);
+      unique.push(c);
+    }
+
+    const ids = [];
+    for (const c of unique) {
       const payload = {
         name: c.name || c.fullName || "",
         email: c.email || "",
@@ -42,7 +59,7 @@ router.post("/import-candidates", requireRelaySecret, async (req, res) => {
       ids.push(rows[0].id);
     }
 
-    res.json({ ok: true, ids, count: ids.length });
+    res.json({ ok: true, ids, count: ids.length, dedupedFrom: candidates.length });
   } catch (err) {
     res.status(500).json({ error: String(err?.message || err) });
   }

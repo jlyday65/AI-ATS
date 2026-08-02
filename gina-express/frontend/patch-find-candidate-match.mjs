@@ -127,15 +127,14 @@ const FIND_FN = `
     }
 
     if (hits.length === 1) return hits[0];
-    return {
-      ambiguous: true,
-      count: hits.length,
-      name: hits[0]?.name || name,
-      emails: hits
-        .map((c) => (c.email || "").trim())
-        .filter(Boolean)
-        .slice(0, 8),
-    };
+
+    // No duplicate Board cards — pick the richest resume instead of failing.
+    hits.sort((a, b) => {
+      const al = String(a.resumeText || a.resume_text || a.summary || "").length;
+      const bl = String(b.resumeText || b.resume_text || b.summary || "").length;
+      return bl - al;
+    });
+    return hits[0];
   }
 `.trim();
 
@@ -158,10 +157,16 @@ function enrichMatchCalls(src) {
 }
 
 function improveAmbiguousReason(src) {
-  return src.replace(
-    /\$\{match\.count\} candidates share that name — ask Gina to match by email instead\./g,
-    "${match.count} candidates share that name — re-queue with match.email, or clear duplicate names on the Board.",
-  );
+  // Legacy ambiguous messages — imports/match now collapse dupes instead.
+  return src
+    .replace(
+      /\$\{match\.count\} candidates share that name — ask Gina to match by email instead\./g,
+      "${match.count} cards shared that name — Board was deduped; Check for actions again (or match by email).",
+    )
+    .replace(
+      /\$\{match\.count\} candidates share that name — re-queue with match\.email, or clear duplicate names on the Board\./g,
+      "${match.count} cards shared that name — Board was deduped; Check for actions again (or match by email).",
+    );
 }
 
 const esbuild = loadEsbuild(target);

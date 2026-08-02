@@ -28,7 +28,7 @@ if (!target || !fs.existsSync(target)) {
 const replacementPath = path.join(__dirname, "applyAgentAction.replacement.js");
 const replacement = fs.readFileSync(replacementPath, "utf8");
 const fnStart = replacement.search(
-  /const BOT_NAMES\s*=\s*new Set|async function applyAgentAction/,
+  /function\s+personDedupeKeys\b|const BOT_NAMES\s*=\s*new Set|async function applyAgentAction/,
 );
 if (fnStart < 0) {
   console.error("applyAgentAction.replacement.js missing executable block");
@@ -51,15 +51,17 @@ function braceEnd(src, braceAt) {
 function removeAllBlocks(text) {
   let src = text;
   for (let guard = 0; guard < 12; guard++) {
+    const dedupe = src.search(/function\s+personDedupeKeys\b/);
     const bot = src.search(/const BOT_NAMES\s*=\s*new Set/);
     const isBot = src.search(/function isBotMatch\s*\(/);
     const fn = src.search(/(?:async\s+)?function applyAgentAction\b/);
-    const candidates = [bot, isBot, fn].filter((n) => n >= 0);
+    const candidates = [dedupe, bot, isBot, fn].filter((n) => n >= 0);
     if (!candidates.length) break;
     let start = Math.min(...candidates);
 
-    // Prefer cutting from BOT_NAMES when it sits just above applyAgentAction
-    if (bot >= 0 && fn >= 0 && fn - bot < 400) start = bot;
+    // Prefer cutting from dedupe helpers / BOT_NAMES when just above applyAgentAction
+    if (dedupe >= 0 && fn >= 0 && fn - dedupe < 4000) start = dedupe;
+    else if (bot >= 0 && fn >= 0 && fn - bot < 800) start = bot;
     else if (isBot >= 0 && fn >= 0 && fn - isBot < 200) start = isBot;
     else if (fn >= 0) start = fn;
     else start = candidates[0];

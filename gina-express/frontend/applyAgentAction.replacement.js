@@ -9,7 +9,118 @@
  *
  * Fixes: Skipped action N: No candidate found matching {"name":"Maria"}
  * (Maria is a bot, not a candidate.)
+ *
+ * No duplicate Board cards: import session keys survive React stale state
+ * during a multi-import "Check for actions" batch; existing dupes collapse.
  */
+
+  function personDedupeKeys(person = {}) {
+    const keys = [];
+    const email = String(person.email || "").trim().toLowerCase();
+    if (email) keys.push(`e:${email}`);
+    const phone = String(person.phone || "").replace(/\D/g, "");
+    if (phone.length >= 7) keys.push(`p:${phone}`);
+    const name = String(person.name || person.fullName || "")
+      .trim()
+      .toLowerCase();
+    if (name) keys.push(`n:${name}`);
+    return keys;
+  }
+
+  function sameBoardPerson(a = {}, b = {}) {
+    const ae = String(a.email || "").trim().toLowerCase();
+    const be = String(b.email || "").trim().toLowerCase();
+    if (ae && be && ae === be) return true;
+    const ap = String(a.phone || "").replace(/\D/g, "");
+    const bp = String(b.phone || "").replace(/\D/g, "");
+    if (ap.length >= 7 && bp.length >= 7 && ap === bp) return true;
+    const an = String(a.name || a.fullName || "")
+      .trim()
+      .toLowerCase();
+    const bn = String(b.name || b.fullName || "")
+      .trim()
+      .toLowerCase();
+    return Boolean(an && bn && an === bn);
+  }
+
+  function beginCandidateImportSession() {
+    const keys = new Set();
+    for (const c of Array.isArray(candidates) ? candidates : []) {
+      for (const k of personDedupeKeys(c)) keys.add(k);
+    }
+    if (typeof window !== "undefined") {
+      window.__ginaImportDedupeKeys = keys;
+    }
+    return keys;
+  }
+
+  function importSessionKeys() {
+    if (
+      typeof window !== "undefined" &&
+      window.__ginaImportDedupeKeys instanceof Set
+    ) {
+      return window.__ginaImportDedupeKeys;
+    }
+    return beginCandidateImportSession();
+  }
+
+  function rememberImportPerson(person) {
+    const session = importSessionKeys();
+    for (const k of personDedupeKeys(person)) session.add(k);
+  }
+
+  function sessionHasPerson(person) {
+    const session = importSessionKeys();
+    return personDedupeKeys(person).some((k) => session.has(k));
+  }
+
+  /** Collapse any existing duplicate Board cards (keep richest resume). */
+  function dedupeBoardCandidates() {
+    if (typeof setCandidates !== "function") return 0;
+    let removed = 0;
+    setCandidates((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const out = [];
+      for (const c of list) {
+        const idx = out.findIndex((x) => sameBoardPerson(x, c));
+        if (idx < 0) {
+          out.push(c);
+          continue;
+        }
+        removed += 1;
+        const prevC = out[idx];
+        const prevLen = String(
+          prevC.resumeText || prevC.resume_text || prevC.summary || "",
+        ).length;
+        const nextLen = String(
+          c.resumeText || c.resume_text || c.summary || "",
+        ).length;
+        const keepPrev = prevLen >= nextLen;
+        const base = keepPrev ? prevC : c;
+        const other = keepPrev ? c : prevC;
+        out[idx] = {
+          ...other,
+          ...base,
+          id: prevC.id,
+          email: base.email || other.email || "",
+          phone: base.phone || other.phone || "",
+          resumeText:
+            base.resumeText ||
+            base.resume_text ||
+            other.resumeText ||
+            other.resume_text ||
+            "",
+          summary: base.summary || other.summary || "",
+          role: base.role || other.role || "",
+          jobTitle: base.jobTitle || other.jobTitle || "",
+          source: base.source || other.source || "",
+        };
+      }
+      return out;
+    });
+    beginCandidateImportSession();
+    return removed;
+  }
 
   const BOT_NAMES = new Set(["maria", "michelle", "kelley", "kelly", "ashton", "gina"]);
 
@@ -207,68 +318,124 @@
       if (type === "create_candidate" || type === "import_candidate") {
         if (!payload?.name) return { ok: false, reason: "Missing candidate name in payload." };
 
-        const email = (payload.email || "").trim().toLowerCase();
-        const name = (payload.name || "").trim().toLowerCase();
-        const existing = candidates.find((c) => {
-          if (email && (c.email || "").trim().toLowerCase() === email) return true;
-          if (name && (c.name || "").trim().toLowerCase() === name) return true;
-          return false;
-        });
-        if (existing) {
-          // Merge resume/role onto the existing card (old imports often only had summary).
-          // Gina's CandidateTracker has setCandidates — not updateCandidate.
-          const resumeText =
-            payload.resumeText || payload.resume_text || payload.summary || "";
-          const role = payload.jobTitle || payload.role || existing.role || "";
-          const patch = {
-            resumeText: resumeText || existing.resumeText || existing.resume_text || "",
-            summary: payload.summary || existing.summary || "",
-            headline: payload.headline || existing.headline || "",
-            role,
-            jobTitle: payload.jobTitle || existing.jobTitle || "",
-            source: existing.source || payload.source || "SignalHire",
-          };
-          if (typeof updateCandidate === "function") {
-            updateCandidate(existing.id, patch);
-          } else if (typeof setCandidates === "function") {
-            setCandidates((prev) =>
-              (prev || []).map((c) =>
-                c.id === existing.id ? { ...c, ...patch } : c,
-              ),
-            );
-          } else {
-            return {
-              ok: false,
-              reason: `Duplicate ${existing.name} found but board has no setCandidates/updateCandidate to merge resume.`,
-            };
-          }
-          return {
-            ok: true,
-            summary: `Updated ${existing.name} with resume/role from import`,
-          };
-        }
-
+        // Prefer functional setCandidates so batch imports cannot create
+        // Omar Sato × N from React stale `candidates` closures.
+        const resumeText =
+          payload.resumeText || payload.resume_text || payload.summary || "";
         let jobId = payload.jobId || null;
         if (!jobId && payload.jobTitle) {
-          const job = jobs.find(
-            (j) => (j.title || "").trim().toLowerCase() === String(payload.jobTitle).trim().toLowerCase()
+          const job = (Array.isArray(jobs) ? jobs : []).find(
+            (j) =>
+              (j.title || "").trim().toLowerCase() ===
+              String(payload.jobTitle).trim().toLowerCase(),
           );
           if (job) jobId = job.id;
         }
-
-        addCandidate({
+        const incoming = {
           name: payload.name,
-          // Board role = job title (not demo headline like "mid-senior X · skills")
-          role: payload.jobTitle || payload.role || "",
           email: payload.email || "",
           phone: payload.phone || "",
-          source: payload.source || (type === "import_candidate" ? "SignalHire" : "Gina"),
-          resumeText: payload.resumeText || payload.resume_text || "",
+          role: payload.jobTitle || payload.role || "",
+          jobTitle: payload.jobTitle || "",
+          resumeText,
           summary: payload.summary || "",
           headline: payload.headline || "",
+          source:
+            payload.source ||
+            (type === "import_candidate" ? "SignalHire" : "Gina"),
           jobId,
-          jobTitle: payload.jobTitle || "",
-        });
+        };
+
+        if (typeof setCandidates === "function") {
+          let outcome = null;
+          setCandidates((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const existing = list.find((c) => sameBoardPerson(c, incoming));
+            if (existing) {
+              const patch = {
+                resumeText:
+                  resumeText ||
+                  existing.resumeText ||
+                  existing.resume_text ||
+                  "",
+                summary: payload.summary || existing.summary || "",
+                headline: payload.headline || existing.headline || "",
+                role: incoming.role || existing.role || "",
+                jobTitle: incoming.jobTitle || existing.jobTitle || "",
+                email: existing.email || incoming.email || "",
+                phone: existing.phone || incoming.phone || "",
+                source: existing.source || incoming.source,
+                jobId: existing.jobId || jobId || null,
+              };
+              outcome = {
+                kind: "update",
+                summary: `Updated ${existing.name} (no duplicate card)`,
+              };
+              rememberImportPerson({ ...existing, ...patch });
+              return list.map((c) =>
+                c.id === existing.id ? { ...c, ...patch } : c,
+              );
+            }
+            if (sessionHasPerson(incoming)) {
+              outcome = {
+                kind: "skip",
+                summary: `Already on Board: ${payload.name} (deduped)`,
+              };
+              return list;
+            }
+            // Create inside the updater so the next import in this batch
+            // sees this person (avoids React stale-closure duplicates).
+            const created = {
+              id: `cand_${Date.now().toString(36)}_${Math.random()
+                .toString(36)
+                .slice(2, 8)}`,
+              stage: "new",
+              notes: [],
+              ...incoming,
+            };
+            rememberImportPerson(created);
+            outcome = {
+              kind: "create",
+              summary: `Created candidate: ${payload.name}`,
+            };
+            return [...list, created];
+          });
+          return {
+            ok: true,
+            summary:
+              outcome?.summary || `Created candidate: ${payload.name}`,
+          };
+        }
+
+        const existing = (Array.isArray(candidates) ? candidates : []).find(
+          (c) => sameBoardPerson(c, incoming),
+        );
+        if (existing || sessionHasPerson(incoming)) {
+          if (existing && typeof updateCandidate === "function") {
+            updateCandidate(existing.id, {
+              resumeText:
+                resumeText || existing.resumeText || existing.resume_text || "",
+              summary: payload.summary || existing.summary || "",
+              headline: payload.headline || existing.headline || "",
+              role: incoming.role || existing.role || "",
+              jobTitle: incoming.jobTitle || existing.jobTitle || "",
+              source: existing.source || incoming.source,
+            });
+            rememberImportPerson(existing);
+            return {
+              ok: true,
+              summary: `Updated ${existing.name} (no duplicate card)`,
+            };
+          }
+          rememberImportPerson(incoming);
+          return {
+            ok: true,
+            summary: `Already on Board: ${payload.name} (deduped)`,
+          };
+        }
+
+        addCandidate(incoming);
+        rememberImportPerson(incoming);
         return { ok: true, summary: `Created candidate: ${payload.name}` };
       }
 
@@ -286,12 +453,10 @@
         });
         if (!match) return { ok: false, reason: `No candidate found matching ${JSON.stringify(payload?.match)}.` };
         if (match.ambiguous) {
-          const emails = match.emails?.length
-            ? ` (board emails: ${match.emails.join(", ")})`
-            : "";
+          dedupeBoardCandidates();
           return {
             ok: false,
-            reason: `${match.count} candidates share that name${emails} — re-queue with match.email, or clear duplicate names on the Board.`,
+            reason: `${match.count} cards shared that name — Board was deduped; Check for actions again (or match by email).`,
           };
         }
         if (!STAGES.some((s) => s.key === payload?.stage)) return { ok: false, reason: `"${payload?.stage}" isn't a valid stage.` };
@@ -313,12 +478,10 @@
         });
         if (!match) return { ok: false, reason: `No candidate found matching ${JSON.stringify(payload?.match)}.` };
         if (match.ambiguous) {
-          const emails = match.emails?.length
-            ? ` (board emails: ${match.emails.join(", ")})`
-            : "";
+          dedupeBoardCandidates();
           return {
             ok: false,
-            reason: `${match.count} candidates share that name${emails} — re-queue with match.email, or clear duplicate names on the Board.`,
+            reason: `${match.count} cards shared that name — Board was deduped; Check for actions again (or match by email).`,
           };
         }
         if (!payload?.text) return { ok: false, reason: "Missing note text in payload." };

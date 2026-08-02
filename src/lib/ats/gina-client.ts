@@ -7,7 +7,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in UI + sync text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v17";
+export const GINA_CLIENT_VERSION = "ats-v18";
 
 /** Safe fingerprint for comparing secrets without printing them. */
 export function fingerprintSecret(secret: string | undefined | null): string {
@@ -457,12 +457,26 @@ export async function pushCandidatesToGina(input: {
     cookie = login.cookie;
   }
 
-  const normalizedCandidates = input.candidates.map((candidate) => {
+  // Never queue duplicate people (email / phone / name).
+  const seenPeople = new Set<string>();
+  const normalizedCandidates = [];
+  for (const candidate of input.candidates) {
+    const email = (candidate.email || "").trim().toLowerCase();
+    const phone = (candidate.phone || "").replace(/\D/g, "");
+    const name = (candidate.fullName || "").trim().toLowerCase();
+    const keys = [
+      email ? `e:${email}` : "",
+      phone.length >= 7 ? `p:${phone}` : "",
+      name ? `n:${name}` : "",
+    ].filter(Boolean);
+    if (!keys.length || keys.some((k) => seenPeople.has(k))) continue;
+    for (const k of keys) seenPeople.add(k);
+
     const resumeText = (candidate.resumeText || candidate.summary || "").trim();
     // Board "role" should be the job requisition title, not the demo headline
     // (e.g. "Warehouse Assistant Manager", not "mid-senior Warehouse Manager · WMS").
     const jobTitle = input.job.title || "";
-    return {
+    normalizedCandidates.push({
       name: candidate.fullName,
       fullName: candidate.fullName,
       email: candidate.email ?? "",
@@ -487,8 +501,8 @@ export async function pushCandidatesToGina(input: {
         resumeText ? "resume-upload" : "ai-sourced",
         ...candidate.platforms.map((p) => p.platformId),
       ],
-    };
-  });
+    });
+  }
 
   const importPayload = {
     source,
