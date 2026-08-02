@@ -79,14 +79,46 @@ export function buildQueuedAck({ agentId, agentName, task } = {}) {
   ].join("\n");
 }
 
+function looksLikeMariaStatusAsk(task = "") {
+  return (
+    /\bstatus\s+update\b/i.test(task) ||
+    /\bupdate\s+(request|on)\b/i.test(task) ||
+    /\bpending\s+review\b/i.test(task) ||
+    /\bcandidates\s+sourced\b/i.test(task) ||
+    /\bshortlisted\b/i.test(task)
+  );
+}
+
 export function buildMariaReply({ task, result, error } = {}) {
+  const statusAsk = looksLikeMariaStatusAsk(task || "");
+  const homeDepot = /\bhome\s*depot\b/i.test(task || "");
+
+  // Status / project update — do not pretend a shortlist exists on the Board.
+  if (!error && statusAsk) {
+    return [
+      `Maria — status update (${stamp()})`,
+      "",
+      `Request: ${task || "Status update"}`,
+      "",
+      "Status: no Board shortlist to report for this ask",
+      bullets([
+        homeDepot
+          ? "Home Depot was tracked as a project name for status updates — Maria has not successfully imported a Home Depot shortlist onto the ATS Board via SignalHire."
+          : "No Maria → SignalHire shortlist was imported for this project ask onto the ATS Board.",
+        "A Gina chat pipeline table (e.g. New: 64 dated July 30) is not the live Board — trust the Board count you see in ATS.",
+        "To put people on the Board: ask Gina to have Maria source a specific role + location (e.g. Warehouse Assistant Manager in Atlanta for Home Depot), keep AI-ATS/ngrok up, then Check for actions.",
+        "After import, Board cards appear under that job title — not under a client label alone.",
+      ]),
+      "",
+      filedToBothBlock(),
+      "",
+      "Handoff: Kimberley → Gina with an explicit source ask when you want candidates on the Board.",
+    ].join("\n");
+  }
+
   if (error) {
-    const looksLikeStatusAsk =
-      /\bstatus\s+update\b/i.test(task || "") ||
-      /\bupdate\s+on\b/i.test(task || "") ||
-      /\bpending\s+review\b/i.test(task || "");
     const roleTitleMiss = /roleTitle/i.test(String(error || ""));
-    if (looksLikeStatusAsk && roleTitleMiss) {
+    if (statusAsk && roleTitleMiss) {
       return [
         `Maria — status update (${stamp()})`,
         "",
@@ -97,6 +129,7 @@ export function buildMariaReply({ task, result, error } = {}) {
           "This looked like a status update, but Gina routed it as a source job.",
           "Re-ask: \"Ask Maria for an update on Home Depot sourcing\" (do not say email Maria).",
           "After the Gina patch that treats status updates as non-sourcing, Check for actions will file a real status reply here.",
+          "That still will not put 64 people on the Board — sourcing requires an explicit role title + Check for actions import.",
         ]),
         "",
         filedToBothBlock(),

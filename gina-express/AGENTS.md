@@ -176,6 +176,28 @@ git push origin main
 
 Then ask again: “Ask Maria for an update on Home Depot sourcing” → Check for actions.
 
+## Home Depot / “New: 64” but Board shows 0
+
+**Those 64 Home Depot candidates are not on the Board** — Maria never successfully
+imported a Home Depot shortlist via SignalHire. Home Depot traffic in chat was
+**status-update** asks (often mis-routed / roleTitle-blocked), not a landed shortlist.
+
+The July 30 Gina chat table (`New: 64`) was a **pipeline summary message**, not a
+live Board inventory. Trust the Board count in the ATS UI.
+
+Successful Maria imports in this project were small demo batches for roles like
+**Warehouse Assistant Manager**, **Operations Manager**, and **Senior Manager**
+(typically ~5 per Check for actions) — not 64 Home Depot people.
+
+To actually fill the Board for Home Depot:
+
+```text
+Ask Maria to source 20 Warehouse Assistant Manager candidates in Atlanta, GA for Home Depot. All must have a resume on file.
+```
+
+Then: keep `npm run dev` + `ngrok http 3000` up → Gina **Check for actions** → open Board
+(filter/select that job title). Repeat with the real Home Depot role titles you need.
+
 ## Fix: No duplicate Board candidates
 
 Maria imports must **update in place** — never create Omar Sato × N.
