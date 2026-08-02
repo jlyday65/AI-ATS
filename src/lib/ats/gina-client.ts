@@ -570,7 +570,7 @@ export async function pushCandidatesToGina(input: {
           externalIds,
           endpointUsed: "/ats/import-candidates",
           authStrategy: attempt.strategy,
-          message: `Queued ${input.candidates.length} named candidate(s) in Gina ats_actions via /ats/import-candidates [${GINA_CLIENT_VERSION}]. Click “Check for actions” in Gina ATS.`,
+          message: `Queued ${normalizedCandidates.length} unique candidate(s) in Gina ats_actions via /ats/import-candidates [${GINA_CLIENT_VERSION}]. Click “Check for actions” in Gina ATS.`,
         };
       }
       if (response.status === 404 || response.status === 405) {

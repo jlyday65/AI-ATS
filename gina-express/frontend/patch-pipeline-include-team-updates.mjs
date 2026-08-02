@@ -162,7 +162,7 @@ if (fs.existsSync(ginaPath)) {
 
   if (/get_pipeline_summary/.test(gina)) {
     const cleanDesc =
-      "Return a clean plain-text pipeline briefing. Lead with Pipeline Stage Counts (New, Screening, Interview, Offer, Hired, Rejected as Label: N). ALWAYS append Team updates (Kimberley Notes) by calling /ats/kimberley-notes/briefing or /ats/pipeline-briefing so Kelley/Kelly, Maria, Michelle, and Ashton updates appear — never stage counts alone.";
+      "Return a clean plain-text pipeline briefing from LIVE Board counts only. Lead with Pipeline Stage Counts (New, Screening, Interview, Offer, Hired, Rejected as Label: N). If the Board is empty, every stage is 0 — NEVER invent totals (e.g. New: 64), NEVER reuse an old dated snapshot, NEVER use markdown tables or emojis or Key Takeaways. ALWAYS append Team updates (Kimberley Notes) by calling /ats/kimberley-notes/briefing or /ats/pipeline-briefing so Kelley/Kelly, Maria, Michelle, and Ashton updates appear — never stage counts alone. Do not suggest Michelle screen candidates when New is 0.";
     const next = gina.replace(
       /(name:\s*["']get_pipeline_summary["'][\s\S]{0,900}?description:\s*)(["'`])([\s\S]*?)\2/,
       `$1'${cleanDesc.replace(/'/g, "\\'")}'`,
