@@ -38,9 +38,28 @@ async function loadKimberleyNotes() {
   }
 }
 
-function looksLikeSourceTask(task = "") {
-  return /\b(source|sourcing|find candidates|recruit|shortlist|pipeline of candidates)\b/i.test(
-    task,
+/**
+ * True only when Maria should run SignalHire sourcing.
+ * Status updates that mention a project named "… Sourcing" must NOT match.
+ */
+export function looksLikeSourceTask(task = "") {
+  const t = String(task || "");
+  if (!t.trim()) return false;
+
+  // Explicit update / status asks win — even if the project name contains "Sourcing".
+  if (
+    /\b(status\s+update|update\s+request|requesting\s+an?\s+update|provide\s+(?:a\s+)?(?:status\s+)?update|full\s+status|ask(?:ing)?\s+for\s+an?\s+update)\b/i.test(
+      t,
+    ) ||
+    /\bupdate\s+on\b/i.test(t) ||
+    /\bprogress\s+on\b/i.test(t)
+  ) {
+    return false;
+  }
+
+  // Require a sourcing *verb* / clear recruit intent — not the noun "sourcing" alone.
+  return /\b(source|find candidates|recruit|shortlist|pipeline of candidates)\b/i.test(
+    t,
   );
 }
 

@@ -146,13 +146,22 @@ const EMAIL_REWRITE = `
             ? resolveTeamBotName(toRaw)
             : null;
         if (bot && bot !== "gina") {
-          const task =
+          const subject = String(payload?.subject || "").trim();
+          const body = String(
             payload?.body ||
-            payload?.text ||
-            payload?.message ||
-            payload?.subject ||
-            payload?.task ||
-            "Provide a status update for Kimberley";
+              payload?.text ||
+              payload?.message ||
+              payload?.task ||
+              "",
+          ).trim();
+          const task = [
+            "Provide a status update for Kimberley.",
+            subject ? "Topic: " + subject : "",
+            body && body !== subject ? body : "",
+            "Do not start a new candidate search unless Kimberley explicitly asked to source.",
+          ]
+            .filter(Boolean)
+            .join(" ");
           const res = await fetch("/ats/run-command", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
