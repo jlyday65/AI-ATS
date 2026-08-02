@@ -47,18 +47,22 @@ export function looksLikeSourceTask(task = "") {
   if (!t.trim()) return false;
 
   // Explicit update / status asks win — even if the project name contains "Sourcing".
-  // Covers: "full status update", "requesting a full status update on Home Depot sourcing"
+  // Covers: "full status update", "following up on Home Depot sourcing", "why no candidates"
   if (
     /\bstatus\s+update\b/i.test(t) ||
     /\bfull\s+status\b/i.test(t) ||
     /\bupdate\s+request\b/i.test(t) ||
-    /\brequesting\s+(?:an?\s+|a\s+full\s+)?(?:status\s+)?update\b/i.test(t) ||
+    /\bfollowing\s+up\b/i.test(t) ||
     /\bprovide\s+(?:an?\s+|a\s+full\s+)?(?:status\s+)?update\b/i.test(t) ||
+    /\brequesting\s+(?:an?\s+|a\s+full\s+)?(?:status\s+)?update\b/i.test(t) ||
     /\bask(?:ing)?\s+for\s+(?:an?\s+|a\s+full\s+)?(?:status\s+)?update\b/i.test(
       t,
     ) ||
     /\bupdate\s+on\b/i.test(t) ||
     /\bprogress\s+on\b/i.test(t) ||
+    /\bwhy\s+no\s+candidates\b/i.test(t) ||
+    /\bexpected\s+timeline\b/i.test(t) ||
+    /\bzero\s+candidates\b/i.test(t) ||
     /\bcandidates\s+sourced,\s*shortlisted\b/i.test(t) ||
     /\bpending\s+review\b/i.test(t)
   ) {

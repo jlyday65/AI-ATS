@@ -22,6 +22,12 @@ describe("looksLikeSourceTask", () => {
       ),
       false,
     );
+    assert.equal(
+      looksLikeSourceTask(
+        "Hi Maria, Kimberley is following up on the Home Depot sourcing. The ATS is currently showing zero candidates sourced for this role. Can you please provide an update on why no candidates have been sourced yet, and let us know your expected timeline for delivering qualified candidates?",
+      ),
+      false,
+    );
   });
 
   it("still detects real Maria source asks", () => {

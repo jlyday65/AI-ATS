@@ -83,6 +83,11 @@ function looksLikeMariaStatusAsk(task = "") {
   return (
     /\bstatus\s+update\b/i.test(task) ||
     /\bupdate\s+(request|on)\b/i.test(task) ||
+    /\bfollowing\s+up\b/i.test(task) ||
+    /\bprovide\s+(?:an?\s+)?update\b/i.test(task) ||
+    /\bwhy\s+no\s+candidates\b/i.test(task) ||
+    /\bexpected\s+timeline\b/i.test(task) ||
+    /\bzero\s+candidates\b/i.test(task) ||
     /\bpending\s+review\b/i.test(task) ||
     /\bcandidates\s+sourced\b/i.test(task) ||
     /\bshortlisted\b/i.test(task)
@@ -100,19 +105,20 @@ export function buildMariaReply({ task, result, error } = {}) {
       "",
       `Request: ${task || "Status update"}`,
       "",
-      "Status: no Board shortlist to report for this ask",
+      "Status: zero on Board — no completed Home Depot source job yet",
       bullets([
+        "Why empty: Kimberley/Gina asked for Home Depot *updates*, not a completed Maria → SignalHire source with a job title + location that finished Check for actions.",
+        "Earlier Home Depot asks were status/email routes (sometimes blocked needing roleTitle). Those never import Board cards.",
+        "The July 30 Gina chat table (New: 64) was invented summary copy — not a live Board shortlist. Trust the ATS Board count (0).",
+        "Timeline: as soon as Kimberley queues an explicit source ask and Check for actions succeeds with AI-ATS reachable (npm run dev + ngrok; Railway SIGNALHIRE_BASE_URL set). Typical shortlist is ~5–20 per run, not 64 from a status ping.",
         homeDepot
-          ? "Home Depot was tracked as a project name for status updates — Maria has not successfully imported a Home Depot shortlist onto the ATS Board via SignalHire."
-          : "No Maria → SignalHire shortlist was imported for this project ask onto the ATS Board.",
-        "A Gina chat pipeline table (e.g. New: 64 dated July 30) is not the live Board — trust the Board count you see in ATS.",
-        "To put people on the Board: ask Gina to have Maria source a specific role + location (e.g. Warehouse Assistant Manager in Atlanta for Home Depot), keep AI-ATS/ngrok up, then Check for actions.",
-        "After import, Board cards appear under that job title — not under a client label alone.",
+          ? 'Say to Gina: "Ask Maria to source 20 Warehouse Assistant Manager candidates in Atlanta, GA for Home Depot. All must have a resume on file." Then Check for actions.'
+          : 'Say to Gina: "Ask Maria to source [ROLE] in [LOCATION]. Resumes required." Then Check for actions.',
       ]),
       "",
       filedToBothBlock(),
       "",
-      "Handoff: Kimberley → Gina with an explicit source ask when you want candidates on the Board.",
+      "Handoff: Kimberley → Gina with an explicit source ask (role + location), not another status follow-up.",
     ].join("\n");
   }
 
