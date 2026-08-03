@@ -88,6 +88,9 @@ function candidateEducationText(c) {
     .filter(Boolean)
     .join("\\n");
 }
+if (typeof window !== "undefined") {
+  window.candidateEducationText = candidateEducationText;
+}
 `;
 
 if (!src.includes("function candidateEducationText(")) {
@@ -142,7 +145,11 @@ if (
 }
 
 const EDU_BLOCK = `
-        {typeof candidateEducationText === "function" && candidateEducationText(active) ? (
+        {(typeof candidateEducationText === "function"
+            ? candidateEducationText(active)
+            : typeof window !== "undefined" && typeof window.candidateEducationText === "function"
+              ? window.candidateEducationText(active)
+              : "") ? (
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#5C584C" }}>Education</div>
             <pre style={{
@@ -157,7 +164,7 @@ const EDU_BLOCK = `
               padding: 12,
               fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
               color: "#2C2A24",
-            }}>{candidateEducationText(active)}</pre>
+            }}>{typeof candidateEducationText === "function" ? candidateEducationText(active) : window.candidateEducationText(active)}</pre>
           </div>
         ) : null}
 `;

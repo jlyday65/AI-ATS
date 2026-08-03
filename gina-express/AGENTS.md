@@ -48,19 +48,35 @@ Rules implemented in code:
 
 ## Fix: ATS white screen (blank page)
 
-Usually a bad `App.jsx` patch (helper injected above `import`, broken JSX). One-shot:
+Usually a bad `App.jsx` patch (helper above `import`, or Board/Education call
+sites that compile but `ReferenceError` at runtime). **Bare restore** — do not
+re-apply Education / Board From: until the Board is up again.
 
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
 node gina-express/frontend/fix-ats-white-screen.mjs ~/lyday-gina-backend/gina-backend
 cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 cd ~/lyday-gina-backend
-git add gina-backend/frontend/src/App.jsx
-git commit -m "Fix ATS white screen: restore compiling App.jsx"
+git add gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
+git commit -m "Fix ATS white screen: bare restore compiling App.jsx"
 git pull origin main --rebase && git push origin main
 ```
 
-Hard-refresh Gina (Cmd+Shift+R). If still blank: DevTools → Console → send the red error.
+Railway → **Redeploy** (required — it serves `dist`) → hard-refresh (**Cmd+Shift+R**).
+
+If **still** white, force a compiling git revision and stop patching:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/emergency-git-restore-app-jsx.mjs ~/lyday-gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
+git commit -m "Emergency restore App.jsx (clear white screen)"
+git pull origin main --rebase && git push origin main
+```
+
+Redeploy + Cmd+Shift+R. If still blank: DevTools → Console → send the **exact** red error.
 
 ## Bring Kimberley's Notes back (safe)
 

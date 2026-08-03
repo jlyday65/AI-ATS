@@ -100,6 +100,9 @@ const HELPER = `
     }
     return c.source || "";
   }
+  if (typeof window !== "undefined") {
+    window.candidateSourcedFromText = candidateSourcedFromText;
+  }
 `.trim();
 
 let app = fs.readFileSync(appPath, "utf8");
@@ -128,8 +131,9 @@ if (!/function\s+candidateSourcedFromText\b/.test(app)) {
 
 // Inject a "From: …" line under Board candidate names (once per pattern, first hit only).
 let changed = false;
+// Call via window so Board child components outside App closure cannot white-screen.
 const fromLine = (alias) =>
-  `{${alias}.name}{typeof candidateSourcedFromText === "function" && candidateSourcedFromText(${alias}) ? (<div className="text-xs" style={{fontSize:12,opacity:0.75,marginTop:2}}>From: {candidateSourcedFromText(${alias})}</div>) : null}`;
+  `{${alias}.name}{(typeof candidateSourcedFromText === "function" ? candidateSourcedFromText(${alias}) : typeof window !== "undefined" && typeof window.candidateSourcedFromText === "function" ? window.candidateSourcedFromText(${alias}) : "") ? (<div className="text-xs" style={{fontSize:12,opacity:0.75,marginTop:2}}>From: {(typeof candidateSourcedFromText === "function" ? candidateSourcedFromText(${alias}) : window.candidateSourcedFromText(${alias}))}</div>) : null}`;
 if (/{c\.name}/.test(app) && !/From:\s*\{candidateSourcedFromText\(c\)\}/.test(app)) {
   app = app.replace(/\{c\.name\}/, fromLine("c"));
   changed = true;
