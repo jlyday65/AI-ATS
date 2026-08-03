@@ -45,7 +45,13 @@
 
   function beginCandidateImportSession() {
     const keys = new Set();
-    for (const c of Array.isArray(candidates) ? candidates : []) {
+    const list =
+      typeof candidates !== "undefined" && Array.isArray(candidates)
+        ? candidates
+        : typeof window !== "undefined" && Array.isArray(window.__ginaBoardCandidates)
+          ? window.__ginaBoardCandidates
+          : [];
+    for (const c of list) {
       for (const k of personDedupeKeys(c)) keys.add(k);
     }
     if (typeof window !== "undefined") {
@@ -80,6 +86,7 @@
     let removed = 0;
     setCandidates((prev) => {
       const list = Array.isArray(prev) ? prev : [];
+      if (typeof window !== "undefined") window.__ginaBoardCandidates = list;
       const out = [];
       for (const c of list) {
         const idx = out.findIndex((x) => sameBoardPerson(x, c));
@@ -116,10 +123,17 @@
           source: base.source || other.source || "",
         };
       }
+      if (typeof window !== "undefined") window.__ginaBoardCandidates = out;
       return out;
     });
     beginCandidateImportSession();
     return removed;
+  }
+
+  // Expose for Check for actions even if call sites sit in another closure.
+  if (typeof window !== "undefined") {
+    window.beginCandidateImportSession = beginCandidateImportSession;
+    window.dedupeBoardCandidates = dedupeBoardCandidates;
   }
 
   const BOT_NAMES = new Set(["maria", "michelle", "kelley", "kelly", "ashton", "gina"]);

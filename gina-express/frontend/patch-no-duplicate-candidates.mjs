@@ -1,143 +1,271 @@
 #!/usr/bin/env node
 /**
- * No duplicate Board candidates.
+ * Prevent Check for actions from adding the same person twice.
+ * Safe against ReferenceError: beginCandidateImportSession is not defined
+ * (helpers may be missing from App.jsx when only the call sites were patched).
  *
- * Fixes React stale-closure double-creates during Check for actions
- * (Omar Sato × N). Also collapses any existing duplicate cards and
- * seeds an import session so the same person cannot be added twice
- * in one batch.
- *
- * ONE LINE:
+ * Usage:
  *   node gina-express/frontend/patch-no-duplicate-candidates.mjs ~/lyday-gina-backend/gina-backend
  */
+import fs from "node:fs";
+import path from "node:path";
 
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import { spawnSync } from "child_process";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootArg = String(process.argv[2] || "")
-  .trim()
-  .replace(/^~/, process.env.HOME || "");
-if (!rootArg) {
-  console.error(
-    "Usage: node patch-no-duplicate-candidates.mjs ~/lyday-gina-backend/gina-backend",
-  );
+const root = path.resolve(process.argv[2] || ".");
+const appPath = path.join(root, "frontend", "src", "App.jsx");
+if (!fs.existsSync(appPath)) {
+  console.error("App.jsx not found:", appPath);
   process.exit(1);
 }
 
-const root = path.resolve(rootArg);
-const ginaDir = fs.existsSync(path.join(root, "frontend", "src", "App.jsx"))
-  ? root
-  : fs.existsSync(path.join(root, "gina-backend", "frontend", "src", "App.jsx"))
-    ? path.join(root, "gina-backend")
-    : root;
+let src = fs.readFileSync(appPath, "utf8");
+const before = src;
 
-// 1) Refresh applyAgentAction + bot command handlers from the kit
-const checkPatch = path.join(__dirname, "patch-check-for-actions.mjs");
-const r1 = spawnSync(process.execPath, [checkPatch, ginaDir], {
-  stdio: "inherit",
-});
-if (r1.status !== 0) {
-  console.error("patch-check-for-actions failed");
-  process.exit(r1.status || 2);
+const helperBlock = `
+function candidateIdentityKey(c) {
+  if (!c || typeof c !== "object") return "";
+  const email = String(c.email || "").trim().toLowerCase();
+  if (email) return \`email:\${email}\`;
+  const linkedin = String(c.linkedin || "").trim().toLowerCase().replace(/\\/$/, "");
+  if (linkedin) return \`li:\${linkedin}\`;
+  const name = String(c.name || "").trim().toLowerCase().replace(/\\s+/g, " ");
+  const title = String(c.title || "").trim().toLowerCase().replace(/\\s+/g, " ");
+  if (name) return \`name:\${name}|\${title}\`;
+  return String(c.id || "").trim();
 }
 
-// 2) Prefer email/phone match; never leave name collisions as hard errors
-const findPatch = path.join(__dirname, "patch-find-candidate-match.mjs");
-const appJsx = path.join(ginaDir, "frontend", "src", "App.jsx");
-const r2 = spawnSync(process.execPath, [findPatch, appJsx], {
-  stdio: "inherit",
-});
-if (r2.status !== 0) {
-  console.warn("patch-find-candidate-match failed (continuing)");
+function mergeCandidateKeepRicher(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const score = (c) =>
+    [c.email, c.phone, c.linkedin, c.summary, c.experience, c.skills, c.education, c.notes]
+      .filter(Boolean)
+      .reduce((n, v) => n + String(v).length, 0) + (Array.isArray(c.tags) ? c.tags.length : 0);
+  const keep = score(a) >= score(b) ? a : b;
+  const other = keep === a ? b : a;
+  return {
+    ...other,
+    ...keep,
+    id: keep.id || other.id,
+    stage: keep.stage || other.stage,
+    tags: Array.from(new Set([...(Array.isArray(other.tags) ? other.tags : []), ...(Array.isArray(keep.tags) ? keep.tags : [])])),
+    notes: [other.notes, keep.notes].filter(Boolean).join("\\n\\n").trim() || keep.notes || other.notes || "",
+    updatedAt: keep.updatedAt || other.updatedAt || new Date().toISOString(),
+  };
 }
 
-// 3) Copy shared dedupe helper for server-side import route use
-const dedupeSrc = path.join(__dirname, "../lib/candidate-dedupe.js");
-const dedupeDest = path.join(ginaDir, "lib/candidate-dedupe.js");
-if (fs.existsSync(dedupeSrc)) {
-  fs.mkdirSync(path.dirname(dedupeDest), { recursive: true });
-  fs.copyFileSync(dedupeSrc, dedupeDest);
-  console.log("Copied lib/candidate-dedupe.js");
-}
-
-let src = fs.readFileSync(appJsx, "utf8");
-const bak = `${appJsx}.bak-no-dupes-${Date.now()}`;
-fs.copyFileSync(appJsx, bak);
-
-if (!/function\s+beginCandidateImportSession\b/.test(src)) {
-  console.error(
-    "REFUSING: beginCandidateImportSession missing after check-for-actions patch",
-  );
-  process.exit(2);
-}
-
-function injectSessionStart(text) {
-  if (
-    /beginCandidateImportSession\s*\(\s*\)\s*;\s*\n\s*dedupeBoardCandidates\s*\(\s*\)/.test(
-      text,
-    )
-  ) {
-    return { text, changed: false };
-  }
-  const patterns = [
-    /(async\s+function\s+checkForActions\s*\([^)]*\)\s*\{)/,
-    /(async\s+function\s+runPendingActions\s*\([^)]*\)\s*\{)/,
-    /(async\s+function\s+processPendingActions\s*\([^)]*\)\s*\{)/,
-    /(const\s+checkForActions\s*=\s*async\s*(?:\([^)]*\)|[A-Za-z_]\w*)\s*=>\s*\{)/,
-    /(async\s+\(\s*\)\s*=>\s*\{)(\s*\/\/.*Check for actions|\s*const\s+pending)/i,
-  ];
-  for (const re of patterns) {
-    if (re.test(text)) {
-      return {
-        text: text.replace(
-          re,
-          `$1\n    beginCandidateImportSession();\n    dedupeBoardCandidates();\n`,
-        ),
-        changed: true,
-      };
+function dedupeCandidateList(list) {
+  const out = [];
+  const seen = new Map();
+  for (const c of Array.isArray(list) ? list : []) {
+    const key = candidateIdentityKey(c);
+    if (!key) {
+      out.push(c);
+      continue;
     }
+    if (!seen.has(key)) {
+      seen.set(key, out.length);
+      out.push(c);
+      continue;
+    }
+    const idx = seen.get(key);
+    out[idx] = mergeCandidateKeepRicher(out[idx], c);
   }
-
-  // Fallback: first `for (... of ...actions` / pending loop before applyAgentAction
-  const loop = text.search(
-    /for\s*\(\s*(?:const|let)\s+\w+\s+of\s+(?:pending|actions|queued)/,
-  );
-  if (loop >= 0) {
-    return {
-      text:
-        text.slice(0, loop) +
-        `beginCandidateImportSession();\n    dedupeBoardCandidates();\n    ` +
-        text.slice(loop),
-      changed: true,
-    };
-  }
-  return { text, changed: false };
+  return out;
 }
 
-const injected = injectSessionStart(src);
-src = injected.text;
-if (injected.changed) {
-  console.log("Injected beginCandidateImportSession + dedupeBoardCandidates");
+function beginCandidateImportSession() {
+  if (typeof window !== "undefined") {
+    window.__ginaImportSessionKeys = new Set();
+  }
+}
+
+function markCandidateImportedThisSession(c) {
+  if (typeof window === "undefined") return false;
+  if (!(window.__ginaImportSessionKeys instanceof Set)) {
+    window.__ginaImportSessionKeys = new Set();
+  }
+  const key = candidateIdentityKey(c);
+  if (!key) return false;
+  if (window.__ginaImportSessionKeys.has(key)) return true;
+  window.__ginaImportSessionKeys.add(key);
+  return false;
+}
+
+if (typeof window !== "undefined") {
+  window.beginCandidateImportSession = beginCandidateImportSession;
+  window.markCandidateImportedThisSession = markCandidateImportedThisSession;
+  window.candidateIdentityKey = candidateIdentityKey;
+  window.mergeCandidateKeepRicher = mergeCandidateKeepRicher;
+  window.dedupeCandidateList = dedupeCandidateList;
+}
+`;
+
+if (!src.includes("function candidateIdentityKey(")) {
+  const marker = "export default function App()";
+  const idx = src.indexOf(marker);
+  if (idx === -1) {
+    console.error("Could not find App() export to inject helpers.");
+    process.exit(1);
+  }
+  src = src.slice(0, idx) + helperBlock + "\n" + src.slice(idx);
+  console.log("Injected candidate dedupe helpers + window exports");
 } else {
-  console.warn(
-    "Could not find Check for actions entry — helpers are still available; call beginCandidateImportSession() manually if needed.",
-  );
+  if (!src.includes("window.beginCandidateImportSession")) {
+    const anchor = "function markCandidateImportedThisSession(c) {";
+    const i = src.indexOf(anchor);
+    if (i !== -1) {
+      const end = src.indexOf("\n}", i);
+      if (end !== -1) {
+        const insertAt = end + 2;
+        src =
+          src.slice(0, insertAt) +
+          `
+if (typeof window !== "undefined") {
+  window.beginCandidateImportSession = beginCandidateImportSession;
+  window.markCandidateImportedThisSession = markCandidateImportedThisSession;
+  window.candidateIdentityKey = candidateIdentityKey;
+  window.mergeCandidateKeepRicher = mergeCandidateKeepRicher;
+  window.dedupeCandidateList = dedupeCandidateList;
+}
+` +
+          src.slice(insertAt);
+        console.log("Exported beginCandidateImportSession on window");
+      }
+    }
+  } else {
+    console.log("Dedupe helpers already present");
+  }
 }
 
-fs.writeFileSync(appJsx, src, "utf8");
-console.log("OK: Board imports will not create duplicate candidates");
-console.log("Backup:", bak);
+const beginSafe =
+  "if (typeof beginCandidateImportSession === \"function\") beginCandidateImportSession();\n" +
+  "            else if (typeof window !== \"undefined\" && typeof window.beginCandidateImportSession === \"function\") window.beginCandidateImportSession();";
+if (src.includes("beginCandidateImportSession()") && !src.includes('typeof beginCandidateImportSession === "function"')) {
+  src = src.split("beginCandidateImportSession();").join(beginSafe);
+  console.log("Wrapped beginCandidateImportSession calls with typeof guards");
+}
+
+if (
+  src.includes("const alreadyImportedThisBatch = markCandidateImportedThisSession(candidate);") &&
+  !src.includes("typeof markCandidateImportedThisSession ===")
+) {
+  src = src.replace(
+    "const alreadyImportedThisBatch = markCandidateImportedThisSession(candidate);",
+    `const alreadyImportedThisBatch =
+              typeof markCandidateImportedThisSession === "function"
+                ? markCandidateImportedThisSession(candidate)
+                : typeof window !== "undefined" && typeof window.markCandidateImportedThisSession === "function"
+                  ? window.markCandidateImportedThisSession(candidate)
+                  : false;`
+  );
+  console.log("Hardened markCandidateImportedThisSession call");
+}
+
+const staleBlock = `const exists = candidates.some(
+            (c) =>
+              (candidate.email && c.email && c.email.toLowerCase() === candidate.email.toLowerCase()) ||
+              (candidate.linkedin && c.linkedin && c.linkedin === candidate.linkedin) ||
+              (c.name === candidate.name && c.title === candidate.title)
+          );
+          if (!exists) {
+            setCandidates((prev) => [candidate, ...prev]);
+            imported += 1;
+          }`;
+
+const dedupeBlock = `const alreadyImportedThisBatch =
+              typeof markCandidateImportedThisSession === "function"
+                ? markCandidateImportedThisSession(candidate)
+                : typeof window !== "undefined" && typeof window.markCandidateImportedThisSession === "function"
+                  ? window.markCandidateImportedThisSession(candidate)
+                  : false;
+          if (alreadyImportedThisBatch) {
+            // Same person already added earlier in this Check for actions batch — skip.
+          } else {
+            setCandidates((prev) => {
+              const exists = prev.some((c) => {
+                const a = typeof candidateIdentityKey === "function" ? candidateIdentityKey(c) : "";
+                const b = typeof candidateIdentityKey === "function" ? candidateIdentityKey(candidate) : "";
+                if (a && b && a === b) return true;
+                return (
+                  (candidate.email && c.email && c.email.toLowerCase() === candidate.email.toLowerCase()) ||
+                  (candidate.linkedin && c.linkedin && c.linkedin === candidate.linkedin) ||
+                  (c.name === candidate.name && c.title === candidate.title)
+                );
+              });
+              if (exists) {
+                return prev.map((c) => {
+                  const a = typeof candidateIdentityKey === "function" ? candidateIdentityKey(c) : "";
+                  const b = typeof candidateIdentityKey === "function" ? candidateIdentityKey(candidate) : "";
+                  const same =
+                    (a && b && a === b) ||
+                    (candidate.email && c.email && c.email.toLowerCase() === candidate.email.toLowerCase()) ||
+                    (candidate.linkedin && c.linkedin && c.linkedin === candidate.linkedin) ||
+                    (c.name === candidate.name && c.title === candidate.title);
+                  if (!same) return c;
+                  return typeof mergeCandidateKeepRicher === "function"
+                    ? mergeCandidateKeepRicher(c, candidate)
+                    : { ...c, ...candidate, id: c.id };
+                });
+              }
+              imported += 1;
+              return [candidate, ...prev];
+            });
+          }`;
+
+if (src.includes(staleBlock)) {
+  src = src.replace(staleBlock, dedupeBlock);
+  console.log("Patched Check for actions import to use functional setState + session dedupe");
+} else if (src.includes("alreadyImportedThisBatch")) {
+  console.log("Import dedupe already patched (or nearby code changed)");
+} else {
+  console.warn("WARNING: could not find exact import exists-block — helpers were still injected");
+}
+
+if (
+  src.includes("setCandidates((prev) => [candidate, ...prev].slice(0, 500));") &&
+  !src.includes("dedupeCandidateList(prev)")
+) {
+  src = src.replace(
+    "setCandidates((prev) => [candidate, ...prev].slice(0, 500));",
+    `setCandidates((prev) => {
+                        const key = typeof candidateIdentityKey === "function" ? candidateIdentityKey(candidate) : "";
+                        const exists = prev.some((c) => {
+                          const ck = typeof candidateIdentityKey === "function" ? candidateIdentityKey(c) : "";
+                          return (key && ck && key === ck) || c.id === candidate.id;
+                        });
+                        if (exists) {
+                          return prev.map((c) => {
+                            const ck = typeof candidateIdentityKey === "function" ? candidateIdentityKey(c) : "";
+                            const same = (key && ck && key === ck) || c.id === candidate.id;
+                            if (!same) return c;
+                            return typeof mergeCandidateKeepRicher === "function"
+                              ? mergeCandidateKeepRicher(c, candidate)
+                              : { ...c, ...candidate, id: c.id };
+                          }).slice(0, 500);
+                        }
+                        return [candidate, ...prev].slice(0, 500);
+                      });`
+  );
+  console.log("Patched single-candidate agent import path");
+}
+
+if (src.includes("setCandidates(data.candidates || [])") && !src.includes("dedupeCandidateList(data.candidates")) {
+  src = src.replace(
+    "setCandidates(data.candidates || [])",
+    `setCandidates(typeof dedupeCandidateList === "function" ? dedupeCandidateList(data.candidates || []) : (data.candidates || []))`
+  );
+  console.log("Patched board load to dedupe existing rows");
+}
+
+if (src === before) {
+  console.log("No textual changes (already up to date)");
+} else {
+  fs.writeFileSync(appPath, src);
+  console.log("Wrote", appPath);
+}
+
 console.log(`
 Next:
-  cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
-  cd ~/lyday-gina-backend
-  git add gina-backend/frontend/src/App.jsx gina-backend/lib/candidate-dedupe.js gina-backend/agents gina-backend/routes gina-backend/maria-source.tool.js
-  git commit -m "No duplicate Board candidates on Maria import"
-  git pull origin main --rebase
-  git push origin main
-
-After deploy: open Board once (or Check for actions) — existing dupes collapse; new Maria imports update in place.
+  cd ${path.join(root, "frontend")} && npm run build
+  # commit App.jsx + dist, push, Railway redeploy, hard-refresh Gina
 `);

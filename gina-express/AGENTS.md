@@ -176,6 +176,26 @@ git push origin main
 
 Then ask again: “Ask Maria for an update on Home Depot sourcing” → Check for actions.
 
+## Fix: Check for actions — `Can't find variable: beginCandidateImportSession`
+
+An earlier no-duplicates patch called `beginCandidateImportSession()` from Check for
+actions without that helper in scope (Safari: “Can't find variable”). Candidate File
+#251 / Maria sourcing hit this on Agent → Check for actions.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/repair-begin-import-session.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx
+git commit -m "Fix Check for actions: beginCandidateImportSession undefined"
+git pull origin main --rebase && git push origin main
+```
+
+That repair re-applies Check for actions helpers, exports them on `window`, and wraps
+bare calls with `typeof` guards. Hard-refresh Gina ATS, then **Check for actions**
+again (action #251). No need to re-queue the Candidate File if it is still pending.
+
 ## Board: show which platform each candidate was sourced from
 
 Maria → SignalHire now sends `sourcedFrom` / `sourcedFromText` (e.g. Coresignal,
