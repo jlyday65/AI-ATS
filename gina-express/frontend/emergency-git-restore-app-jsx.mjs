@@ -9,6 +9,7 @@ import fs from "fs";
 import path from "path";
 import { createRequire } from "module";
 import { spawnSync } from "child_process";
+import { fileURLToPath } from "url";
 
 const rootArg = String(process.argv[2] || "")
   .trim()
@@ -112,22 +113,28 @@ for (const sha of shas) {
   if (!/function\s+(?:App|CandidateTracker)\b|export\s+default\s+function\s+App\b/.test(text)) {
     continue;
   }
-  // Prefer revisions WITHOUT the crashy helpers glued into Board
-  const risky =
+  // Prefer revisions WITHOUT Notes / Board patches that white-screen at runtime
+  const hasNotes =
+    /KimberleyNotes(?:Gate|Panel)|view === ["']kimberley["']/.test(text);
+  const riskyUi =
     /candidateSourcedFromText\(c\)|candidateEducationText\(active\)|beginCandidateImportSession\s*\(\s*\)/.test(
       text,
     );
   const compile = canCompile(esbuild, text);
+  const score =
+    (compile.ok ? 1000 : 0) +
+    (hasNotes ? -400 : 200) +
+    (riskyUi ? -200 : 100) +
+    Math.min(200, Math.floor(text.length / 1000));
   console.log(
-    `  ${sha} compiles=${compile.ok} riskyUi=${risky} bytes=${text.length}${compile.ok ? "" : " :: " + compile.error}`,
+    `  ${sha} compiles=${compile.ok} notes=${hasNotes} riskyUi=${riskyUi} score=${score} bytes=${text.length}${compile.ok ? "" : " :: " + compile.error}`,
   );
   if (!compile.ok) continue;
-  if (!chosen) chosen = { sha, text, risky };
-  // Prefer non-risky compiling revision
-  if (!risky) {
-    chosen = { sha, text, risky };
-    break;
+  if (!chosen || score > chosen.score) {
+    chosen = { sha, text, risky: riskyUi || hasNotes, score, hasNotes };
   }
+  // Take the first compiling, Notes-free, low-risk revision
+  if (!hasNotes && !riskyUi) break;
 }
 
 if (!chosen) {
@@ -138,18 +145,35 @@ if (!chosen) {
 const bak = `${appPath}.bak-emergency-${Date.now()}`;
 if (fs.existsSync(appPath)) fs.copyFileSync(appPath, bak);
 fs.writeFileSync(appPath, chosen.text, "utf8");
-console.log("\nOK: restored", chosen.sha, "riskyUi=", chosen.risky);
+console.log("\nOK: restored", chosen.sha, "notes=", chosen.hasNotes, "risky=", chosen.risky);
 console.log("Backup:", bak);
+
+// Strip Kimberley Notes UI even if the chosen revision still had it
+const restoreUi = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "restore-ats-ui.mjs",
+);
+if (fs.existsSync(restoreUi)) {
+  console.log("\n→ restore-ats-ui.mjs (strip Notes white-screen code)");
+  const r = spawnSync(process.execPath, [restoreUi, appPath], {
+    stdio: "inherit",
+  });
+  if (r.status !== 0) {
+    console.warn("restore-ats-ui exited", r.status, "— continuing");
+  }
+}
+
 console.log(`
-Next (do not re-patch yet):
+Next (do not re-patch Education/Board/Notes yet):
 
   cd ${path.join(ginaDir, "frontend")} && npm run build
   cd ${gitRoot}
-  git add ${rel} ${rel.replace("src/App.jsx", "dist") || ""}
+  git add ${rel}
   git add -u gina-backend/frontend/dist 2>/dev/null || git add -u frontend/dist 2>/dev/null || true
+  git status
   git commit -m "Emergency restore App.jsx ${chosen.sha} (clear white screen)"
   git pull origin main --rebase && git push origin main
 
 Railway → Redeploy → Cmd+Shift+R. Confirm Board loads.
-Only then re-run Check for actions patch if Maria is broken.
+If still blank, you should now see a RED error banner — paste that text to Cursor.
 `);

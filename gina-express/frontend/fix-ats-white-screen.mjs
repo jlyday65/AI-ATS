@@ -186,6 +186,22 @@ if (!compile.ok) {
   }
 }
 
+// Strip Kimberley Notes UI (common compile-OK / runtime-white-screen cause)
+{
+  const status = run("restore-ats-ui.mjs", [appPath]);
+  if (status !== 0) {
+    console.warn("Warning: restore-ats-ui exited", status, "— continuing");
+  }
+}
+
+// Visible red crash banner instead of blank white
+{
+  const status = run("patch-show-runtime-errors.mjs", [ginaDir]);
+  if (status !== 0) {
+    console.warn("Warning: runtime error banner patch exited", status);
+  }
+}
+
 // Bare: only restore Check for actions plumbing (needed for Maria)
 const bareSteps = [
   ["patch-check-for-actions.mjs"],

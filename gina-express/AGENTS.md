@@ -48,35 +48,26 @@ Rules implemented in code:
 
 ## Fix: ATS white screen (blank page)
 
-Usually a bad `App.jsx` patch (helper above `import`, or Board/Education call
-sites that compile but `ReferenceError` at runtime). **Bare restore** — do not
-re-apply Education / Board From: until the Board is up again.
+Common causes: Kimberley Notes UI left in `App.jsx`, helpers above `import`,
+or Board/Education call sites that compile but `ReferenceError` at runtime.
+Railway serves **`frontend/dist`** — source-only commits do nothing.
+
+**Preferred one-shot (Mac):**
 
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-node gina-express/frontend/fix-ats-white-screen.mjs ~/lyday-gina-backend/gina-backend
-cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
-cd ~/lyday-gina-backend
-git add gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
-git commit -m "Fix ATS white screen: bare restore compiling App.jsx"
-git pull origin main --rebase && git push origin main
+bash gina-express/frontend/CLEAR-ATS-WHITE-SCREEN.sh
 ```
 
-Railway → **Redeploy** (required — it serves `dist`) → hard-refresh (**Cmd+Shift+R**).
+Then Railway → **Redeploy** (wait for Success) → **Cmd+Shift+R**.
 
-If **still** white, force a compiling git revision and stop patching:
+That script: picks a Notes-free compiling `App.jsx` from git history, strips
+Notes/Board/Education crash sites, injects a **red on-screen error banner**,
+rebuilds `dist`, commits, and pushes.
 
-```bash
-cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-node gina-express/frontend/emergency-git-restore-app-jsx.mjs ~/lyday-gina-backend
-cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
-cd ~/lyday-gina-backend
-git add gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
-git commit -m "Emergency restore App.jsx (clear white screen)"
-git pull origin main --rebase && git push origin main
-```
-
-Redeploy + Cmd+Shift+R. If still blank: DevTools → Console → send the **exact** red error.
+If you still see a blank page, you should now see **red error text** — paste
+that whole banner to Cursor. Do **not** re-run Education / Board From / Notes
+patches until the Board is confirmed up.
 
 ## Bring Kimberley's Notes back (safe)
 
