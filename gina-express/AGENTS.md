@@ -46,6 +46,22 @@ Rules implemented in code:
 4. **Maria errors still file a note** — so Kimberley sees the break (relay/env) instead of silence.
 5. **Every working reply includes Handoff** — who acts next (Michelle → Kelley → Ashton, etc.).
 
+## Fix: ATS white screen (blank page)
+
+Usually a bad `App.jsx` patch (helper injected above `import`, broken JSX). One-shot:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-ats-white-screen.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx
+git commit -m "Fix ATS white screen: restore compiling App.jsx"
+git pull origin main --rebase && git push origin main
+```
+
+Hard-refresh Gina (Cmd+Shift+R). If still blank: DevTools → Console → send the red error.
+
 ## Bring Kimberley's Notes back (safe)
 
 After emergency disable (white screen), use the one-shot bring-back — **not** the old `patch-kimberley-notes.mjs` alone:

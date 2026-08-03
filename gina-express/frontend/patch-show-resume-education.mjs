@@ -5,12 +5,14 @@
  * - Persists `education` on addCandidate / import
  * - Shows an Education block above the Resume panel
  * - Falls back to parsing EDUCATION from resumeText when field is empty
+ * - esbuild-gated (will not leave a white-screen App.jsx)
  *
  * Usage:
  *   node gina-express/frontend/patch-show-resume-education.mjs ~/lyday-gina-backend/gina-backend
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 
 const rootArg = String(process.argv[2] || "")
   .trim()
@@ -34,10 +36,43 @@ if (!fs.existsSync(appPath)) {
   process.exit(1);
 }
 
+function loadEsbuild() {
+  try {
+    const req = createRequire(
+      path.join(ginaDir, "frontend", "node_modules", "esbuild", "package.json"),
+    );
+    return req("esbuild");
+  } catch {
+    return null;
+  }
+}
+
+function canCompile(esbuild, text) {
+  if (!esbuild) return { ok: true };
+  try {
+    esbuild.transformSync(text, {
+      loader: "jsx",
+      jsx: "automatic",
+      logLevel: "silent",
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e?.errors?.[0]?.text || e.message || e) };
+  }
+}
+
 let src = fs.readFileSync(appPath, "utf8");
 const before = src;
 const bak = `${appPath}.bak-education-${Date.now()}`;
 fs.copyFileSync(appPath, bak);
+
+const esbuild = loadEsbuild();
+const beforeCompile = canCompile(esbuild, src);
+if (!beforeCompile.ok) {
+  console.error("App.jsx does not compile before education patch:", beforeCompile.error);
+  console.error("Run: node gina-express/frontend/fix-ats-white-screen.mjs ~/lyday-gina-backend/gina-backend");
+  process.exit(2);
+}
 
 const HELPER = `
 function candidateEducationText(c) {
@@ -58,24 +93,24 @@ function candidateEducationText(c) {
 if (!src.includes("function candidateEducationText(")) {
   const marker = "export default function App()";
   const idx = src.indexOf(marker);
-  if (idx === -1) {
-    const alt = src.search(/function\s+(?:App|CandidateTracker)\b/);
-    if (alt >= 0) {
-      src = src.slice(0, alt) + HELPER + "\n" + src.slice(alt);
-      console.log("Injected candidateEducationText helper");
-    } else {
-      console.error("Could not find App() to inject education helper");
-      process.exit(2);
-    }
-  } else {
-    src = src.slice(0, idx) + HELPER + "\n" + src.slice(idx);
-    console.log("Injected candidateEducationText helper");
+  const alt = src.search(/function\s+(?:App|CandidateTracker)\b/);
+  const at = idx >= 0 ? idx : alt;
+  if (at < 0) {
+    console.error("Could not find App() to inject education helper");
+    process.exit(2);
   }
+  // Never insert above import statements
+  const importAt = src.search(/^import\s/m);
+  if (importAt >= 0 && at < importAt) {
+    console.error("REFUSING: App() appears before imports — file is corrupt");
+    process.exit(2);
+  }
+  src = src.slice(0, at) + HELPER + "\n" + src.slice(at);
+  console.log("Injected candidateEducationText helper");
 } else {
   console.log("candidateEducationText already present");
 }
 
-// Persist education on addCandidate object literals
 if (/function addCandidate\s*\(/.test(src) && !/education:\s*data\.education/.test(src)) {
   if (/resumeText:\s*data\.resumeText/.test(src)) {
     src = src.replace(
@@ -94,7 +129,6 @@ if (/function addCandidate\s*\(/.test(src) && !/education:\s*data\.education/.te
   }
 }
 
-// Import path: keep education from payload
 if (
   /resumeText:\s*payload\.resumeText/.test(src) &&
   !/education:\s*payload\.education/.test(src)
@@ -108,7 +142,7 @@ if (
 }
 
 const EDU_BLOCK = `
-        {candidateEducationText(active) ? (
+        {typeof candidateEducationText === "function" && candidateEducationText(active) ? (
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "#5C584C" }}>Education</div>
             <pre style={{
@@ -128,7 +162,7 @@ const EDU_BLOCK = `
         ) : null}
 `;
 
-if (/candidateEducationText\(active\)/.test(src) && />\s*Education\s*</.test(src)) {
+if (/candidateEducationText\(active\)/.test(src) && /Education<\/div>/.test(src)) {
   console.log("Education UI already present");
 } else if (/\(active\.resumeText\s*\|\|\s*active\.resume_text\)/.test(src)) {
   src = src.replace(
@@ -145,6 +179,13 @@ if (/candidateEducationText\(active\)/.test(src) && />\s*Education\s*</.test(src
   }
 } else {
   console.warn("Could not auto-place Education UI — helper/persist still applied");
+}
+
+const after = canCompile(esbuild, src);
+if (!after.ok) {
+  console.error("REFUSING: education patch would break App.jsx:", after.error);
+  fs.copyFileSync(bak, appPath);
+  process.exit(2);
 }
 
 if (src === before) {

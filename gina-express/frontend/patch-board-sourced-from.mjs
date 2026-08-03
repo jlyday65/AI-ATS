@@ -83,7 +83,8 @@ function canCompile(esbuild, text) {
 }
 
 const HELPER = `
-  function candidateSourcedFromText(c = {}) {
+  function candidateSourcedFromText(c) {
+    if (!c || typeof c !== "object") return "";
     if (c.sourcedFromText) return String(c.sourcedFromText);
     if (Array.isArray(c.sourcedFrom) && c.sourcedFrom.length) {
       return c.sourcedFrom.join(" · ");
@@ -107,40 +108,37 @@ fs.copyFileSync(appPath, bak);
 
 if (!/function\s+candidateSourcedFromText\b/.test(app)) {
   const insertAt = app.search(
-    /function\s+countLiveStageCounts\b|function\s+personDedupeKeys\b|const BOT_NAMES\s*=|function\s+findCandidateByMatch\b/,
+    /function\s+countLiveStageCounts\b|function\s+personDedupeKeys\b|const BOT_NAMES\s*=|function\s+findCandidateByMatch\b|export\s+default\s+function\s+(?:App|CandidateTracker)\b/,
   );
   if (insertAt >= 0) {
     app = app.slice(0, insertAt) + HELPER + "\n\n" + app.slice(insertAt);
+    console.log("Inserted candidateSourcedFromText helper");
   } else {
-    app = HELPER + "\n\n" + app;
+    // Never prepend before imports — that SyntaxError whitescreens the ATS.
+    const lastImport = [...app.matchAll(/^import\s.+;?\s*$/gm)].pop();
+    if (lastImport && typeof lastImport.index === "number") {
+      const at = lastImport.index + lastImport[0].length;
+      app = app.slice(0, at) + "\n\n" + HELPER + "\n" + app.slice(at);
+      console.log("Inserted candidateSourcedFromText after imports");
+    } else {
+      console.warn("Skip helper insert — no safe anchor (would break imports)");
+    }
   }
-  console.log("Inserted candidateSourcedFromText helper");
 }
 
-// Inject a "From: …" line under Board candidate names (once).
+// Inject a "From: …" line under Board candidate names (once per pattern, first hit only).
 let changed = false;
+const fromLine = (alias) =>
+  `{${alias}.name}{typeof candidateSourcedFromText === "function" && candidateSourcedFromText(${alias}) ? (<div className="text-xs" style={{fontSize:12,opacity:0.75,marginTop:2}}>From: {candidateSourcedFromText(${alias})}</div>) : null}`;
 if (/{c\.name}/.test(app) && !/From:\s*\{candidateSourcedFromText\(c\)\}/.test(app)) {
-  app = app.replace(
-    /\{c\.name\}/g,
-    `{c.name}{candidateSourcedFromText(c) ? (<div className="text-xs" style={{fontSize:12,opacity:0.75,marginTop:2}}>From: {candidateSourcedFromText(c)}</div>) : null}`,
-  );
+  app = app.replace(/\{c\.name\}/, fromLine("c"));
   changed = true;
 }
 if (
   /{candidate\.name}/.test(app) &&
   !/From:\s*\{candidateSourcedFromText\(candidate\)\}/.test(app)
 ) {
-  app = app.replace(
-    /\{candidate\.name\}/g,
-    `{candidate.name}{candidateSourcedFromText(candidate) ? (<div className="text-xs" style={{fontSize:12,opacity:0.75,marginTop:2}}>From: {candidateSourcedFromText(candidate)}</div>) : null}`,
-  );
-  changed = true;
-}
-if (/{(c|candidate)\.source}/.test(app)) {
-  app = app.replace(
-    /\{(c|candidate)\.source\}/g,
-    `{candidateSourcedFromText($1) || $1.source}`,
-  );
+  app = app.replace(/\{candidate\.name\}/, fromLine("candidate"));
   changed = true;
 }
 if (changed) console.log("Injected Board From: platform line(s)");
