@@ -68,6 +68,7 @@ function toCandidate(
     headline: extracted.headline,
     skills: extracted.skills,
     experienceYears: extracted.experienceYears,
+    education: extracted.education,
     platforms: [],
     summary: extracted.resumeText.slice(0, 600),
     resumeText: extracted.resumeText,

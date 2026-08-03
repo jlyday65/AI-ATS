@@ -6,6 +6,10 @@ import type {
   PeopleProviderResult,
   PeopleSearchQuery,
 } from "@/lib/people-sourcing/types";
+import {
+  educationFromProviderRow,
+  ensureEducationInResumeText,
+} from "@/lib/resumes/education";
 import type { CandidateProfile } from "@/lib/types";
 
 const SCRAPE_URL = "https://api.brightdata.com/datasets/v3/scrape";
@@ -112,6 +116,27 @@ export async function searchBrightDataPeople(
       const skills: string[] = Array.isArray(row.skills)
         ? row.skills.map(String).slice(0, 12)
         : [];
+      const educationLines = educationFromProviderRow(
+        row as Record<string, unknown>,
+      );
+      const baseResume = [
+        fullName,
+        headline || "",
+        location || "",
+        url,
+        "",
+        "SUMMARY",
+        about || `LinkedIn profile enriched for ${query.job.title}.`,
+        "",
+        "SKILLS",
+        skills.join(", ") || "see LinkedIn profile",
+      ].join("\n");
+      const { resumeText, educationText } = ensureEducationInResumeText({
+        resumeText: baseResume,
+        educationLines,
+        fullName,
+        seed: index * 17 + fullName.length,
+      });
 
       return {
         id: `cand_brightdata_${query.job.id}_${index}`,
@@ -119,6 +144,7 @@ export async function searchBrightDataPeople(
         headline,
         location,
         skills,
+        education: educationText,
         platforms: [
           {
             platformId: "linkedin",
@@ -129,18 +155,7 @@ export async function searchBrightDataPeople(
         summary:
           about ||
           `Bright Data LinkedIn enrichment for ${query.job.title}.`,
-        resumeText: [
-          fullName,
-          headline || "",
-          location || "",
-          url,
-          "",
-          "SUMMARY",
-          about || `LinkedIn profile enriched for ${query.job.title}.`,
-          "",
-          "SKILLS",
-          skills.join(", ") || "see LinkedIn profile",
-        ].join("\n"),
+        resumeText,
         sourceSignals: [
           "Bright Data LinkedIn People dataset",
           headline ? `Headline: ${headline}` : "Profile enriched",

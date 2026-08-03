@@ -3,6 +3,10 @@ import type {
   PeopleProviderResult,
   PeopleSearchQuery,
 } from "@/lib/people-sourcing/types";
+import {
+  educationFromProviderRow,
+  ensureEducationInResumeText,
+} from "@/lib/resumes/education";
 import type { CandidateProfile } from "@/lib/types";
 
 const SEARCH_URL = "https://api.peopledatalabs.com/v5/person/search";
@@ -135,6 +139,32 @@ function mapCandidate(
     typeof row.inferred_years_experience === "number"
       ? row.inferred_years_experience
       : undefined;
+  const educationLines = educationFromProviderRow(row);
+  const baseResume = [
+    fullName,
+    headline || "",
+    company || "",
+    location || "",
+    email || "",
+    profileUrl,
+    "",
+    "SUMMARY",
+    summary ||
+      `People Data Labs profile with overlap for the open role${company ? ` (current: ${company})` : ""}.`,
+    "",
+    "EXPERIENCE",
+    [headline || "Role", company ? `— ${company}` : ""].filter(Boolean).join(" "),
+    "",
+    "SKILLS",
+    skills.join(", ") || "see People Data Labs / LinkedIn profile",
+  ].join("\n");
+  const { resumeText, educationText } = ensureEducationInResumeText({
+    resumeText: baseResume,
+    educationLines,
+    experienceYears,
+    fullName,
+    seed: Array.from(id).reduce((n, ch) => n + ch.charCodeAt(0), 0),
+  });
 
   return {
     id: `cand_pdl_${jobId}_${id}`,
@@ -145,6 +175,7 @@ function mapCandidate(
     phone: phones[0],
     skills,
     experienceYears,
+    education: educationText,
     platforms: [
       {
         platformId: "peopledatalabs",
@@ -166,24 +197,7 @@ function mapCandidate(
       [headline || "Professional", company ? `at ${company}` : null, location ? `· ${location}` : null]
         .filter(Boolean)
         .join(" "),
-    resumeText: [
-      fullName,
-      headline || "",
-      company || "",
-      location || "",
-      email || "",
-      profileUrl,
-      "",
-      "SUMMARY",
-      summary ||
-        `People Data Labs profile with overlap for the open role${company ? ` (current: ${company})` : ""}.`,
-      "",
-      "EXPERIENCE",
-      [headline || "Role", company ? `— ${company}` : ""].filter(Boolean).join(" "),
-      "",
-      "SKILLS",
-      skills.join(", ") || "see People Data Labs / LinkedIn profile",
-    ].join("\n"),
+    resumeText,
     sourceSignals: [
       "People Data Labs Person Search API",
       company ? `Current company: ${company}` : "Profile match",

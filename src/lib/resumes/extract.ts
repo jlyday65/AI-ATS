@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { parseEducationFromResumeText } from "@/lib/resumes/education";
 
 export interface ExtractedResume {
   fullName: string;
@@ -8,6 +9,7 @@ export interface ExtractedResume {
   headline?: string;
   skills: string[];
   experienceYears?: number;
+  education?: string;
   resumeText: string;
 }
 
@@ -116,6 +118,7 @@ export function extractFromResumeText(resumeText: string): ExtractedResume {
   const yearsRaw = text.match(YEARS_RE)?.[1];
   const fullName = guessName(lines, email);
 
+  const educationLines = parseEducationFromResumeText(text);
   return {
     fullName,
     email,
@@ -124,6 +127,7 @@ export function extractFromResumeText(resumeText: string): ExtractedResume {
     headline: extractHeadline(lines, fullName),
     skills: extractSkills(text),
     experienceYears: yearsRaw ? Number(yearsRaw) : undefined,
+    education: educationLines.length ? educationLines.join("\n") : undefined,
     resumeText: text,
   };
 }

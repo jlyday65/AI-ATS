@@ -39,6 +39,8 @@ export interface CandidateProfile {
   summary?: string;
   /** Full extracted resume text for Gina / Maria evaluation */
   resumeText?: string;
+  /** Formatted education lines for ATS profile (also embedded in resumeText) */
+  education?: string;
   sourceSignals: string[];
 }
 

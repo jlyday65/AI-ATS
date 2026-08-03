@@ -1,5 +1,11 @@
 import { CANDIDATE_PLATFORMS, listLivePlatforms } from "@/lib/platforms/catalog";
+import {
+  buildDemoEducation,
+  parseEducationFromResumeText,
+} from "@/lib/resumes/education";
 import type { CandidateProfile, JobRequisition } from "@/lib/types";
+
+export { buildDemoEducation };
 
 export interface PlatformSearchQuery {
   job: JobRequisition;
@@ -143,33 +149,6 @@ function uniqueNameForIndex(
   };
 }
 
-const DEMO_SCHOOLS = [
-  "Georgia State University",
-  "University of Georgia",
-  "Georgia Tech",
-  "Emory University",
-  "University of North Carolina",
-  "Clemson University",
-  "Auburn University",
-  "University of South Carolina",
-];
-
-const DEMO_DEGREES = [
-  "B.S. Business Administration",
-  "B.S. Operations Management",
-  "B.A. Management",
-  "B.S. Industrial Engineering",
-  "B.S. Supply Chain Management",
-  "A.S. Applied Science",
-];
-
-export function buildDemoEducation(seed: number, experienceYears: number) {
-  const school = pick(DEMO_SCHOOLS, seed, 3);
-  const degree = pick(DEMO_DEGREES, seed, 7);
-  const gradYear = new Date().getFullYear() - experienceYears - 1 - (seed % 3);
-  return { school, degree, gradYear };
-}
-
 export function buildDemoResumeText(input: {
   fullName: string;
   headline: string;
@@ -255,6 +234,7 @@ function synthesizePerson(
     }),
     summary,
     resumeText,
+    education: parseEducationFromResumeText(resumeText).join("\n"),
     sourceSignals: [
       `${platformIds.length} platform hit(s)`,
       `${years}+ years relevant experience`,

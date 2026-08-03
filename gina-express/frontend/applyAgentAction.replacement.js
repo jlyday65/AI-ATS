@@ -355,6 +355,10 @@
           (sourcedFrom.length ? sourcedFrom.join(" · ") : "") ||
           payload.source ||
           (type === "import_candidate" ? "SignalHire" : "Gina");
+        const education =
+          payload.education ||
+          payload.educationText ||
+          "";
         const incoming = {
           name: payload.name,
           email: payload.email || "",
@@ -364,6 +368,7 @@
           resumeText,
           summary: payload.summary || "",
           headline: payload.headline || "",
+          education,
           source: sourcedFromText,
           sourcedFrom,
           sourcedFromText,
@@ -387,6 +392,7 @@
                   "",
                 summary: payload.summary || existing.summary || "",
                 headline: payload.headline || existing.headline || "",
+                education: education || existing.education || "",
                 role: incoming.role || existing.role || "",
                 jobTitle: incoming.jobTitle || existing.jobTitle || "",
                 email: existing.email || incoming.email || "",

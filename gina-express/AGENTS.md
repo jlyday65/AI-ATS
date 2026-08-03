@@ -196,6 +196,28 @@ That repair re-applies Check for actions helpers, exports them on `window`, and 
 bare calls with `typeof` guards. Hard-refresh Gina ATS, then **Check for actions**
 again (action #251). No need to re-queue the Candidate File if it is still pending.
 
+## Fix: Education missing on ATS resume / candidate profile
+
+Live Coresignal / PDL / Bright Data resume blobs dropped the `EDUCATION` section
+(demo resumes still had it). AI-ATS now always embeds Education in `resumeText`,
+passes `education` to Gina, and the ATS profile shows an **Education** block.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+# restart AI-ATS npm run dev so new sourced resumes include EDUCATION
+
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/patch-show-resume-education.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx
+git commit -m "ATS candidate profile: show Education on resume"
+git pull origin main --rebase && git push origin main
+```
+
+Hard-refresh Gina, re-run Maria source + Check for actions — open a candidate:
+Education appears above Resume (and inside the resume text).
+
 ## Board: show which platform each candidate was sourced from
 
 Maria → SignalHire now sends `sourcedFrom` / `sourcedFromText` (e.g. Coresignal,

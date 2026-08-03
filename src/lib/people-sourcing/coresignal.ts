@@ -3,6 +3,10 @@ import type {
   PeopleProviderResult,
   PeopleSearchQuery,
 } from "@/lib/people-sourcing/types";
+import {
+  educationFromProviderRow,
+  ensureEducationInResumeText,
+} from "@/lib/resumes/education";
 import type { CandidateProfile } from "@/lib/types";
 
 const PREVIEW_URL =
@@ -111,6 +115,38 @@ function mapCandidate(
         : undefined;
   const managementLevel = firstString(row.active_experience_management_level);
   const department = firstString(row.active_experience_department);
+  const educationLines = educationFromProviderRow(row);
+  const baseResume = [
+    fullName,
+    headline || "",
+    company || "",
+    location || "",
+    profileUrl,
+    "",
+    "SUMMARY",
+    summary ||
+      `Professional with overlap for the open role${company ? ` (current: ${company})` : ""}.`,
+    "",
+    "EXPERIENCE",
+    [
+      headline || "Role",
+      company ? `— ${company}` : "",
+      department ? `(${department})` : "",
+      managementLevel ? `· ${managementLevel}` : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+    "",
+    "SKILLS",
+    skills.join(", ") || "see LinkedIn / Coresignal profile",
+  ].join("\n");
+  const { resumeText, educationText } = ensureEducationInResumeText({
+    resumeText: baseResume,
+    educationLines,
+    experienceYears,
+    fullName,
+    seed: Array.from(id).reduce((n, ch) => n + ch.charCodeAt(0), 0),
+  });
 
   return {
     id: `cand_coresignal_${jobId}_${id}`,
@@ -120,6 +156,7 @@ function mapCandidate(
     email: row.email ? String(row.email) : undefined,
     skills,
     experienceYears,
+    education: educationText,
     platforms: [
       {
         platformId: "coresignal",
@@ -141,30 +178,7 @@ function mapCandidate(
       ]
         .filter(Boolean)
         .join(" "),
-    resumeText: [
-      fullName,
-      headline || "",
-      company || "",
-      location || "",
-      profileUrl,
-      "",
-      "SUMMARY",
-      summary ||
-        `Professional with overlap for the open role${company ? ` (current: ${company})` : ""}.`,
-      "",
-      "EXPERIENCE",
-      [
-        headline || "Role",
-        company ? `— ${company}` : "",
-        department ? `(${department})` : "",
-        managementLevel ? `· ${managementLevel}` : "",
-      ]
-        .filter(Boolean)
-        .join(" "),
-      "",
-      "SKILLS",
-      skills.join(", ") || "see LinkedIn / Coresignal profile",
-    ].join("\n"),
+    resumeText,
     sourceSignals: [
       "Coresignal Multi-source Employee API",
       company ? `Current company: ${company}` : "Profile match",
