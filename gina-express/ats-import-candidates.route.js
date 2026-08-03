@@ -35,6 +35,17 @@ router.post("/import-candidates", requireRelaySecret, async (req, res) => {
 
     const ids = [];
     for (const c of unique) {
+      const sourcedFrom = Array.isArray(c.sourcedFrom)
+        ? c.sourcedFrom
+        : Array.isArray(c.platformIds)
+          ? c.platformIds
+          : [];
+      const sourcedFromText =
+        c.sourcedFromText ||
+        (sourcedFrom.length ? sourcedFrom.join(" · ") : "") ||
+        source ||
+        c.source ||
+        "SignalHire";
       const payload = {
         name: c.name || c.fullName || "",
         email: c.email || "",
@@ -46,7 +57,11 @@ router.post("/import-candidates", requireRelaySecret, async (req, res) => {
         summary: c.summary || "",
         jobTitle: jobTitle || c.jobTitle || "",
         jobId: jobId || "",
-        source: source || c.source || "signalhire",
+        source: sourcedFromText,
+        sourcedFrom,
+        sourcedFromText,
+        platforms: c.platforms || c.linkedProfiles || c.profiles || [],
+        platformIds: c.platformIds || [],
         skills: c.skills || [],
         linkedProfiles: c.linkedProfiles || c.profiles || [],
         tags: c.tags || ["signalhire", "ai-sourced"],

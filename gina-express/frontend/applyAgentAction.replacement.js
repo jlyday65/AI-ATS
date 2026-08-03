@@ -331,6 +331,16 @@
           );
           if (job) jobId = job.id;
         }
+        const sourcedFrom = Array.isArray(payload.sourcedFrom)
+          ? payload.sourcedFrom
+          : Array.isArray(payload.platformIds)
+            ? payload.platformIds
+            : [];
+        const sourcedFromText =
+          payload.sourcedFromText ||
+          (sourcedFrom.length ? sourcedFrom.join(" · ") : "") ||
+          payload.source ||
+          (type === "import_candidate" ? "SignalHire" : "Gina");
         const incoming = {
           name: payload.name,
           email: payload.email || "",
@@ -340,9 +350,12 @@
           resumeText,
           summary: payload.summary || "",
           headline: payload.headline || "",
-          source:
-            payload.source ||
-            (type === "import_candidate" ? "SignalHire" : "Gina"),
+          source: sourcedFromText,
+          sourcedFrom,
+          sourcedFromText,
+          platforms: payload.platforms || payload.linkedProfiles || [],
+          platformIds: payload.platformIds || [],
+          linkedProfiles: payload.linkedProfiles || payload.platforms || [],
           jobId,
         };
 
@@ -364,7 +377,19 @@
                 jobTitle: incoming.jobTitle || existing.jobTitle || "",
                 email: existing.email || incoming.email || "",
                 phone: existing.phone || incoming.phone || "",
-                source: existing.source || incoming.source,
+                source: incoming.source || existing.source,
+                sourcedFrom:
+                  incoming.sourcedFrom?.length
+                    ? incoming.sourcedFrom
+                    : existing.sourcedFrom || [],
+                sourcedFromText:
+                  incoming.sourcedFromText || existing.sourcedFromText || "",
+                platforms: incoming.platforms?.length
+                  ? incoming.platforms
+                  : existing.platforms || [],
+                platformIds: incoming.platformIds?.length
+                  ? incoming.platformIds
+                  : existing.platformIds || [],
                 jobId: existing.jobId || jobId || null,
               };
               outcome = {
@@ -419,7 +444,11 @@
               headline: payload.headline || existing.headline || "",
               role: incoming.role || existing.role || "",
               jobTitle: incoming.jobTitle || existing.jobTitle || "",
-              source: existing.source || incoming.source,
+              source: incoming.source || existing.source,
+              sourcedFrom: incoming.sourcedFrom,
+              sourcedFromText: incoming.sourcedFromText,
+              platforms: incoming.platforms,
+              platformIds: incoming.platformIds,
             });
             rememberImportPerson(existing);
             return {

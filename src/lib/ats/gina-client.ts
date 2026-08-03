@@ -1,5 +1,9 @@
 import { createHash } from "crypto";
 import { modeTagForMode, sourceLabelForMode } from "@/lib/settings";
+import {
+  sourcedFromForCandidate,
+  sourcedFromLine,
+} from "@/lib/sourcing/sourced-from";
 import type { AtsMode, CandidateProfile, JobRequisition } from "@/lib/types";
 
 export const GINA_DEFAULT_BASE_URL =
@@ -7,7 +11,7 @@ export const GINA_DEFAULT_BASE_URL =
   "https://lyday-gina-backend-production.up.railway.app";
 
 /** Bump when push routes change — appears in UI + sync text so we can verify local pull. */
-export const GINA_CLIENT_VERSION = "ats-v18";
+export const GINA_CLIENT_VERSION = "ats-v19";
 
 /** Safe fingerprint for comparing secrets without printing them. */
 export function fingerprintSecret(secret: string | undefined | null): string {
@@ -476,6 +480,8 @@ export async function pushCandidatesToGina(input: {
     // Board "role" should be the job requisition title, not the demo headline
     // (e.g. "Warehouse Assistant Manager", not "mid-senior Warehouse Manager · WMS").
     const jobTitle = input.job.title || "";
+    const sourcedFrom = sourcedFromForCandidate(candidate);
+    const sourcedFromText = sourcedFromLine(sourcedFrom);
     normalizedCandidates.push({
       name: candidate.fullName,
       fullName: candidate.fullName,
@@ -493,13 +499,18 @@ export async function pushCandidatesToGina(input: {
       experienceYears: candidate.experienceYears,
       linkedProfiles: candidate.platforms,
       profiles: candidate.platforms,
-      source,
+      platforms: candidate.platforms,
+      platformIds: candidate.platforms.map((p) => p.platformId),
+      sourcedFrom,
+      sourcedFromText,
+      source: sourcedFromText || source,
       atsMode,
       tags: [
         "signalhire",
         modeTag,
         resumeText ? "resume-upload" : "ai-sourced",
         ...candidate.platforms.map((p) => p.platformId),
+        ...sourcedFrom.map((l) => l.toLowerCase().replace(/\s+/g, "_")),
       ],
     });
   }

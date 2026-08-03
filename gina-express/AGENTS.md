@@ -176,6 +176,26 @@ git push origin main
 
 Then ask again: “Ask Maria for an update on Home Depot sourcing” → Check for actions.
 
+## Board: show which platform each candidate was sourced from
+
+Maria → SignalHire now sends `sourcedFrom` / `sourcedFromText` (e.g. Coresignal,
+People Data Labs, LinkedIn). Board cards show **From: …** under the name.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+# AI-ATS already has the push fields after pull — restart npm run dev
+
+node gina-express/frontend/patch-board-sourced-from.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx
+git commit -m "Board cards show sourced-from platforms"
+git pull origin main --rebase && git push origin main
+```
+
+Re-source via Maria + Check for actions to see labels on **new** imports (older
+cards without `sourcedFrom` only show a generic source if present).
+
 ## Fix: Railway `ECONNREFUSED 127.0.0.1:5432` (Postgres)
 
 Start command is fine (`gina-backend@1.0.0 start` → `node server.js`). Gina then crashes because

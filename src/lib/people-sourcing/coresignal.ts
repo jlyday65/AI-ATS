@@ -122,6 +122,11 @@ function mapCandidate(
     experienceYears,
     platforms: [
       {
+        platformId: "coresignal",
+        profileUrl,
+        handle: fullName.toLowerCase().replace(/\s+/g, "."),
+      },
+      {
         platformId: "linkedin",
         profileUrl,
         handle: fullName.toLowerCase().replace(/\s+/g, "."),

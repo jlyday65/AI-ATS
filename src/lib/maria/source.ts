@@ -1,4 +1,8 @@
 import { runSourcingAgent } from "@/lib/sourcing/service";
+import {
+  sourcedFromForCandidate,
+  sourcedFromLine,
+} from "@/lib/sourcing/sourced-from";
 import { modeTagForMode, sourceLabelForMode } from "@/lib/settings";
 import {
   createJob,
@@ -125,17 +129,25 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
     runId: result.run.id,
     candidateCount: result.matches.length,
     talentPoolHits: result.talentPoolHits ?? 0,
-    topCandidates: result.matches.slice(0, input.pushTopN ?? 5).map((match) => ({
-      name: match.candidate.fullName,
-      email: match.candidate.email,
-      headline: match.candidate.headline,
-      location: match.candidate.location,
-      resumeChars: (match.candidate.resumeText || "").length,
-      score: match.score,
-      platforms: match.platformHits,
-      reasons: match.reasons,
-      fromTalentPool: match.platformHits.includes("talent_pool"),
-    })),
+    topCandidates: result.matches.slice(0, input.pushTopN ?? 5).map((match) => {
+      const sourcedFrom = sourcedFromForCandidate(
+        match.candidate,
+        match.platformHits,
+      );
+      return {
+        name: match.candidate.fullName,
+        email: match.candidate.email,
+        headline: match.candidate.headline,
+        location: match.candidate.location,
+        resumeChars: (match.candidate.resumeText || "").length,
+        score: match.score,
+        platforms: match.platformHits,
+        sourcedFrom,
+        sourcedFromText: sourcedFromLine(sourcedFrom),
+        reasons: match.reasons,
+        fromTalentPool: match.platformHits.includes("talent_pool"),
+      };
+    }),
     atsSync: result.atsSync,
     nextStep: result.atsSync?.ok
       ? `In Gina ATS → Agent → Check for actions to import the shortlist (${settings.atsMode} mode · ${sourceLabelForMode(settings.atsMode)}).`
