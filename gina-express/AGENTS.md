@@ -113,6 +113,23 @@ git pull origin main --rebase && git push origin main
 
 Hard-refresh Gina (Cmd+Shift+R). Jobs upsert via Check for actions still works.
 
+### React #31 — “Objects are not valid as a React child (keys {})”
+
+Something is rendering an empty object `{}` (often Jobs `requiredSkills` / `selectedJob || …`).
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/diagnose-react-31.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/fix-react-31.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
+git commit -m "Fix React #31: do not render empty job objects"
+git pull origin main --rebase && git push origin main
+```
+
+In the browser console once: `localStorage.clear(); sessionStorage.clear(); location.reload();`
+
 ## Bring Kimberley's Notes back (safe)
 
 After emergency disable (white screen), use the one-shot bring-back — **not** the old `patch-kimberley-notes.mjs` alone:
