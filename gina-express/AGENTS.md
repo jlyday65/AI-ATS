@@ -69,33 +69,33 @@ If you still see a blank page, you should now see **red error text** — paste
 that whole banner to Cursor. Do **not** re-run Education / Board From / Notes
 patches until the Board is confirmed up.
 
-## Auto-fill Maria / Michelle from the Jobs tab (no JD paste)
+## Auto-fill Jobs tab + Maria / Michelle from JD (no paste loop)
 
-When a job is selected on **Jobs**, its title / location / **description** should
-flow into Maria sourcing and Michelle screening questions — Kimberley should not
-paste the JD at each step.
+When Kimberley notifies Gina of a **new job + description** (e.g. “Ask Maria to
+source for ROLE … [JD]”), Check for actions should:
+
+1. **Upsert the Jobs tab** (`upsert_job` / auto from Maria payload)
+2. Pass that JD into **Maria** sourcing and **Michelle** screening questions
 
 ```bash
 cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-# Redeploy AI-ATS on Vercel so resolveJob merges incoming JDs:
 npx vercel --prod
 
 node gina-express/frontend/patch-inject-job-context.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
 cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
 cd ~/lyday-gina-backend
 git add gina-backend/lib/job-context.js gina-backend/agents gina-backend/routes/run-command.js \
   gina-backend/maria-source.tool.js gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
-git commit -m "Auto-fill Maria/Michelle from Jobs tab description"
+git commit -m "Populate Jobs tab from Kimberley JD + Maria/Michelle reuse"
 git pull origin main --rebase && git push origin main
 ```
 
-Redeploy Gina. Workflow: open **Jobs** → select the requisition → ask Gina to
-command Maria or Michelle → **Check for actions**. Michelle’s note lists
-screening questions built from that JD (and saves them on the Candidate File
-when `candidateFileId` is present).
+Redeploy Gina. **Paste** updated `gina-express/GINA_TEAM_PROMPT_RULE.txt` into
+Gina’s system prompt (NEW JOB → JOBS TAB + JOB DESCRIPTION RULE).
 
-Also paste the updated `gina-express/GINA_TEAM_PROMPT_RULE.txt` into Gina’s
-system prompt (JOB DESCRIPTION RULE).
+Workflow: tell Gina the role + full JD → Check for actions → Jobs tab shows the
+job → Maria sources against that JD → Michelle builds screening questions from it.
 
 ## Bring Kimberley's Notes back (safe)
 

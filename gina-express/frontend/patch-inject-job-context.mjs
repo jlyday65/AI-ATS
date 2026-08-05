@@ -156,11 +156,11 @@ Next:
   cd ${path.join(ginaDir, "frontend")} && npm run build
   cd ${path.dirname(ginaDir)}
   git add gina-backend/lib/job-context.js gina-backend/agents gina-backend/routes/run-command.js gina-backend/maria-source.tool.js gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
-  git commit -m "Auto-fill Maria/Michelle from Jobs tab description"
+  git commit -m "Populate Jobs tab from Kimberley JD + Maria/Michelle reuse"
   git pull origin main --rebase && git push origin main
 
 Usage:
-  1) Open Jobs → select the requisition (JD filled)
-  2) Ask Gina: Ask Maria to source… / Ask Michelle to screen…
-  3) Check for actions — JD is injected; no paste
+  1) Tell Gina: Ask Maria to source for ROLE + paste/include the full JD
+  2) Check for actions — Jobs tab is upserted, Maria runs with that JD
+  3) Later: Ask Michelle to screen — questions come from the same JD
 `);

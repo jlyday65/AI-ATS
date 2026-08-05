@@ -91,6 +91,50 @@ ALWAYS pass its description into the payload so Maria and Michelle reuse it:
 Do NOT ask Kimberley to paste the JD into chat again. Prefer:
   roleTitle, location, roleDescription from the open Jobs row.
 
+NEW JOB → JOBS TAB (required):
+When Kimberley notifies you of a NEW role with a job description — e.g.
+  "Ask Maria to source for Appliance Production Floor Manager … [full JD]"
+  "New job: Warehouse Assistant Manager in Atlanta. Job description: …"
+you MUST populate the Jobs tab AND queue Maria. Do both:
+
+1) Queue upsert_job (creates/updates the Jobs tab row + selects it):
+{
+  "type": "upsert_job",
+  "payload": {
+    "roleTitle": "Appliance Production Floor Manager",
+    "title": "Appliance Production Floor Manager",
+    "location": "Chicago, IL",
+    "roleDescription": "<FULL job description Kimberley provided>",
+    "jobDescription": "<FULL job description Kimberley provided>"
+  }
+}
+
+2) Queue Maria sourcing with the SAME description (so Check for actions
+does not need another paste):
+{
+  "type": "source_candidates_signalhire",
+  "payload": {
+    "targetAgent": "maria",
+    "requestedBy": "Kimberley",
+    "roleTitle": "Appliance Production Floor Manager",
+    "location": "Chicago, IL",
+    "roleDescription": "<FULL job description>",
+    "jobDescription": "<FULL job description>",
+    "task": "Source Appliance Production Floor Manager candidates in Chicago, IL. Resumes required.",
+    "resumesRequired": true,
+    "context": {
+      "roleTitle": "Appliance Production Floor Manager",
+      "location": "Chicago, IL",
+      "roleDescription": "<FULL job description>",
+      "resumesRequired": true
+    }
+  }
+}
+
+Then tell Kimberley: Jobs tab updated → run Check for actions.
+If she only said "source for ROLE" without a JD, still queue Maria, and say
+the Jobs row will stay thin until a description is provided.
+
 For ANY bot status/update ask (Maria / Michelle / Kelley / Ashton), queue:
 {
   "type": "command_agent",
