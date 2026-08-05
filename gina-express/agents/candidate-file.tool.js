@@ -211,6 +211,8 @@ export async function createCandidateFileFromInstruction(input = {}) {
           candidateFileId: file.id,
           roleTitle: parsed.job.title,
           location: parsed.job.location,
+          roleDescription: parsed.job.description,
+          jobDescription: parsed.job.description,
           resumesRequired: true,
         },
         queuedAt: new Date().toISOString(),

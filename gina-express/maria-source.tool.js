@@ -307,11 +307,19 @@ export async function mariaSourceViaSignalHire(input = {}) {
       body: JSON.stringify({
         roleTitle,
         roleDescription:
-          input.roleDescription || input.description || taskText || undefined,
-        requiredSkills: input.requiredSkills,
-        preferredSkills: input.preferredSkills,
-        location: input.location,
-        seniority: input.seniority,
+          input.roleDescription ||
+          input.jobDescription ||
+          input.description ||
+          input.context?.roleDescription ||
+          input.context?.jobDescription ||
+          taskText ||
+          undefined,
+        requiredSkills:
+          input.requiredSkills || input.context?.requiredSkills || undefined,
+        preferredSkills:
+          input.preferredSkills || input.context?.preferredSkills || undefined,
+        location: input.location || input.context?.location,
+        seniority: input.seniority || input.context?.seniority,
         resumesRequired,
         pushToGina: input.pushToGina !== false,
         pushTopN: input.pushTopN ?? 5,

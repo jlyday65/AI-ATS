@@ -13,6 +13,12 @@
 
 import { listCommandableAgents, resolveAgent } from "./registry.js";
 import { buildBotReply } from "./bot-replies.js";
+import {
+  extractJobContext,
+  mergeJobContext,
+  screeningQuestionsFromJob,
+  skillsFromJobDescription,
+} from "../lib/job-context.js";
 
 async function loadMariaSource() {
   try {
@@ -20,6 +26,20 @@ async function loadMariaSource() {
   } catch {
     try {
       return await import("./maria-source.tool.js");
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function loadCandidateFiles() {
+  try {
+    const mod = await import("../lib/candidate-files.js");
+    return mod.candidateFiles || null;
+  } catch {
+    try {
+      const mod = await import("./candidate-files.js");
+      return mod.candidateFiles || null;
     } catch {
       return null;
     }
@@ -122,12 +142,14 @@ async function persistKimberleyNote({
 
 async function executeAgentWork({ agent, task, requestedBy, context, actionId }) {
   let mariaResult = null;
+  let michelleResult = null;
   let error = null;
   let reply;
+  const jobCtx = mergeJobContext(context || {}, extractJobContext(context || {}));
 
   if (agent.id === "maria" && looksLikeSourceTask(task)) {
     try {
-      mariaResult = await runMariaFromTask(task, context || {});
+      mariaResult = await runMariaFromTask(task, jobCtx);
       reply = buildBotReply({
         agentId: "maria",
         task,
@@ -141,8 +163,25 @@ async function executeAgentWork({ agent, task, requestedBy, context, actionId })
         error,
       });
     }
+  } else if (agent.id === "michelle" && looksLikeScreenTask(task)) {
+    try {
+      michelleResult = await runMichelleScreen(task, jobCtx);
+      reply = buildBotReply({
+        agentId: "michelle",
+        task,
+        result: michelleResult,
+      });
+    } catch (err) {
+      error = String(err?.message || err);
+      reply = buildBotReply({
+        agentId: "michelle",
+        task,
+        error,
+        result: jobCtx,
+      });
+    }
   } else {
-    reply = buildBotReply({ agentId: agent.id, task, result: context || {} });
+    reply = buildBotReply({ agentId: agent.id, task, result: jobCtx });
   }
 
   const note = await persistKimberleyNote({
@@ -165,6 +204,7 @@ async function executeAgentWork({ agent, task, requestedBy, context, actionId })
     requestedBy,
     capabilities: agent.capabilities,
     mariaResult,
+    michelleResult,
     error,
     reply,
     kimberleyNoteId: note?.id || null,
@@ -258,6 +298,18 @@ export async function commandAgent(input = {}) {
   });
 }
 
+export function looksLikeScreenTask(task = "") {
+  const t = String(task || "");
+  // Pure status asks keep the canned update; everything else runs JD-based screening.
+  if (
+    /\b(update|status|progress|report|check[- ]?in)\b/i.test(t) &&
+    !/\b(screen|screening|questions?|interview|evaluate)\b/i.test(t)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 async function runMariaFromTask(task, context = {}) {
   const mod = await loadMariaSource();
   if (!mod?.mariaSourceViaSignalHire) {
@@ -265,8 +317,9 @@ async function runMariaFromTask(task, context = {}) {
       "maria-source.tool.js is not available next to command-agent.tool.js",
     );
   }
+  const jobCtx = mergeJobContext(context, extractJobContext(context));
   const roleTitle =
-    context.roleTitle ||
+    jobCtx.roleTitle ||
     (typeof mod.extractRoleTitleFromText === "function"
       ? mod.extractRoleTitleFromText(task)
       : "") ||
@@ -276,29 +329,117 @@ async function runMariaFromTask(task, context = {}) {
     "";
   if (!roleTitle || /^(candidates?|people|someone|talent)$/i.test(roleTitle)) {
     throw new Error(
-      'Maria needs a roleTitle to source. Include it in the task, e.g. "source a Warehouse Assistant Manager candidate in Atlanta".',
+      'Maria needs a roleTitle to source. Include it in the task, e.g. "source a Warehouse Assistant Manager candidate in Atlanta" — or select the job on the Jobs tab first.',
     );
   }
   const location =
-    context.location ||
+    jobCtx.location ||
     (typeof mod.extractLocationFromText === "function"
       ? mod.extractLocationFromText(task)
       : "") ||
     task.match(/\bin\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)/i)?.[1]?.trim() ||
     "";
   const resumesRequired =
-    context.resumesRequired === true || /resume/i.test(task);
+    jobCtx.resumesRequired === true ||
+    context.resumesRequired === true ||
+    /resume/i.test(task);
+
+  // Prefer the Jobs-tab / Candidate File JD — never force Kimberley to re-paste it.
+  const roleDescription =
+    jobCtx.roleDescription ||
+    jobCtx.jobDescription ||
+    context.roleDescription ||
+    context.jobDescription ||
+    task;
+
+  const fromJd = skillsFromJobDescription(roleDescription, 8);
+  const requiredSkills = [
+    ...(Array.isArray(jobCtx.requiredSkills) ? jobCtx.requiredSkills : []),
+    ...(Array.isArray(context.requiredSkills) ? context.requiredSkills : []),
+    ...fromJd,
+  ].filter(Boolean);
 
   return mod.mariaSourceViaSignalHire({
     roleTitle,
     location,
-    roleDescription: task,
+    roleDescription,
+    jobDescription: roleDescription,
     resumesRequired,
     pushToGina: true,
-    pushTopN: context.pushTopN ?? 5,
-    requiredSkills: context.requiredSkills,
+    pushTopN: jobCtx.pushTopN ?? context.pushTopN ?? 5,
+    requiredSkills: requiredSkills.length ? [...new Set(requiredSkills)] : undefined,
+    preferredSkills: jobCtx.preferredSkills || context.preferredSkills,
+    seniority: jobCtx.seniority || context.seniority,
+    candidateFileId: jobCtx.candidateFileId || context.candidateFileId,
     task,
   });
+}
+
+async function runMichelleScreen(task, context = {}) {
+  const jobCtx = mergeJobContext(context, extractJobContext(context));
+  const files = await loadCandidateFiles();
+  let file = null;
+  if (jobCtx.candidateFileId && files?.getFile) {
+    file = await files.getFile(jobCtx.candidateFileId);
+  }
+
+  const roleTitle =
+    jobCtx.roleTitle || file?.job?.title || extractRoleFromTask(task) || "";
+  const location = jobCtx.location || file?.job?.location || "";
+  const roleDescription =
+    jobCtx.roleDescription ||
+    jobCtx.jobDescription ||
+    file?.job?.description ||
+    "";
+
+  if (!roleDescription && !roleTitle) {
+    throw new Error(
+      "Michelle needs the open job description. Select the job on the Jobs tab (or open the Candidate File) before asking her to screen — no need to paste the JD into chat.",
+    );
+  }
+
+  const questions = screeningQuestionsFromJob({
+    roleTitle,
+    roleDescription,
+    location,
+  });
+
+  let candidateFileId = jobCtx.candidateFileId || file?.id || null;
+  if (candidateFileId && files?.setScreeningQuestions) {
+    file = await files.setScreeningQuestions(
+      candidateFileId,
+      questions.map((q) => q.question),
+    );
+  }
+
+  const candidateCount = Array.isArray(file?.candidates)
+    ? file.candidates.filter((c) => (c.resumeText || c.resume_text || "").trim())
+        .length
+    : jobCtx.candidateCount || null;
+
+  return {
+    ok: true,
+    roleTitle,
+    location,
+    jobDescriptionUsed: Boolean(roleDescription),
+    jobDescriptionChars: roleDescription.length,
+    screeningQuestions: questions.map((q) => q.question),
+    screeningQuestionCount: questions.length,
+    candidateFileId,
+    candidateCount: candidateCount ?? undefined,
+    reviewedCount: candidateCount ?? undefined,
+    message: roleDescription
+      ? `Built ${questions.length} screening questions from the Jobs/Candidate File description for ${roleTitle || "the open role"}.`
+      : `Built ${questions.length} screening questions for ${roleTitle || "the open role"} (limited JD on file).`,
+  };
+}
+
+function extractRoleFromTask(task = "") {
+  return (
+    String(task).match(
+      /\b(?:screen|screening|review)\s+(?:the\s+)?(.+?)(?:\s+candidates?|\s+shortlist|\s+in\s+|$)/i,
+    )?.[1]?.trim() || ""
+  );
 }
 
 /**

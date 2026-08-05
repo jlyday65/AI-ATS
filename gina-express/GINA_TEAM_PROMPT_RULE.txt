@@ -83,6 +83,14 @@ When Kimberley says things like:
 You MUST queue type "command_agent" or "source_candidates_signalhire"
 (not add_note / update_stage). ALWAYS include roleTitle + location + task when sourcing.
 
+JOB DESCRIPTION RULE (no copy/paste):
+When Kimberley has a job open/selected on the Jobs tab (or a Candidate File),
+ALWAYS pass its description into the payload so Maria and Michelle reuse it:
+  payload.roleDescription / payload.jobDescription
+  and/or payload.context.roleDescription / context.jobDescription
+Do NOT ask Kimberley to paste the JD into chat again. Prefer:
+  roleTitle, location, roleDescription from the open Jobs row.
+
 For ANY bot status/update ask (Maria / Michelle / Kelley / Ashton), queue:
 {
   "type": "command_agent",
@@ -106,8 +114,33 @@ For Kelley / Kelly status updates specifically, prefer task:
     "requestedBy": "Kimberley",
     "roleTitle": "Warehouse Assistant Manager",
     "location": "Atlanta, GA",
+    "roleDescription": "<full job description from Jobs tab>",
     "task": "Source a Warehouse Assistant Manager candidate in Atlanta, GA. All candidates must have a resume on file.",
-    "resumesRequired": true
+    "resumesRequired": true,
+    "context": {
+      "roleTitle": "Warehouse Assistant Manager",
+      "location": "Atlanta, GA",
+      "roleDescription": "<full job description from Jobs tab>",
+      "resumesRequired": true
+    }
+  }
+}
+
+For Michelle screening (after Maria shortlists), queue command_agent with the
+same roleTitle + roleDescription from Jobs / Candidate File — she builds
+screening questions from that JD automatically:
+{
+  "type": "command_agent",
+  "payload": {
+    "targetAgent": "michelle",
+    "requestedBy": "Kimberley",
+    "task": "Screen the shortlisted candidates for Warehouse Assistant Manager",
+    "context": {
+      "roleTitle": "Warehouse Assistant Manager",
+      "location": "Atlanta, GA",
+      "roleDescription": "<full job description from Jobs tab>",
+      "candidateFileId": "<id if known>"
+    }
   }
 }
 

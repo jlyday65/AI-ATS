@@ -215,24 +215,41 @@ export function buildMichelleReply({ task, result } = {}) {
     result?.candidateCount ??
     (names.length || null);
   const isStatusUpdate =
-    /\b(update|status|progress|report|check[- ]?in)\b/i.test(String(task || ""));
+    /\b(update|status|progress|report|check[- ]?in)\b/i.test(String(task || "")) &&
+    !Array.isArray(result?.screeningQuestions);
+  const qs = Array.isArray(result?.screeningQuestions)
+    ? result.screeningQuestions
+    : [];
 
   return [
     `Michelle — ${isStatusUpdate ? "status" : "screening"} update (${stamp()})`,
     "",
     `Request: ${task}`,
     role ? `Role focus: ${role}` : null,
+    result?.jobDescriptionUsed
+      ? `Job description: used from Jobs tab / Candidate File (${result.jobDescriptionChars || 0} chars) — no paste required.`
+      : "Job description: not found on the open job — select the job on Jobs (or open the Candidate File) so screening questions match the requisition.",
     names.length ? `Named candidates: ${names.join(", ")}` : null,
     "",
     "Status:",
-    bullets([
-      reviewed != null
-        ? `Working a screen pass on ${reviewed} candidate(s) with resume text on file.`
-        : "Reviewing candidates with resume text on file against the open requisition.",
-      "Screening questions + answers go on the Candidate File (/candidate-file) for client review.",
-      "Will flag strong fits for Screening / Interview and note gaps for Kimberley.",
-      "No auto-reject without Kimberley approval on edge cases.",
-    ]),
+    bullets(
+      [
+        qs.length
+          ? `Generated ${qs.length} screening question(s) from the job description${result?.candidateFileId ? ` and saved them on Candidate File ${result.candidateFileId}` : ""}.`
+          : null,
+        reviewed != null
+          ? `Working a screen pass on ${reviewed} candidate(s) with resume text on file.`
+          : "Reviewing candidates with resume text on file against the open requisition.",
+        "Screening questions + answers stay on the Candidate File (/candidate-file) for client review.",
+        "Will flag strong fits for Screening / Interview and note gaps for Kimberley.",
+        "No auto-reject without Kimberley approval on edge cases.",
+      ].filter(Boolean),
+    ),
+    qs.length
+      ? ["", "Screening questions:", ...qs.map((q, i) => `${i + 1}. ${q}`)].join(
+          "\n",
+        )
+      : null,
     "",
     filedToBothBlock(),
     "",

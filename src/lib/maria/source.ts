@@ -11,6 +11,7 @@ import {
   getJob,
   listAtsConnections,
   listJobs,
+  updateJob,
 } from "@/lib/store";
 import type { JobRequisition } from "@/lib/types";
 
@@ -49,6 +50,11 @@ export function resolveJob(input: MariaSourceRequest): JobRequisition {
   const org = getDemoOrg();
   const title = (input.roleTitle || "").trim();
 
+  const incomingDescriptionEarly = (input.roleDescription || "").trim();
+  const incomingSkillsEarly = input.requiredSkills?.length
+    ? input.requiredSkills
+    : undefined;
+
   if (input.jobId) {
     const existing = getJob(input.jobId);
     if (!existing || existing.orgId !== org.id) {
@@ -56,6 +62,19 @@ export function resolveJob(input: MariaSourceRequest): JobRequisition {
     }
     // Only trust jobId when it matches the requested role (or no role given).
     if (!title || titlesMatch(existing.title, title)) {
+      const placeholder =
+        !existing.description ||
+        /^Role sourced by Maria for /i.test(existing.description) ||
+        existing.description.trim().length < 40;
+      if (placeholder && incomingDescriptionEarly) {
+        return updateJob(existing.id, {
+          description: incomingDescriptionEarly,
+          location: input.location || existing.location,
+          requiredSkills: incomingSkillsEarly || existing.requiredSkills,
+          preferredSkills: input.preferredSkills ?? existing.preferredSkills,
+          seniority: input.seniority ?? existing.seniority,
+        });
+      }
       return existing;
     }
     // Fall through — match/create by roleTitle.
@@ -66,7 +85,31 @@ export function resolveJob(input: MariaSourceRequest): JobRequisition {
   }
 
   const match = listJobs(org.id).find((job) => titlesMatch(job.title, title));
-  if (match) return match;
+  const incomingDescription = (input.roleDescription || "").trim();
+  const incomingSkills = input.requiredSkills?.length
+    ? input.requiredSkills
+    : undefined;
+
+  if (match) {
+    // Refresh placeholder / thin JDs when Gina sends the real Jobs-tab description.
+    const placeholder =
+      !match.description ||
+      /^Role sourced by Maria for /i.test(match.description) ||
+      match.description.trim().length < 40;
+    if (
+      (placeholder && incomingDescription) ||
+      (incomingSkills && (!match.requiredSkills?.length || match.requiredSkills[0] === "communication"))
+    ) {
+      return updateJob(match.id, {
+        description: incomingDescription || match.description,
+        location: input.location || match.location,
+        requiredSkills: incomingSkills || match.requiredSkills,
+        preferredSkills: input.preferredSkills ?? match.preferredSkills,
+        seniority: input.seniority ?? match.seniority,
+      });
+    }
+    return match;
+  }
 
   return createJob({
     orgId: org.id,
@@ -75,11 +118,8 @@ export function resolveJob(input: MariaSourceRequest): JobRequisition {
     location: input.location || "Remote — US",
     employmentType: "full_time",
     description:
-      input.roleDescription?.trim() ||
-      `Role sourced by Maria for ${title}.`,
-    requiredSkills: input.requiredSkills?.length
-      ? input.requiredSkills
-      : ["communication"],
+      incomingDescription || `Role sourced by Maria for ${title}.`,
+    requiredSkills: incomingSkills?.length ? incomingSkills : ["communication"],
     preferredSkills: input.preferredSkills ?? [],
     seniority: input.seniority,
     remote: (input.location || "").toLowerCase().includes("remote"),

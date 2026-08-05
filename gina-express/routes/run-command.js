@@ -174,16 +174,31 @@ function normalizeSourcePayload(payload = {}, body = {}) {
     extractTargetAgentFromText(body.taskHint || "") ||
     "";
 
+  const roleDescription =
+    flat.roleDescription ||
+    flat.jobDescription ||
+    flat.job_description ||
+    flat.context?.roleDescription ||
+    flat.context?.jobDescription ||
+    flat.job?.description ||
+    flat.selectedJob?.description ||
+    flat.activeJob?.description ||
+    (typeof flat.requirements === "string" ? flat.requirements : "") ||
+    "";
+
   return {
     ...flat,
     task,
     roleTitle,
     location,
     targetAgent,
-    roleDescription:
-      flat.roleDescription ||
-      (typeof flat.requirements === "string" ? flat.requirements : "") ||
-      task,
+    jobId: flat.jobId || flat.context?.jobId || flat.job?.id || flat.selectedJob?.id,
+    candidateFileId:
+      flat.candidateFileId || flat.context?.candidateFileId || undefined,
+    roleDescription: roleDescription || task,
+    jobDescription: roleDescription || undefined,
+    requiredSkills: flat.requiredSkills || flat.context?.requiredSkills,
+    preferredSkills: flat.preferredSkills || flat.context?.preferredSkills,
     resumesRequired,
     _debugKeys: Object.keys(flat),
     _taskPreview: String(task || "").slice(0, 240),
@@ -345,8 +360,26 @@ router.post("/run-command", async (req, res) => {
         executeNow: true,
         context: {
           ...(payload.context || {}),
-          roleTitle: payload.roleTitle,
-          location: payload.location,
+          jobId: payload.jobId || payload.context?.jobId,
+          candidateFileId:
+            payload.candidateFileId || payload.context?.candidateFileId,
+          roleTitle: payload.roleTitle || payload.context?.roleTitle,
+          location: payload.location || payload.context?.location,
+          roleDescription:
+            payload.roleDescription ||
+            payload.jobDescription ||
+            payload.context?.roleDescription ||
+            payload.context?.jobDescription,
+          jobDescription:
+            payload.jobDescription ||
+            payload.roleDescription ||
+            payload.context?.jobDescription ||
+            payload.context?.roleDescription,
+          requiredSkills:
+            payload.requiredSkills || payload.context?.requiredSkills,
+          preferredSkills:
+            payload.preferredSkills || payload.context?.preferredSkills,
+          seniority: payload.seniority || payload.context?.seniority,
           resumesRequired: payload.resumesRequired,
         },
       });

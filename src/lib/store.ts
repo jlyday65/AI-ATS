@@ -258,6 +258,30 @@ export function createJob(
   return job;
 }
 
+export function updateJob(
+  jobId: string,
+  patch: Partial<
+    Pick<
+      JobRequisition,
+      | "title"
+      | "description"
+      | "location"
+      | "requiredSkills"
+      | "preferredSkills"
+      | "seniority"
+      | "department"
+      | "status"
+      | "remote"
+    >
+  >,
+): JobRequisition {
+  const job = getJob(jobId);
+  if (!job) throw new Error(`Unknown jobId: ${jobId}`);
+  Object.assign(job, patch);
+  touch();
+  return job;
+}
+
 export function listAtsConnections(orgId: string): AtsConnection[] {
   return db().atsConnections.filter((connection) => connection.orgId === orgId);
 }
