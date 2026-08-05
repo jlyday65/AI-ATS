@@ -17,7 +17,9 @@ fi
 
 echo "== Pull AI-ATS kit =="
 cd "$AI_ATS"
-git pull origin cursor/candidate-file-jobs-board-4f1f || git pull || true
+git pull origin cursor/ai-ats-b2b-platform-4f1f || \
+  git pull origin cursor/candidate-file-jobs-board-4f1f || \
+  git pull || true
 
 GINA_BACKEND="$ROOT"
 if [[ -f "$ROOT/gina-backend/server.js" ]]; then
