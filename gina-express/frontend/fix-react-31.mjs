@@ -168,6 +168,14 @@ if (src !== beforeSel) {
   console.log("Softened selectedJob/activeJob || fallbacks");
 }
 
+// Any JSX child that is literally `|| {}` → `|| null` (React #31 smoking gun)
+const beforeEmpty = src;
+src = src.replace(/(\|\|\s*)\{\s*\}(\s*)\}/g, "$1null$2}");
+src = src.replace(/(\?\s*)\{\s*\}(\s*:)/g, "$1null$2");
+if (src !== beforeEmpty) {
+  console.log("Replaced || {} / ? {} JSX fallbacks with null");
+}
+
 // Soft-replace JSX that dumps requiredSkills / preferredSkills objects
 src = src.replace(
   /\{(\s*)((?:job|selectedJob|activeJob|j|currentJob)\.(?:requiredSkills|preferredSkills))(\s*)\}/g,

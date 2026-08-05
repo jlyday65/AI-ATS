@@ -255,17 +255,8 @@
     } catch {
       /* optional */
     }
-    // Select without forcing a full object into id-typed state (React #31).
-    try {
-      if (typeof setSelectedJobId === "function") setSelectedJobId(saved.id);
-      else if (typeof setSelectedJob === "function") {
-        // Prefer id when existing selection looks like a string id
-        setSelectedJob(saved.id);
-      } else if (typeof setActiveJob === "function") setActiveJob(saved);
-      else if (typeof setCurrentJob === "function") setCurrentJob(saved);
-    } catch {
-      /* optional */
-    }
+    // Do NOT call setSelectedJob/setActiveJob here — Gina's selectedJob state
+    // may be id-typed or default to {}, and writing a job object causes React #31.
     return saved;
   }
 
