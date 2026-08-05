@@ -11,6 +11,10 @@
 import fs from "fs";
 import path from "path";
 import { createRequire } from "module";
+import { spawnSync } from "child_process";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const rootArg = String(process.argv[2] || "")
   .trim()
@@ -40,19 +44,20 @@ if (!fs.existsSync(appPath)) {
   process.exit(2);
 }
 
+// Delegate App default-export repair to the dedicated fixer when needed
 let app = fs.readFileSync(appPath, "utf8");
-if (!/export\s+default\s+function\s+App\b/.test(app) && !/export\s+default\s+App\b/.test(app)) {
-  // Try to restore default export if App exists but isn't default-exported
-  if (/function\s+App\s*\(/.test(app) && !/export\s+default/.test(app)) {
-    app = app.replace(/function\s+App\s*\(/, "export default function App(");
-    fs.writeFileSync(appPath, app, "utf8");
-    console.log("Restored: export default function App");
-  } else {
-    console.error(
-      "App.jsx has no `export default function App` — refuse to guess. Open App.jsx.",
-    );
-    process.exit(2);
-  }
+if (
+  !/export\s+default\s+function\s+App\b/.test(app) &&
+  !/export\s+default\s+App\b/.test(app)
+) {
+  console.log("App default export missing — running fix-app-default-export.mjs");
+  const r = spawnSync(
+    process.execPath,
+    [path.join(__dirname, "fix-app-default-export.mjs"), ginaDir],
+    { stdio: "inherit" },
+  );
+  if (r.status !== 0) process.exit(r.status || 2);
+  app = fs.readFileSync(appPath, "utf8");
 }
 
 // Ensure helpers are NOT accidentally default-exported
