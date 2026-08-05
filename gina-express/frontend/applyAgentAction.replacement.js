@@ -228,6 +228,75 @@
     }).length;
   }
 
+  /**
+   * Resolve the Gina Jobs-tab id for a role title.
+   * View Candidates filters Board with candidate.jobId === job.id — title alone is not enough.
+   */
+  function resolveGinaJobIdForTitle(title = "", preferredId = "") {
+    if (preferredId) return String(preferredId);
+    const t = String(title || "").trim().toLowerCase();
+    if (!t) return null;
+    try {
+      if (typeof window !== "undefined") {
+        for (const key of ["__ginaLastJobUpsert", "__ginaActiveJob"]) {
+          const job = window[key];
+          if (
+            job &&
+            String(job.title || job.name || "")
+              .trim()
+              .toLowerCase() === t &&
+            job.id
+          ) {
+            return String(job.id);
+          }
+        }
+      }
+    } catch {
+      /* optional */
+    }
+    const list = Array.isArray(jobs) ? jobs : [];
+    const hit = list.find(
+      (j) =>
+        String(j?.title || j?.name || "")
+          .trim()
+          .toLowerCase() === t,
+    );
+    return hit?.id ? String(hit.id) : null;
+  }
+
+  /**
+   * Link Board cards to a Jobs-tab row so "View candidates" finds them.
+   * Matches by jobTitle/role when jobId is missing or points at a foreign id.
+   */
+  function linkBoardCandidatesToJob(title = "", jobId = "") {
+    const t = String(title || "").trim().toLowerCase();
+    const id = String(jobId || "").trim();
+    if (!t || !id || typeof setCandidates !== "function") return 0;
+    let linked = 0;
+    setCandidates((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      let changed = false;
+      const next = list.map((c) => {
+        if (!c) return c;
+        const role = String(c.jobTitle || c.role || c.title || "")
+          .trim()
+          .toLowerCase();
+        if (role !== t) return c;
+        if (String(c.jobId || "") === id) return c;
+        linked += 1;
+        changed = true;
+        return {
+          ...c,
+          jobId: id,
+          jobTitle: c.jobTitle || title,
+          role: c.role || title,
+        };
+      });
+      return changed ? next : list;
+    });
+    return linked;
+  }
+
   /** True when description is our thin Gina stub, not Kimberley's real JD. */
   function isThinJobDescription(text = "") {
     const s = String(text || "").trim();
@@ -879,7 +948,9 @@
             roleTitle: mariaJob.title || fileJob.title,
             roleDescription: mariaDesc || fileJob.description,
             location: mariaJob.location || fileJob.location,
-            jobId: mariaJob.id || fileJob.id,
+            // Do not stamp SignalHire's job id onto Gina Jobs rows — View
+            // candidates keys off Gina job.id ↔ candidate.jobId.
+            jobId: undefined,
             source:
               type === "create_candidate_file"
                 ? "candidate_file"
@@ -945,6 +1016,12 @@
           data.result?.roleTitle ||
           payload?.roleTitle ||
           "";
+        // Prefer the Gina Jobs-tab id (not a foreign SignalHire id) so
+        // Jobs → View candidates (filters by candidate.jobId === job.id) works.
+        const ginaJobIdForBoard = resolveGinaJobIdForTitle(
+          jobTitleForBoard,
+          jobNote?.id || "",
+        );
         if (Array.isArray(shortlist) && shortlist.length) {
           for (const c of shortlist.slice(0, 8)) {
             const name = c?.name || c?.fullName;
@@ -962,6 +1039,7 @@
                 name,
                 email: c.email || "",
                 phone: c.phone || "",
+                jobId: ginaJobIdForBoard || undefined,
                 jobTitle: jobTitleForBoard || c.jobTitle || c.role || "",
                 role: jobTitleForBoard || c.jobTitle || c.role || "",
                 headline: c.headline || "",
@@ -1111,10 +1189,18 @@
               description: bestDescription,
               roleDescription: bestDescription,
               jobDescription: bestDescription,
-              jobId: jobNote?.id || mariaJob.id || fileJob.id,
+              // Keep Gina job id stable — do not replace with SignalHire job id.
+              jobId: jobNote?.id || ginaJobIdForBoard || undefined,
               source: "maria_sourced_headcount",
               task: taskHint,
             }) || jobNote;
+        }
+        // View Candidates counts/filters by jobId — link Board cards to this Jobs row.
+        const linkJobId =
+          jobWithHc?.id || ginaJobIdForBoard || resolveGinaJobIdForTitle(roleForHc);
+        let linkedToJob = 0;
+        if (roleForHc && linkJobId) {
+          linkedToJob = linkBoardCandidatesToJob(roleForHc, linkJobId);
         }
         // Final guarantee: Jobs row always carries the richest JD we have.
         if (
@@ -1146,6 +1232,8 @@
           jobWithHc && !isThinJobDescription(jobWithHc.description || bestDescription)
             ? " · JD saved"
             : "";
+        const linkNote =
+          linkedToJob > 0 ? ` · Linked ${linkedToJob} to View candidates` : "";
         return {
           ok: true,
           summary:
@@ -1156,12 +1244,14 @@
             (jobWithHc ? ` · Jobs: ${jobWithHc.title}` : "") +
             hcNote +
             jdNote +
-            boardNote,
+            boardNote +
+            linkNote,
           kimberleyNoteId: data.kimberleyNoteId || null,
           reply: data.reply || null,
           job: jobWithHc || null,
           boardImported: totalBoard,
           headcount: headcount || null,
+          linkedToJob,
         };
       }
 
@@ -1215,28 +1305,32 @@
           payload.resumeText || payload.resume_text || payload.summary || "";
         // Board cards often arrive before Jobs — ensure the role exists on Jobs tab.
         // Do NOT use resumeText as the job description.
-        if (payload.jobTitle || payload.role) {
-          upsertJobOnBoard({
-            title: payload.jobTitle || payload.role,
-            roleTitle: payload.jobTitle || payload.role,
+        const importRoleTitle = payload.jobTitle || payload.role || "";
+        let ensuredJob = null;
+        if (importRoleTitle) {
+          ensuredJob = upsertJobOnBoard({
+            title: importRoleTitle,
+            roleTitle: importRoleTitle,
             location: payload.location || "",
             description:
               payload.roleDescription ||
               payload.jobDescription ||
               "",
-            jobId: payload.jobId,
+            // Only pass jobId when it already belongs to a Gina Jobs row.
+            jobId: resolveGinaJobIdForTitle(importRoleTitle, "") || undefined,
             source: "import_candidate",
-            task: `Candidates imported for ${payload.jobTitle || payload.role}`,
+            task: `Candidates imported for ${importRoleTitle}`,
           });
         }
-        let jobId = payload.jobId || null;
-        if (!jobId && payload.jobTitle) {
-          const job = (Array.isArray(jobs) ? jobs : []).find(
-            (j) =>
-              (j.title || "").trim().toLowerCase() ===
-              String(payload.jobTitle).trim().toLowerCase(),
-          );
-          if (job) jobId = job.id;
+        let jobId =
+          payload.jobId ||
+          ensuredJob?.id ||
+          resolveGinaJobIdForTitle(importRoleTitle, "") ||
+          null;
+        // If payload.jobId is a foreign SignalHire id, prefer the Gina Jobs row id.
+        if (importRoleTitle) {
+          const ginaId = resolveGinaJobIdForTitle(importRoleTitle, ensuredJob?.id || "");
+          if (ginaId) jobId = ginaId;
         }
         const sourcedFrom = Array.isArray(payload.sourcedFrom)
           ? payload.sourcedFrom

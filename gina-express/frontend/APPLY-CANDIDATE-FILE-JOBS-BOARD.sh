@@ -35,9 +35,10 @@ cp -f "$AI_ATS/gina-express/routes/run-command.js" "$GINA_BACKEND/routes/"
 cp -f "$AI_ATS/gina-express/GINA_TEAM_PROMPT_RULE.txt" "$GINA_BACKEND/" 2>/dev/null || true
 # applyAgentAction.replacement.js is read by patch-check-for-actions.mjs from AI-ATS
 
-echo "== Re-inject applyAgentAction + Jobs headcount/questions into App.jsx =="
+echo "== Re-inject applyAgentAction + Jobs headcount/questions/View candidates =="
 node "$AI_ATS/gina-express/frontend/patch-jobs-headcount.mjs" "$GINA_BACKEND"
 node "$AI_ATS/gina-express/frontend/patch-jobs-edit-questions.mjs" "$GINA_BACKEND"
+node "$AI_ATS/gina-express/frontend/patch-view-candidates.mjs" "$GINA_BACKEND"
 
 FRONTEND="$GINA_BACKEND/frontend"
 if [[ ! -f "$FRONTEND/package.json" ]]; then
@@ -74,6 +75,7 @@ echo "Done. After Railway redeploy:"
 echo "  1) Hard-refresh Gina ATS (cache bust — confirm new dist hash)"
 echo "  2) Re-queue Candidate File + full JD OR ask Gina to upsert the Detroit role"
 echo "  3) Agent → Check for actions"
-echo "  4) Jobs tab should list Auto Production Floor Supervisor with JD + Headcount"
-echo "  Debug: window.__ginaLastJobUpsert → expect .description (full JD) and .headcount"
+echo "  4) Jobs tab: JD + Headcount + candidate count"
+echo "  5) Jobs → View candidates should open Board filtered to that role's cards"
+echo "  Debug: window.__ginaLastJobUpsert → .description, .headcount, .id"
 echo "  Scott Lewis / Noah Ibrahim skips are stale update_stage rows — ignore or clear them."
