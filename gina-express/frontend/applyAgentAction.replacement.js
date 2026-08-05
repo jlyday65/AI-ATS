@@ -143,6 +143,26 @@
     return Boolean(name) && BOT_NAMES.has(name);
   }
 
+  function normalizeJobSkills(v) {
+    if (Array.isArray(v)) {
+      return v
+        .map((x) =>
+          typeof x === "string"
+            ? x
+            : x && typeof x === "object"
+              ? String(x.name || x.label || x.skill || "")
+              : String(x || ""),
+        )
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    if (typeof v === "string" && v.trim()) {
+      return v.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    }
+    // {} or other junk must never land on a Jobs row (React #31 if rendered)
+    return [];
+  }
+
   /** Upsert a Jobs-tab row from Maria / chat JD so Kimberley does not re-enter it. */
   function upsertJobOnBoard(raw = {}) {
     if (typeof setJobs !== "function") return null;
@@ -161,6 +181,12 @@
     const location = String(
       raw.location || raw.context?.location || "",
     ).trim();
+    const requiredSkills = normalizeJobSkills(
+      raw.requiredSkills ?? raw.context?.requiredSkills,
+    );
+    const preferredSkills = normalizeJobSkills(
+      raw.preferredSkills ?? raw.context?.preferredSkills,
+    );
     const now = new Date().toISOString();
     let saved = null;
     setJobs((prev) => {
@@ -176,18 +202,29 @@
         const thin =
           !prevJob.description ||
           String(prevJob.description).trim().length < 40;
+        // Do NOT spread prevJob wholesale — old rows may carry context:{} etc.
         saved = {
-          ...prevJob,
+          id: prevJob.id,
           title,
           name: title,
-          location: location || prevJob.location || "",
-          description: description || prevJob.description || "",
-          jobDescription: description || prevJob.jobDescription || prevJob.description || "",
-          requiredSkills: raw.requiredSkills || prevJob.requiredSkills || [],
-          preferredSkills: raw.preferredSkills || prevJob.preferredSkills || [],
-          status: prevJob.status || "open",
+          location: location || String(prevJob.location || ""),
+          description:
+            description || String(prevJob.description || prevJob.jobDescription || ""),
+          jobDescription:
+            description ||
+            String(prevJob.jobDescription || prevJob.description || ""),
+          requiredSkills:
+            requiredSkills.length > 0
+              ? requiredSkills
+              : normalizeJobSkills(prevJob.requiredSkills),
+          preferredSkills:
+            preferredSkills.length > 0
+              ? preferredSkills
+              : normalizeJobSkills(prevJob.preferredSkills),
+          status: String(prevJob.status || "open"),
+          source: prevJob.source || raw.source || "gina_chat",
+          createdAt: prevJob.createdAt || now,
           updatedAt: now,
-          // Prefer richer incoming JD
           ...(thin && description ? { description, jobDescription: description } : {}),
         };
         const next = list.slice();
@@ -201,8 +238,8 @@
         location,
         description,
         jobDescription: description,
-        requiredSkills: raw.requiredSkills || [],
-        preferredSkills: raw.preferredSkills || [],
+        requiredSkills,
+        preferredSkills,
         status: "open",
         source: raw.source || "gina_chat",
         createdAt: now,
@@ -218,10 +255,13 @@
     } catch {
       /* optional */
     }
-    // Select the job when helpers exist so Maria/Michelle see it next.
+    // Select without forcing a full object into id-typed state (React #31).
     try {
-      if (typeof setSelectedJob === "function") setSelectedJob(saved);
-      else if (typeof setActiveJob === "function") setActiveJob(saved);
+      if (typeof setSelectedJobId === "function") setSelectedJobId(saved.id);
+      else if (typeof setSelectedJob === "function") {
+        // Prefer id when existing selection looks like a string id
+        setSelectedJob(saved.id);
+      } else if (typeof setActiveJob === "function") setActiveJob(saved);
       else if (typeof setCurrentJob === "function") setCurrentJob(saved);
     } catch {
       /* optional */
