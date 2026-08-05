@@ -22,9 +22,13 @@ echo "If this still says index-DVEQEwJq.js, the build did not change — stop an
 echo ""
 
 cd "$(dirname "$GINA_DIR")"
-git add gina-backend/frontend/src/App.jsx gina-backend/frontend/dist gina-backend/frontend/index.html gina-backend/frontend/src/main.jsx || true
+# dist is often gitignored — Railway serves dist, so force-add is required
+git add gina-backend/frontend/src/App.jsx gina-backend/frontend/index.html gina-backend/frontend/src/main.jsx || true
+git add -f gina-backend/frontend/dist
 git status
-git commit -m "Fix React #31: sanitize Jobs data, stop selecting job objects" || echo "(nothing new to commit — check if dist hash changed)"
+echo "Staged dist JS files:"
+git diff --cached --name-only | grep 'frontend/dist' || echo "WARNING: dist not staged — Railway will keep the old bundle"
+git commit -m "Fix React #31: sanitize Jobs data + deploy dist bundle" || echo "(nothing new to commit — check if dist hash changed)"
 git pull origin main --rebase
 git push origin main
 
