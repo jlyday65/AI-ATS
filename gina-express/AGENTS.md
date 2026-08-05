@@ -440,30 +440,29 @@ https://some-random-words.ngrok-free.dev
 
 ### If the URL is `*.ngrok-free.dev` and you see ERR_NGROK_3200 / offline
 
-The tunnel is down. Gina cannot reach your laptop until both AI-ATS and ngrok are running.
-
-**Terminal A — AI-ATS:**
-```bash
-cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f && npm run dev
-```
-
-**Terminal B — tunnel:**
-```bash
-ngrok http 3000
-```
-
-Copy the `https://….ngrok-free.dev` URL. Probe it:
+The laptop tunnel is down. **Preferred fix:** stop using ngrok — deploy AI-ATS
+once (Vercel) and set Gina `SIGNALHIRE_BASE_URL` to that permanent URL.
+See [`docs/SIGNALHIRE-ALWAYS-ON.md`](../docs/SIGNALHIRE-ALWAYS-ON.md).
 
 ```bash
-node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-SUBDOMAIN.ngrok-free.dev
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+npx vercel --prod
+node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-AI-ATS.vercel.app
 ```
 
-Expect JSON with `"agent":"maria"`. Then set Gina Railway:
+Gina Railway (once):
 
-- `SIGNALHIRE_BASE_URL=https://YOUR-SUBDOMAIN.ngrok-free.dev` (no trailing slash; update if ngrok gave you a new subdomain)
-- `RELAY_SECRET` = same value as SignalHire `/ats`
+- `SIGNALHIRE_BASE_URL=https://YOUR-AI-ATS.vercel.app`
+- `RELAY_SECRET` = same as Vercel / SignalHire
 
-Redeploy Gina, leave both terminals running, then Check for actions again.
+No Mac sign-in, no ngrok. Check for actions only needs that URL online.
+
+Temporary laptop workaround (not seamless):
+
+```bash
+cd ~/AI-ATS && npm run dev   # Terminal A
+ngrok http 3000              # Terminal B — update SIGNALHIRE_BASE_URL if subdomain changes
+```
 
 ### If you use a permanent host (Vercel)
 

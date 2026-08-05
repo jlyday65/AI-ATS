@@ -6,14 +6,23 @@ import {
   SESSION_COOKIE,
   SESSION_TIMEOUT_COOKIE,
   SESSION_TIMEOUT_OPTIONS,
+  livePasswordGateEnabled,
   normalizeAtsMode,
   normalizeSessionTimeout,
+  sessionTimeoutLabel,
 } from "@/lib/settings";
 import { getAppSettings, updateAppSettings } from "@/lib/store";
 
 const schema = z.object({
   atsMode: z.enum(["test", "live"]),
-  sessionTimeoutMinutes: z.union([z.literal(5), z.literal(10), z.literal(15)]),
+  sessionTimeoutMinutes: z.union([
+    z.literal(0),
+    z.literal(5),
+    z.literal(10),
+    z.literal(15),
+    z.literal(60),
+    z.literal(480),
+  ]),
 });
 
 export async function GET() {
@@ -25,6 +34,9 @@ export async function GET() {
       sessionTimeoutMinutes: SESSION_TIMEOUT_OPTIONS,
     },
     livePasswordConfigured: Boolean(resolveAppPassword()),
+    livePasswordGateEnabled: livePasswordGateEnabled(
+      settings.sessionTimeoutMinutes,
+    ),
   });
 }
 
@@ -35,11 +47,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  if (parsed.data.atsMode === "live" && !resolveAppPassword()) {
+  const timeout = normalizeSessionTimeout(parsed.data.sessionTimeoutMinutes);
+  const gateOn = livePasswordGateEnabled(timeout);
+
+  if (parsed.data.atsMode === "live" && gateOn && !resolveAppPassword()) {
     return NextResponse.json(
       {
         error:
-          "Set SIGNALHIRE_APP_PASSWORD in .env.local before switching to live mode.",
+          "Set SIGNALHIRE_APP_PASSWORD in .env.local before enabling a live password timeout — or choose Never (no password gate).",
         hint: "app_password_not_configured",
       },
       { status: 400 },
@@ -48,9 +63,7 @@ export async function POST(request: Request) {
 
   const settings = updateAppSettings({
     atsMode: normalizeAtsMode(parsed.data.atsMode),
-    sessionTimeoutMinutes: normalizeSessionTimeout(
-      parsed.data.sessionTimeoutMinutes,
-    ),
+    sessionTimeoutMinutes: timeout,
   });
 
   const response = NextResponse.json({
@@ -58,7 +71,9 @@ export async function POST(request: Request) {
     settings,
     message:
       settings.atsMode === "live"
-        ? `Live mode on — password re-entry every ${settings.sessionTimeoutMinutes} min of idle time.`
+        ? gateOn
+          ? `Live mode on — password re-entry every ${sessionTimeoutLabel(settings.sessionTimeoutMinutes)} of idle time.`
+          : "Live mode on — no browser password gate (seamless). Maria still uses RELAY_SECRET."
         : "Test mode on — demo labels (signalhire-test / ats-test); no password gate.",
   });
 
@@ -73,12 +88,14 @@ export async function POST(request: Request) {
     maxAge: 60 * 60 * 24 * 365,
   });
 
-  // Switching mode or timeout clears the live session so the client re-auths.
-  response.cookies.set(SESSION_COOKIE, "", {
-    httpOnly: true,
-    path: "/",
-    maxAge: 0,
-  });
+  // Only force re-auth when a password gate is actually enabled.
+  if (gateOn) {
+    response.cookies.set(SESSION_COOKIE, "", {
+      httpOnly: true,
+      path: "/",
+      maxAge: 0,
+    });
+  }
 
   return response;
 }

@@ -152,13 +152,19 @@ export interface SyncEvent {
 /** SignalHire workspace operating mode. */
 export type AtsMode = "test" | "live";
 
-/** Idle minutes before live-mode password re-entry. */
-export type SessionTimeoutMinutes = 5 | 10 | 15;
+/**
+ * Idle minutes before live-mode password re-entry.
+ * `0` = never (no password gate — recommended for daily ATS work).
+ */
+export type SessionTimeoutMinutes = 0 | 5 | 10 | 15 | 60 | 480;
 
 export interface AppSettings {
-  /** test = demo sourcing + ats-test tags; live = production labels + password gate */
+  /** test = demo sourcing + ats-test tags; live = production labels (+ optional password gate) */
   atsMode: AtsMode;
-  /** Client-configurable session lockout in live mode */
+  /**
+   * Idle minutes before live password re-entry.
+   * Use `0` for never — Check for actions / Maria API never needed the browser login anyway.
+   */
   sessionTimeoutMinutes: SessionTimeoutMinutes;
   updatedAt?: string;
 }

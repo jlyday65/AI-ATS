@@ -3,6 +3,7 @@ import {
   ATS_MODE_COOKIE,
   SESSION_COOKIE,
   SESSION_TIMEOUT_COOKIE,
+  livePasswordGateEnabled,
   normalizeAtsMode,
   normalizeSessionTimeout,
   readAtsModeFromEnv,
@@ -44,6 +45,24 @@ export async function middleware(request: NextRequest) {
   const timeout = normalizeSessionTimeout(
     request.cookies.get(SESSION_TIMEOUT_COOKIE)?.value,
   );
+
+  // Seamless live: timeout 0 (Never) or SIGNALHIRE_DISABLE_LIVE_PASSWORD=1
+  // skips browser password. Maria/Check for actions already use /api/maria + RELAY_SECRET.
+  if (!livePasswordGateEnabled(timeout)) {
+    const response = NextResponse.next();
+    response.cookies.set(ATS_MODE_COOKIE, normalizeAtsMode(mode), {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+    response.cookies.set(SESSION_TIMEOUT_COOKIE, String(timeout), {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+    return response;
+  }
+
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const verified = await verifySessionToken(token);
 
@@ -68,7 +87,8 @@ export async function middleware(request: NextRequest) {
   // Sliding expiry: refresh on each authenticated page/API hit.
   const response = NextResponse.next();
   const refreshed = await refreshSessionToken(timeout);
-  const opts = sessionCookieOptions(timeout * 60);
+  const maxAgeSeconds = timeout === 0 ? 60 * 60 * 24 * 365 : timeout * 60;
+  const opts = sessionCookieOptions(maxAgeSeconds);
   response.cookies.set(opts.name, refreshed, opts);
   response.cookies.set(ATS_MODE_COOKIE, normalizeAtsMode(mode), {
     path: "/",

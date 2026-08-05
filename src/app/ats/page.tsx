@@ -31,7 +31,9 @@ export default function AtsPage() {
           Current mode:{" "}
           <span className="font-semibold capitalize text-ink">{settings.atsMode}</span>
           {settings.atsMode === "live"
-            ? ` · re-enter password after ${settings.sessionTimeoutMinutes} min idle`
+            ? settings.sessionTimeoutMinutes === 0
+              ? " · no password gate (seamless)"
+              : ` · re-enter password after ${settings.sessionTimeoutMinutes} min idle`
             : " · demo tags, no password gate"}
           .
         </p>

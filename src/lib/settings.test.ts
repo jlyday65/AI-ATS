@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  livePasswordGateEnabled,
   modeTagForMode,
   normalizeAppSettings,
   normalizeAtsMode,
@@ -17,10 +18,18 @@ describe("ATS mode settings", () => {
   it("normalizes mode and timeout options", () => {
     assert.equal(normalizeAtsMode("live"), "live");
     assert.equal(normalizeAtsMode("nope"), "test");
+    assert.equal(normalizeSessionTimeout(0), 0);
     assert.equal(normalizeSessionTimeout(5), 5);
     assert.equal(normalizeSessionTimeout(10), 10);
     assert.equal(normalizeSessionTimeout(15), 15);
-    assert.equal(normalizeSessionTimeout(99), 15);
+    assert.equal(normalizeSessionTimeout(60), 60);
+    assert.equal(normalizeSessionTimeout(480), 480);
+    assert.equal(normalizeSessionTimeout(99), 0);
+  });
+
+  it("disables live password gate when timeout is Never (0)", () => {
+    assert.equal(livePasswordGateEnabled(0), false);
+    assert.equal(livePasswordGateEnabled(15), true);
   });
 
   it("labels Maria pushes by mode", () => {
@@ -33,7 +42,7 @@ describe("ATS mode settings", () => {
   it("fills defaults for partial settings", () => {
     const settings = normalizeAppSettings({});
     assert.equal(settings.atsMode, "test");
-    assert.equal(settings.sessionTimeoutMinutes, 15);
+    assert.equal(settings.sessionTimeoutMinutes, 0);
   });
 });
 
@@ -58,6 +67,12 @@ describe("live session tokens", () => {
     const fifteen = await createSessionToken(15, now);
     assert.equal((await verifySessionToken(fifteen, now + 14 * 60_000)).ok, true);
     assert.equal((await verifySessionToken(fifteen, now + 16 * 60_000)).ok, false);
+  });
+
+  it("never timeout mints a long-lived token", async () => {
+    const now = Date.now();
+    const token = await createSessionToken(0, now);
+    assert.equal((await verifySessionToken(token, now + 30 * 24 * 60 * 60_000)).ok, true);
   });
 
   it("compares passwords safely", () => {

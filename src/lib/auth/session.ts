@@ -64,7 +64,10 @@ export async function createSessionToken(
   timeoutMinutes: SessionTimeoutMinutes,
   nowMs = Date.now(),
 ): Promise<string> {
-  const expiresAt = nowMs + timeoutMinutes * 60_000;
+  // 0 = never gate — still mint a long-lived token if login is used.
+  const ttlMs =
+    timeoutMinutes === 0 ? 365 * 24 * 60 * 60_000 : timeoutMinutes * 60_000;
+  const expiresAt = nowMs + ttlMs;
   const payload = `${nowMs}.${expiresAt}`;
   return `${payload}.${await sign(payload)}`;
 }

@@ -57,10 +57,31 @@ Jobs APIs are **not** people search. Use `/api/maria/market` for market research
 3. Optional dry-run: open `/maria` → Ask Maria to source.
 4. In Gina ATS → Agent → **Check for actions**.
 
-## Local tunnel (ngrok) — keep it alive
+## Always-on SignalHire (recommended — no ngrok, no constant sign-in)
 
-Maria on Railway Gina calls your laptop via `SIGNALHIRE_BASE_URL`.
-If ngrok shows **ERR_NGROK_3200 / endpoint is offline**, Check for actions will 404.
+Check for actions failed with `ngrok tunnel is OFFLINE` because Gina calls
+`SIGNALHIRE_BASE_URL` for Maria. Laptop tunnels die when the Mac sleeps.
+
+**Do this once:** deploy AI-ATS to Vercel and point Gina at that URL.
+Full steps: [`docs/SIGNALHIRE-ALWAYS-ON.md`](../docs/SIGNALHIRE-ALWAYS-ON.md).
+
+```bash
+cd ~/AI-ATS && npx vercel --prod
+# Vercel env: RELAY_SECRET (+ provider keys). Same RELAY_SECRET as Gina.
+node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-AI-ATS.vercel.app
+```
+
+Gina Railway:
+
+- `SIGNALHIRE_BASE_URL=https://YOUR-AI-ATS.vercel.app`
+- `RELAY_SECRET` = same as Vercel
+
+SignalHire UI password: on `/ats` set **Live password re-entry → Never**, or
+`SIGNALHIRE_DISABLE_LIVE_PASSWORD=1`. Check for actions never used that login.
+
+## Local tunnel (ngrok) — only for temporary laptop testing
+
+If you must use the Mac instead of Vercel:
 
 ```bash
 # Terminal A
