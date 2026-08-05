@@ -92,6 +92,19 @@ if (!src.includes(MARKER) && src.includes("function sanitizeGinaJob(")) {
       job.pipelineCount,
   );
   const openings = asCount(job.openings ?? job.positions);
+  const questions = Array.isArray(job.questions)
+    ? job.questions
+        .map((q) =>
+          typeof q === "string"
+            ? q
+            : q && typeof q === "object"
+              ? String(q.text || q.question || q.label || "")
+              : String(q || ""),
+        )
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+  const hc = headcount != null ? headcount : 1;
   return {
     id: job.id || \`job_\${Date.now().toString(36)}\`,
     title,
@@ -101,19 +114,19 @@ if (!src.includes(MARKER) && src.includes("function sanitizeGinaJob(")) {
     jobDescription: String(job.jobDescription || job.description || ""),
     requiredSkills: asSkills(job.requiredSkills),
     preferredSkills: asSkills(job.preferredSkills),
+    questions,
     status: String(job.status || "open"),
     source: job.source != null ? String(job.source) : undefined,
     createdAt: job.createdAt || undefined,
     updatedAt: job.updatedAt || undefined,
-    ...(headcount != null
-      ? {
-          headcount,
-          Headcount: headcount,
-          sourcedCount: headcount,
-          candidateCount: headcount,
-          pipelineCount: headcount,
-        }
-      : {}),
+    createdDate:
+      job.createdDate ||
+      (job.createdAt ? String(job.createdAt).slice(0, 10) : undefined),
+    headcount: hc,
+    Headcount: hc,
+    sourcedCount: headcount,
+    candidateCount: headcount,
+    pipelineCount: headcount,
     ...(openings != null ? { openings, positions: openings } : {}),
   };
 }`;

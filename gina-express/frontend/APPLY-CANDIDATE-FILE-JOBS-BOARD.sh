@@ -35,8 +35,9 @@ cp -f "$AI_ATS/gina-express/routes/run-command.js" "$GINA_BACKEND/routes/"
 cp -f "$AI_ATS/gina-express/GINA_TEAM_PROMPT_RULE.txt" "$GINA_BACKEND/" 2>/dev/null || true
 # applyAgentAction.replacement.js is read by patch-check-for-actions.mjs from AI-ATS
 
-echo "== Re-inject applyAgentAction + Jobs headcount into App.jsx =="
+echo "== Re-inject applyAgentAction + Jobs headcount/questions into App.jsx =="
 node "$AI_ATS/gina-express/frontend/patch-jobs-headcount.mjs" "$GINA_BACKEND"
+node "$AI_ATS/gina-express/frontend/patch-jobs-edit-questions.mjs" "$GINA_BACKEND"
 
 FRONTEND="$GINA_BACKEND/frontend"
 if [[ ! -f "$FRONTEND/package.json" ]]; then
