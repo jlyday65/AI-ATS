@@ -133,7 +133,7 @@ const importAt = src.search(/^import\s/m);
 if (importAt > 0) {
   const head = src.slice(0, importAt);
   if (
-    /function\s+candidateSourcedFromText\b|function\s+candidateEducationText\b|function\s+beginCandidateImportSession\b|function\s+candidateIdentityKey\b/.test(
+    /function\s+candidateSourcedFromText\b|function\s+candidateEducationText\b|function\s+beginCandidateImportSession\b|function\s+candidateIdentityKey\b|function\s+activeJobContext\b|function\s+withActiveJobContext\b/.test(
       head,
     )
   ) {
@@ -143,6 +143,23 @@ if (importAt > 0) {
     fs.writeFileSync(appPath, src, "utf8");
     console.log("Stripped helper(s) injected above imports");
     console.log("Backup:", bak);
+    compile = canCompile(esbuild, src);
+  }
+}
+
+// Strip unsafe job-context helpers that close over selectedJob/jobs (Safari crash)
+if (
+  /function\s+activeJobContext\b/.test(src) &&
+  /typeof selectedJob|typeof activeJob|typeof currentJob|typeof jobs/.test(src)
+) {
+  console.log(
+    "\n→ Unsafe activeJobContext detected — running fix-job-context-crash.mjs",
+  );
+  const jobFix = run("fix-job-context-crash.mjs");
+  if (jobFix !== 0) {
+    console.warn("Warning: fix-job-context-crash exited", jobFix);
+  } else {
+    src = fs.readFileSync(appPath, "utf8");
     compile = canCompile(esbuild, src);
   }
 }

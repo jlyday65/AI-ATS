@@ -210,6 +210,14 @@
       };
       return [saved, ...list];
     });
+    // Persist for Maria/Michelle without closing over React state (Safari-safe).
+    try {
+      if (typeof window !== "undefined" && saved) {
+        window.__ginaActiveJob = saved;
+      }
+    } catch {
+      /* optional */
+    }
     // Select the job when helpers exist so Maria/Michelle see it next.
     try {
       if (typeof setSelectedJob === "function") setSelectedJob(saved);

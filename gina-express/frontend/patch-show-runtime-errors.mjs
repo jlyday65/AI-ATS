@@ -47,12 +47,27 @@ const SNIPPET = `
       el.textContent = "ATS crashed — copy this to Cursor:\\n\\n" + String(msg || "unknown error");
     } catch (e) {}
   }
+  function formatErr(err, fallback) {
+    if (!err) return fallback || "unknown error";
+    if (typeof err === "string") return err;
+    var name = err.name || "Error";
+    var msg = err.message || "";
+    var stack = err.stack || "";
+    // Safari stacks often omit the message — put it first explicitly.
+    if (msg && stack.indexOf(msg) === -1) {
+      return name + ": " + msg + "\\n\\n" + stack;
+    }
+    return stack || (name + ": " + msg) || fallback || "unknown error";
+  }
   window.addEventListener("error", function (ev) {
-    paint((ev && ev.error && (ev.error.stack || ev.error.message)) || (ev && ev.message) || "window.error");
+    paint(
+      formatErr(ev && ev.error, null) ||
+        (ev && ev.message) ||
+        "window.error",
+    );
   });
   window.addEventListener("unhandledrejection", function (ev) {
-    var r = ev && ev.reason;
-    paint((r && (r.stack || r.message)) || r || "unhandledrejection");
+    paint(formatErr(ev && ev.reason, "unhandledrejection"));
   });
   setTimeout(function () {
     var root = document.getElementById("root");
@@ -74,8 +89,23 @@ let wrote = 0;
 for (const file of targets) {
   if (!fs.existsSync(file)) continue;
   let html = fs.readFileSync(file, "utf8");
+  // Upgrade older banners that omit Error.message (Safari stacks are message-less).
   if (html.includes("__gina_runtime_error")) {
-    console.log("Already patched:", file);
+    if (html.includes("function formatErr")) {
+      console.log("Already patched:", file);
+      continue;
+    }
+    html = html.replace(
+      /<script>\s*\(function\s*\(\)\s*\{\s*function paint\(msg\)[\s\S]*?<\/script>/,
+      SNIPPET,
+    );
+    if (!html.includes("function formatErr")) {
+      console.warn("Could not upgrade crash banner in", file);
+      continue;
+    }
+    fs.writeFileSync(file, html, "utf8");
+    console.log("Upgraded crash banner:", file);
+    wrote += 1;
     continue;
   }
   if (/<\/head>/i.test(html)) {

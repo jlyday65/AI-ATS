@@ -56,34 +56,48 @@ let src = fs.readFileSync(appPath, "utf8");
 const bak = `${appPath}.bak-jobctx-${Date.now()}`;
 fs.copyFileSync(appPath, bak);
 
-const HELPER = `
+// Prefer the crash-safe installer (window.__ginaActiveJob only — no free vars).
+const fixCrash = spawnSync(
+  process.execPath,
+  [path.join(__dirname, "fix-job-context-crash.mjs"), ginaDir],
+  { stdio: "inherit" },
+);
+if (fixCrash.status !== 0) {
+  console.warn(
+    "fix-job-context-crash exited",
+    fixCrash.status,
+    "— falling back to inline safe helper",
+  );
+  const HELPER = `
 function activeJobContext() {
-  const job =
-    (typeof selectedJob !== "undefined" && selectedJob) ||
-    (typeof activeJob !== "undefined" && activeJob) ||
-    (typeof currentJob !== "undefined" && currentJob) ||
-    (typeof jobs !== "undefined" && Array.isArray(jobs) && jobs[0]) ||
-    null;
-  if (!job || typeof job !== "object") return {};
-  return {
-    jobId: job.id || undefined,
-    roleTitle: job.title || job.name || undefined,
-    location: job.location || undefined,
-    roleDescription: job.description || job.jobDescription || undefined,
-    jobDescription: job.description || job.jobDescription || undefined,
-    requiredSkills: job.requiredSkills || job.skills || undefined,
-    preferredSkills: job.preferredSkills || undefined,
-  };
+  try {
+    if (typeof window === "undefined") return {};
+    const job = window.__ginaActiveJob;
+    if (!job || typeof job !== "object") return {};
+    return {
+      jobId: job.id || undefined,
+      roleTitle: job.title || job.name || undefined,
+      location: job.location || undefined,
+      roleDescription: job.description || job.jobDescription || undefined,
+      jobDescription: job.description || job.jobDescription || undefined,
+      requiredSkills: job.requiredSkills || job.skills || undefined,
+      preferredSkills: job.preferredSkills || undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 function withActiveJobContext(payload) {
   const base = payload && typeof payload === "object" ? payload : {};
   const job = activeJobContext();
+  const merged = {};
+  for (const [k, v] of Object.entries(job)) {
+    if (v != null && v !== "") merged[k] = v;
+  }
   const context = {
     ...(base.context && typeof base.context === "object" ? base.context : {}),
-    ...Object.fromEntries(
-      Object.entries(job).filter(([, v]) => v != null && v !== ""),
-    ),
+    ...merged,
   };
   return {
     ...base,
@@ -96,20 +110,30 @@ function withActiveJobContext(payload) {
   };
 }
 `;
-
-if (!src.includes("function activeJobContext(")) {
-  const marker =
-    src.indexOf("export default function App()") >= 0
-      ? src.indexOf("export default function App()")
-      : src.search(/function\s+(?:App|CandidateTracker)\b/);
-  if (marker < 0) {
-    console.error("Could not find App() to inject activeJobContext");
-    process.exit(2);
+  if (!src.includes("function activeJobContext(")) {
+    const marker =
+      src.indexOf("export default function App()") >= 0
+        ? src.indexOf("export default function App()")
+        : src.search(/function\s+(?:App|CandidateTracker)\b/);
+    if (marker < 0) {
+      console.error("Could not find App() to inject activeJobContext");
+      process.exit(2);
+    }
+    src = src.slice(0, marker) + HELPER + "\n" + src.slice(marker);
+    console.log("Injected SAFE activeJobContext helpers (fallback)");
   }
-  src = src.slice(0, marker) + HELPER + "\n" + src.slice(marker);
-  console.log("Injected activeJobContext helpers");
 } else {
-  console.log("activeJobContext already present");
+  // fix-job-context-crash already wrote App.jsx + ran check-for-actions
+  console.log("Safe job-context helpers installed via fix-job-context-crash");
+  console.log(`
+Next:
+  cd ${path.join(ginaDir, "frontend")} && npm run build
+  cd ${path.dirname(ginaDir)}
+  git add gina-backend/lib/job-context.js gina-backend/agents gina-backend/routes/run-command.js gina-backend/maria-source.tool.js gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
+  git commit -m "Populate Jobs tab from Kimberley JD + Maria/Michelle reuse"
+  git pull origin main --rebase && git push origin main
+`);
+  process.exit(0);
 }
 
 // Wrap common queue / run-command payload sites once

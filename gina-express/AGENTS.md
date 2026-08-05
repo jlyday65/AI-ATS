@@ -97,6 +97,22 @@ Gina’s system prompt (NEW JOB → JOBS TAB + JOB DESCRIPTION RULE).
 Workflow: tell Gina the role + full JD → Check for actions → Jobs tab shows the
 job → Maria sources against that JD → Michelle builds screening questions from it.
 
+### If ATS crashes after Jobs-tab patch (red banner / minified Br@… stack)
+
+Safari often hides the real message (`Can't find variable: …`). Run the safe fix:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-job-context-crash.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx gina-backend/frontend/dist gina-backend/frontend/index.html
+git commit -m "Fix ATS crash: safe Jobs-tab job context helpers"
+git pull origin main --rebase && git push origin main
+```
+
+Hard-refresh Gina (Cmd+Shift+R). Jobs upsert via Check for actions still works.
+
 ## Bring Kimberley's Notes back (safe)
 
 After emergency disable (white screen), use the one-shot bring-back — **not** the old `patch-kimberley-notes.mjs` alone:
