@@ -163,7 +163,12 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
       id: job.id,
       title: job.title,
       location: job.location,
+      // Gina Jobs tab upserts from this when Check for actions runs Maria.
+      description: job.description || input.roleDescription || "",
     },
+    roleTitle: job.title,
+    roleDescription: job.description || input.roleDescription || "",
+    location: job.location || input.location || "",
     resumesRequired,
     brief: result.brief,
     runId: result.run.id,

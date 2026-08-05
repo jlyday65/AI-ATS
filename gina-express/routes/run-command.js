@@ -281,6 +281,15 @@ router.post("/run-command", async (req, res) => {
           summary: `Maria sourced via SignalHire for ${sourcedTitle} — filed in Kimberley's Notes`,
           kimberleyNoteId: note?.id || null,
           reply: note?.reply || null,
+          roleTitle: sourcedTitle,
+          roleDescription:
+            result?.job?.description ||
+            result?.roleDescription ||
+            payload.roleDescription ||
+            payload.jobDescription ||
+            null,
+          location:
+            result?.job?.location || result?.location || payload.location || null,
           result,
         });
       } catch (err) {
@@ -321,6 +330,11 @@ router.post("/run-command", async (req, res) => {
         summary: result.message,
         kimberleyNoteId: result.kimberleyNoteId || null,
         reply: result.reply || null,
+        // Flatten for Check for actions → Jobs tab (maybeUpsertJobFromPayload).
+        roleTitle: result.roleTitle || result.file?.job?.title || null,
+        roleDescription:
+          result.roleDescription || result.file?.job?.description || null,
+        location: result.location || result.file?.job?.location || null,
         result,
       });
     }
@@ -384,6 +398,8 @@ router.post("/run-command", async (req, res) => {
         },
       });
 
+      const mariaJob =
+        result.mariaResult?.job || result.mariaResult?.result?.job || {};
       return res.json({
         ok: result.ok !== false,
         error:
@@ -395,6 +411,25 @@ router.post("/run-command", async (req, res) => {
           `${result.agent} update filed in Kimberley's Note Panel`,
         kimberleyNoteId: result.kimberleyNoteId || null,
         reply: result.reply || null,
+        // Flatten Maria job fields so Gina Jobs tab can upsert without digging.
+        roleTitle:
+          result.mariaResult?.roleTitle ||
+          mariaJob.title ||
+          result.context?.roleTitle ||
+          payload.roleTitle ||
+          null,
+        roleDescription:
+          result.mariaResult?.roleDescription ||
+          mariaJob.description ||
+          payload.roleDescription ||
+          payload.jobDescription ||
+          payload.context?.roleDescription ||
+          null,
+        location:
+          result.mariaResult?.location ||
+          mariaJob.location ||
+          payload.location ||
+          null,
         result,
       });
     }

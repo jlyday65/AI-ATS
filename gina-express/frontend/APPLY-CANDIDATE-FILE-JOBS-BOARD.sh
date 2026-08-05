@@ -70,7 +70,9 @@ git push origin main
 
 echo ""
 echo "Done. After Railway redeploy:"
-echo "  1) Ask Gina again with the full Candidate File + JD (or re-queue)"
-echo "  2) Agent → Check for actions"
-echo "  3) Expect Jobs tab row + Board cards (not just Kimberley Notes names)"
+echo "  1) Hard-refresh Gina ATS (cache bust — confirm new dist hash)"
+echo "  2) Re-queue Candidate File + full JD OR ask Gina to upsert the Detroit role"
+echo "  3) Agent → Check for actions"
+echo "  4) Jobs tab should list Auto Production Floor Supervisor (even if Board already has cards)"
+echo "  Debug: in browser console after Check for actions → window.__ginaLastJobUpsert"
 echo "  Scott Lewis / Noah Ibrahim skips are stale update_stage rows — ignore or clear them."

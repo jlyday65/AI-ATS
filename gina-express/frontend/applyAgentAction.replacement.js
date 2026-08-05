@@ -163,14 +163,97 @@
     return [];
   }
 
+  /** Resolve Jobs setter — App usually has setJobs; keep window fallback. */
+  function resolveSetJobsFn() {
+    try {
+      if (typeof setJobs === "function") return setJobs;
+    } catch {
+      /* TDZ */
+    }
+    try {
+      if (typeof setJobList === "function") return setJobList;
+    } catch {
+      /* optional */
+    }
+    try {
+      if (
+        typeof window !== "undefined" &&
+        typeof window.__ginaSetJobs === "function"
+      ) {
+        return window.__ginaSetJobs;
+      }
+    } catch {
+      /* optional */
+    }
+    return null;
+  }
+
+  try {
+    if (typeof setJobs === "function" && typeof window !== "undefined") {
+      window.__ginaSetJobs = setJobs;
+    }
+  } catch {
+    /* optional */
+  }
+
+  /** Pull the longest usable JD from Kimberley / Gina / Maria text blobs. */
+  function extractJobDescriptionFromText(text = "", title = "") {
+    const raw = String(text || "").trim();
+    if (!raw) return "";
+    const labeled = raw.match(
+      /\bjob description\s*[:\-]\s*([\s\S]{40,}?)(?:\n\s*\n|send to maria|handoff:|$)/i,
+    )?.[1];
+    if (labeled && labeled.trim().length >= 40) return labeled.trim();
+
+    const colon = raw.match(
+      /\bcandidate\s+file(?:\s+to\s+\w+)?\s*:\s*(?:an?\s+|the\s+)?[A-Z][^\n]{2,80}?\s+in\s+[A-Za-z .]+(?:,\s*[A-Z]{2})?\s+([\s\S]{40,})/i,
+    )?.[1];
+    if (colon && colon.trim().length >= 40) return colon.trim();
+
+    if (title) {
+      const afterTitle = raw.match(
+        new RegExp(
+          `${String(title).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+in\\s+[A-Za-z .]+(?:,\\s*[A-Z]{2})?\\s+([\\s\\S]{40,})`,
+          "i",
+        ),
+      )?.[1];
+      if (afterTitle && afterTitle.trim().length >= 40) return afterTitle.trim();
+    }
+
+    // Prefer chunks that look like JDs (duties / requirements), not short source tasks.
+    const chunks = raw
+      .split(/\n{2,}/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 40)
+      .filter(
+        (s) =>
+          !/^source candidates for\b/i.test(s) &&
+          !/^provide a status update\b/i.test(s),
+      );
+    chunks.sort((a, b) => b.length - a.length);
+    if (chunks[0]) return chunks[0];
+    return raw.length >= 40 ? raw : "";
+  }
+
   /** Upsert a Jobs-tab row from Maria / chat JD so Kimberley does not re-enter it. */
   function upsertJobOnBoard(raw = {}) {
-    if (typeof setJobs !== "function") return null;
+    const setJobsFn = resolveSetJobsFn();
+    if (typeof setJobsFn !== "function") {
+      try {
+        if (typeof window !== "undefined") {
+          window.__ginaLastJobUpsertError = "setJobs is not a function in scope";
+        }
+      } catch {
+        /* optional */
+      }
+      return null;
+    }
     const title = String(
       raw.title || raw.roleTitle || raw.jobTitle || raw.name || "",
     ).trim();
     if (!title) return null;
-    const description = String(
+    if (/^open role$/i.test(title)) return null;
+    let description = String(
       raw.description ||
         raw.jobDescription ||
         raw.roleDescription ||
@@ -178,6 +261,18 @@
         raw.context?.jobDescription ||
         "",
     ).trim();
+    // Always land a Jobs row when Maria/CF sourced a real title — synthesize if thin.
+    if (description.length < 40) {
+      const loc = String(raw.location || raw.context?.location || "").trim();
+      description = [
+        `${title}${loc ? ` — ${loc}` : ""}.`,
+        "",
+        "Full-time role managed in Gina Jobs (from Kimberley Candidate File / Maria sourcing).",
+        raw.task ? `Ask: ${String(raw.task).slice(0, 500)}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
     const location = String(
       raw.location || raw.context?.location || "",
     ).trim();
@@ -189,7 +284,7 @@
     );
     const now = new Date().toISOString();
     let saved = null;
-    setJobs((prev) => {
+    setJobsFn((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const idx = list.findIndex(
         (j) =>
@@ -251,6 +346,34 @@
     try {
       if (typeof window !== "undefined" && saved) {
         window.__ginaActiveJob = saved;
+        window.__ginaLastJobUpsert = saved;
+        // Mirror into common localStorage keys Gina builds have used.
+        const keys = [
+          "gina_jobs",
+          "ats_jobs",
+          "jobs",
+          "lyday_jobs",
+          "gina-ats-jobs",
+        ];
+        for (const key of keys) {
+          try {
+            const prev = localStorage.getItem(key);
+            if (prev == null) continue;
+            const parsed = JSON.parse(prev);
+            if (!Array.isArray(parsed)) continue;
+            const i = parsed.findIndex(
+              (j) =>
+                String(j?.title || j?.name || "")
+                  .trim()
+                  .toLowerCase() === title.toLowerCase(),
+            );
+            if (i >= 0) parsed[i] = { ...parsed[i], ...saved };
+            else parsed.unshift(saved);
+            localStorage.setItem(key, JSON.stringify(parsed));
+          } catch {
+            /* skip unknown shapes */
+          }
+        }
       }
     } catch {
       /* optional */
@@ -260,37 +383,79 @@
     return saved;
   }
 
-  function maybeUpsertJobFromPayload(payload = {}) {
-    const title = String(
+  function maybeUpsertJobFromPayload(payload = {}, extras = {}) {
+    const blob = [
+      extras.taskHint,
+      extras.reply,
+      payload.task,
+      payload.instruction,
+      payload.message,
+      payload.roleDescription,
+      payload.jobDescription,
+      payload.description,
+      payload.context?.roleDescription,
+      payload.context?.jobDescription,
+      payload.job?.description,
+      typeof payload === "string" ? payload : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    let title = String(
       payload.roleTitle ||
         payload.jobTitle ||
         payload.title ||
         payload.context?.roleTitle ||
         payload.job?.title ||
+        extras.roleTitle ||
         "",
     ).trim();
-    const description =
+    // Recover title from Candidate File / source phrasing when payload is thin.
+    if (!title || /^open role$/i.test(title)) {
+      const m =
+        blob.match(
+          /\bcandidate\s+file(?:\s+to\s+\w+)?\s*:\s*(?:an?\s+|the\s+)?([A-Z][A-Za-z0-9 /&-]{2,80}?)\s+in\s+/i,
+        ) ||
+        blob.match(
+          /\b(?:source|find)\s+candidates?\s+for\s+(?:an?\s+|the\s+)?([A-Z][A-Za-z0-9 /&-]{2,80}?)(?:\s+in\s+|\.|$)/i,
+        ) ||
+        blob.match(
+          /\b([A-Z][A-Za-z0-9/&-]+(?:\s+[A-Z][A-Za-z0-9/&-]+){1,6})\s+in\s+[A-Z]/,
+        );
+      if (m?.[1]) title = m[1].replace(/^(?:an?\s+|the\s+)/i, "").trim();
+    }
+    if (!title || /^open role$/i.test(title)) return null;
+
+    let description = String(
       payload.roleDescription ||
-      payload.jobDescription ||
-      payload.description ||
-      payload.context?.roleDescription ||
-      payload.context?.jobDescription ||
-      payload.job?.description;
-    if (!title) return null;
-    // Never create a Jobs row for the Candidate File placeholder title.
-    if (/^open role$/i.test(title)) return null;
-    // Require a real JD (not just a one-line task) before creating Jobs rows.
-    if (!description || String(description).trim().length < 40) return null;
+        payload.jobDescription ||
+        payload.description ||
+        payload.context?.roleDescription ||
+        payload.context?.jobDescription ||
+        payload.job?.description ||
+        extras.roleDescription ||
+        "",
+    ).trim();
+    if (description.length < 40) {
+      description = extractJobDescriptionFromText(blob, title);
+    }
+
     return upsertJobOnBoard({
       ...payload,
       title,
       roleTitle: title,
       description,
-      location: payload.location || payload.context?.location,
+      location:
+        payload.location ||
+        payload.context?.location ||
+        payload.job?.location ||
+        extras.location ||
+        "",
       requiredSkills: payload.requiredSkills || payload.context?.requiredSkills,
       preferredSkills: payload.preferredSkills || payload.context?.preferredSkills,
-      jobId: payload.jobId || payload.context?.jobId,
-      source: "kimberley_notify",
+      jobId: payload.jobId || payload.context?.jobId || extras.jobId,
+      task: payload.task || extras.taskHint || "",
+      source: payload.source || extras.source || "kimberley_notify",
     });
   }
 
@@ -422,8 +587,30 @@
 
       // --- Team commands (Kimberley → Gina → Maria/Michelle/Kelley/Ashton) ---
       if (type === "command_agent" || type === "source_candidates_signalhire" || type === "create_candidate_file") {
+        const taskHint = [
+          action.summary,
+          action.detail,
+          action.notes,
+          action.description,
+          action.task,
+          payload?.task,
+          payload?.roleDescription,
+          payload?.jobDescription,
+          payload?.context?.roleDescription,
+          payload?.context?.jobDescription,
+          typeof action.payload === "string"
+            ? action.payload
+            : JSON.stringify(action.payload || {}),
+          typeof payload === "string" ? payload : JSON.stringify(payload || {}),
+        ]
+          .filter(Boolean)
+          .join("\n");
+
         // When Kimberley includes a new job + JD for Maria, populate Jobs first.
-        const jobUpserted = maybeUpsertJobFromPayload(payload || {});
+        const jobUpserted = maybeUpsertJobFromPayload(payload || {}, {
+          taskHint,
+          source: type === "create_candidate_file" ? "candidate_file" : "kimberley_notify",
+        });
         const res = await fetch("/ats/run-command", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -434,19 +621,7 @@
             payload: payload || {},
             action, // full queued row — helps infer roleTitle from task text
             summary: action.summary || action.detail || action.notes || "",
-            taskHint: [
-              action.summary,
-              action.detail,
-              action.notes,
-              action.description,
-              action.task,
-              typeof action.payload === "string"
-                ? action.payload
-                : JSON.stringify(action.payload || {}),
-              typeof payload === "string" ? payload : JSON.stringify(payload || {}),
-            ]
-              .filter(Boolean)
-              .join("\n"),
+            taskHint,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -469,31 +644,112 @@
         const mariaJob =
           data.result?.mariaResult?.job ||
           data.result?.mariaResult?.result?.job ||
+          data.result?.job ||
           {};
-        const fromServer = maybeUpsertJobFromPayload({
-          ...(payload || {}),
-          roleTitle:
+        const mariaDesc =
+          data.result?.mariaResult?.job?.description ||
+          data.result?.mariaResult?.result?.job?.description ||
+          data.result?.mariaResult?.roleDescription ||
+          data.result?.mariaResult?.brief ||
+          "";
+        const fromServer = maybeUpsertJobFromPayload(
+          {
+            ...(payload || {}),
+            roleTitle:
+              data.roleTitle ||
+              data.result?.roleTitle ||
+              data.result?.title ||
+              fileJob.title ||
+              data.result?.mariaResult?.roleTitle ||
+              mariaJob.title ||
+              payload?.roleTitle ||
+              payload?.context?.roleTitle,
+            roleDescription:
+              data.roleDescription ||
+              data.result?.roleDescription ||
+              data.result?.jobDescription ||
+              fileJob.description ||
+              mariaDesc ||
+              payload?.roleDescription ||
+              payload?.jobDescription ||
+              payload?.context?.roleDescription ||
+              payload?.context?.jobDescription,
+            location:
+              data.location ||
+              data.result?.location ||
+              fileJob.location ||
+              mariaJob.location ||
+              payload?.location ||
+              payload?.context?.location,
+            job: fileJob.title
+              ? fileJob
+              : mariaJob.title
+                ? {
+                    ...mariaJob,
+                    description:
+                      mariaJob.description ||
+                      mariaDesc ||
+                      fileJob.description ||
+                      "",
+                  }
+                : undefined,
+          },
+          {
+            taskHint: [taskHint, data.reply, data.summary, data.result?.reply]
+              .filter(Boolean)
+              .join("\n"),
+            reply: data.reply || data.result?.reply || "",
+            roleTitle: mariaJob.title || fileJob.title,
+            roleDescription: mariaDesc || fileJob.description,
+            location: mariaJob.location || fileJob.location,
+            jobId: mariaJob.id || fileJob.id,
+            source:
+              type === "create_candidate_file"
+                ? "candidate_file"
+                : "maria_source",
+          },
+        );
+        // Force Jobs row whenever Maria/CF produced a concrete role title.
+        const forcedTitle = String(
+          fromServer?.title ||
+            jobUpserted?.title ||
+            data.roleTitle ||
             data.result?.roleTitle ||
-            data.result?.title ||
             fileJob.title ||
-            data.result?.mariaResult?.roleTitle ||
             mariaJob.title ||
-            payload?.roleTitle,
-          roleDescription:
-            data.result?.roleDescription ||
-            data.result?.jobDescription ||
-            fileJob.description ||
-            data.result?.mariaResult?.roleDescription ||
-            payload?.roleDescription ||
-            payload?.jobDescription,
-          location:
-            data.result?.location ||
-            fileJob.location ||
-            mariaJob.location ||
-            payload?.location,
-          job: fileJob.title ? fileJob : undefined,
-        });
-        const jobNote = jobUpserted || fromServer;
+            payload?.roleTitle ||
+            payload?.context?.roleTitle ||
+            "",
+        ).trim();
+        const jobNote =
+          jobUpserted ||
+          fromServer ||
+          (forcedTitle && !/^open role$/i.test(forcedTitle)
+            ? upsertJobOnBoard({
+                title: forcedTitle,
+                roleTitle: forcedTitle,
+                location:
+                  data.location ||
+                  data.result?.location ||
+                  fileJob.location ||
+                  mariaJob.location ||
+                  payload?.location ||
+                  payload?.context?.location ||
+                  "",
+                description:
+                  data.roleDescription ||
+                  data.result?.roleDescription ||
+                  fileJob.description ||
+                  mariaDesc ||
+                  payload?.context?.roleDescription ||
+                  extractJobDescriptionFromText(
+                    [taskHint, data.reply].filter(Boolean).join("\n"),
+                    forcedTitle,
+                  ),
+                source: "maria_force_jobs_tab",
+                task: taskHint,
+              })
+            : null);
 
         // Maria shortlist often lands in Kimberley Notes first; push queues
         // import_candidate for a *later* Check for actions. Import from the
@@ -688,6 +944,22 @@
         // Omar Sato × N from React stale `candidates` closures.
         const resumeText =
           payload.resumeText || payload.resume_text || payload.summary || "";
+        // Board cards often arrive before Jobs — ensure the role exists on Jobs tab.
+        // Do NOT use resumeText as the job description.
+        if (payload.jobTitle || payload.role) {
+          upsertJobOnBoard({
+            title: payload.jobTitle || payload.role,
+            roleTitle: payload.jobTitle || payload.role,
+            location: payload.location || "",
+            description:
+              payload.roleDescription ||
+              payload.jobDescription ||
+              "",
+            jobId: payload.jobId,
+            source: "import_candidate",
+            task: `Candidates imported for ${payload.jobTitle || payload.role}`,
+          });
+        }
         let jobId = payload.jobId || null;
         if (!jobId && payload.jobTitle) {
           const job = (Array.isArray(jobs) ? jobs : []).find(
