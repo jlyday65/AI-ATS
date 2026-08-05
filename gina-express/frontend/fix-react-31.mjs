@@ -139,7 +139,7 @@ if (!before.ok) {
   process.exit(2);
 }
 
-// Inject sanitize helpers once (before App)
+// Inject sanitize helpers once (before App) — NEVER as default export
 if (!src.includes("function sanitizeGinaJob(")) {
   const marker =
     src.indexOf("export default function App()") >= 0
@@ -156,6 +156,21 @@ if (!src.includes("function sanitizeGinaJob(")) {
   }
   src = src.slice(0, marker) + SANITIZE_HELPER + "\n" + src.slice(marker);
   console.log("Injected sanitizeGinaJob / ginaText helpers");
+}
+// Guard: helpers must never become the module default export
+if (/export\s+default\s+function\s+sanitizeGinaJob\b/.test(src)) {
+  src = src.replace(
+    /export\s+default\s+function\s+sanitizeGinaJob\b/,
+    "function sanitizeGinaJob",
+  );
+  console.log("Fixed mistaken default export on sanitizeGinaJob");
+}
+if (
+  !/export\s+default\s+function\s+App\b/.test(src) &&
+  !/export\s+default\s+App\b/.test(src)
+) {
+  console.error("REFUSING: App.jsx lost `export default function App`");
+  process.exit(2);
 }
 
 // Fix classic `{selectedJob || …}` / `{activeJob || …}` empty-object render

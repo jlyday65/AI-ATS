@@ -9,8 +9,10 @@ GINA_DIR="${GINA_DIR:-$HOME/lyday-gina-backend/gina-backend}"
 cd "$AI_ATS"
 git pull origin cursor/ai-ats-b2b-platform-4f1f
 
+node gina-express/frontend/fix-main-entry.mjs "$GINA_DIR"
 node gina-express/frontend/fix-react-31.mjs "$GINA_DIR"
 node gina-express/frontend/fix-job-context-crash.mjs "$GINA_DIR"
+node gina-express/frontend/fix-assets-auth-block.mjs "$GINA_DIR"
 node gina-express/frontend/patch-check-for-actions.mjs "$GINA_DIR"
 
 cd "$GINA_DIR/frontend"
