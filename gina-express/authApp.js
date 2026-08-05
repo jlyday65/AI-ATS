@@ -142,9 +142,20 @@ const EXEMPT_PATHS = [
   "/webhooks/candidate",
 ];
 
+/** Static frontend assets must never return the Sign In HTML (breaks React mount). */
+function isStaticAssetPath(pathname) {
+  const p = String(pathname || "");
+  // /assets/* is the Vite bundle. Do NOT exempt *.html (keeps ATS password gate).
+  return (
+    p.indexOf("/assets/") === 0 ||
+    /\.(?:js|mjs|css|map|png|jpe?g|gif|svg|webp|ico|woff2?|ttf)$/i.test(p)
+  );
+}
+
 export function requireAppAuth(req, res, next) {
   if (!process.env.APP_PASSWORD) return next();
   if (EXEMPT_PATHS.indexOf(req.path) !== -1) return next();
+  if (isStaticAssetPath(req.path)) return next();
 
   // Bot / SignalHire auth — must stay ABOVE the 401
   if (hasValidRelaySecret(req)) return next();

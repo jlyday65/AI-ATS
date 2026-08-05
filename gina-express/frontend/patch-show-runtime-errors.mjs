@@ -72,7 +72,17 @@ const SNIPPET = `
   setTimeout(function () {
     var root = document.getElementById("root");
     if (root && !root.childElementCount && !document.getElementById("__gina_runtime_error")) {
-      paint("React never mounted (#root is empty). Check the Console and the JS bundle failed to load.");
+      var scripts = Array.prototype.slice.call(document.scripts || []).map(function (s) {
+        return s.src || "(inline)";
+      });
+      paint(
+        "React never mounted (#root is empty).\\n\\n" +
+          "Usually /assets/*.js returned the Sign In HTML instead of JavaScript.\\n" +
+          "Open the JS URL below in a new tab — you must see code, not a password form.\\n\\n" +
+          "Scripts:\\n" +
+          (scripts.join("\\n") || "(none)") +
+          "\\n\\nFix: node gina-express/frontend/fix-assets-auth-block.mjs ~/lyday-gina-backend/gina-backend",
+      );
     }
   }, 2500);
 })();
