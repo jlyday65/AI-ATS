@@ -1,7 +1,13 @@
 /**
- * Format Gina pipeline summary for morning briefings.
+ * Format Gina pipeline overview for morning briefings.
  *
- * Canonical section title: "Pipeline Stage Counts"
+ * Match Kimberley's Notes style:
+ * - Clear section headers
+ * - Blank lines between blocks
+ * - • bullets (same as bot replies in Notes)
+ * - Team updates show Ask + full reply body (not one-line previews)
+ * - Light emojis OK (user preference)
+ *
  * Counts must reflect the LIVE Board — never invent New: 64 from chat memory.
  */
 
@@ -11,12 +17,12 @@ import {
 } from "../lib/live-stage-counts.js";
 
 export const PIPELINE_STAGES = [
-  { key: "new", label: "New" },
-  { key: "screening", label: "Screening" },
-  { key: "interview", label: "Interview" },
-  { key: "offer", label: "Offer" },
-  { key: "hired", label: "Hired" },
-  { key: "rejected", label: "Rejected" },
+  { key: "new", label: "New", emoji: "🆕" },
+  { key: "screening", label: "Screening", emoji: "🔍" },
+  { key: "interview", label: "Interview", emoji: "🎙️" },
+  { key: "offer", label: "Offer", emoji: "📄" },
+  { key: "hired", label: "Hired", emoji: "✅" },
+  { key: "rejected", label: "Rejected", emoji: "❌" },
 ];
 
 export { countLiveStageCounts, totalLiveCandidates };
@@ -26,22 +32,20 @@ export { countLiveStageCounts, totalLiveCandidates };
  * @returns {string}
  */
 export function formatPipelineStageCounts(stageCounts = {}) {
-  const lines = ["Pipeline Stage Counts"];
+  const lines = ["📊 Pipeline Stage Counts", ""];
   for (const stage of PIPELINE_STAGES) {
     const n = Number(stageCounts[stage.key] ?? stageCounts[stage.label] ?? 0);
-    lines.push(`${stage.label}: ${Number.isFinite(n) ? n : 0}`);
+    const count = Number.isFinite(n) ? n : 0;
+    lines.push(`• ${stage.emoji} ${stage.label}: ${count}`);
   }
   const known = new Set(PIPELINE_STAGES.flatMap((s) => [s.key, s.label]));
   for (const [key, value] of Object.entries(stageCounts)) {
     if (known.has(key)) continue;
-    lines.push(`${key}: ${Number(value) || 0}`);
+    lines.push(`• ${key}: ${Number(value) || 0}`);
   }
   return lines.join("\n");
 }
 
-/**
- * Build a full morning briefing text block.
- */
 function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -53,15 +57,90 @@ function displayAgentName(raw) {
   return String(raw);
 }
 
-function previewTeamUpdate(note, from) {
-  const reply = String(note.reply || "");
+function agentEmoji(raw) {
+  const key = String(raw || "").trim().toLowerCase();
+  if (key === "maria") return "👩‍💼";
+  if (key === "michelle") return "🧑‍💻";
+  if (key === "kelley" || key === "kelly") return "📋";
+  if (key === "ashton") return "✉️";
+  if (key === "gina") return "🤖";
+  return "👤";
+}
+
+function formatStamp(value) {
+  if (!value) return "";
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Format one Kimberley Note the same way the Notes panel shows it:
+ * header + Ask + full reply (trimmed), using • bullets already in the reply.
+ */
+export function formatTeamUpdateLikeNotes(note = {}) {
+  const from = displayAgentName(note.from || note.fromAgent || "Team");
+  const role = note.role || note.agentRole || "";
+  const when = formatStamp(note.at || note.createdAt);
+  const emoji = agentEmoji(from);
+  const header = role
+    ? `${emoji} ${from} (${role})${when ? ` — ${when}` : ""}`
+    : `${emoji} ${from}${when ? ` — ${when}` : ""}`;
+
+  const task = String(note.task || "").trim();
+  let reply = String(note.reply || "").trim();
+
+  // Normalize dash bullets in older notes to Notes-style •
+  reply = reply
+    .split("\n")
+    .map((line) => line.replace(/^\s*[-*]\s+/, "• "))
+    .join("\n")
+    .trim();
+
+  // Keep replies readable in chat — cap very long Maria dumps.
+  const replyLines = reply.split("\n");
+  if (replyLines.length > 40) {
+    reply = [...replyLines.slice(0, 40), "• …(full update in Kimberley's Notes)"].join(
+      "\n",
+    );
+  } else if (reply.length > 2400) {
+    reply = `${reply.slice(0, 2400)}\n• …(full update in Kimberley's Notes)`;
+  }
+
+  const block = [header];
+  if (task) {
+    block.push(`Ask: ${task}`);
+  }
+  if (reply) {
+    block.push("");
+    block.push(reply);
+  } else if (task) {
+    block.push("");
+    block.push("• Update filed (see Kimberley's Notes for detail).");
+  } else {
+    block.push("");
+    block.push("• Update filed.");
+  }
+  return block.join("\n");
+}
+
+/** @deprecated — kept for tests/callers that still import the short preview. */
+export function previewTeamUpdate(note, from) {
+  const reply = String(note?.reply || "");
   const lines = reply
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean)
     .filter((l) => !/^Request:/i.test(l))
     .filter((l) => !/^Handoff:/i.test(l))
-    // Drop only the title line "Kelley — status update (...)", not body lines
     .filter(
       (l) =>
         !new RegExp(`^${escapeRegExp(from)}\\s*[—\\-]`, "i").test(l) &&
@@ -81,7 +160,7 @@ function previewTeamUpdate(note, from) {
     .slice(0, 2);
   const prose = lines.filter((l) => !/^[-•*]/.test(l)).slice(0, 1);
   const preview = [...bullets, ...prose].filter(Boolean).slice(0, 2).join(" · ");
-  return preview || note.task || "update filed";
+  return preview || note?.task || "update filed";
 }
 
 function prioritizeTeamUpdates(teamUpdates) {
@@ -115,25 +194,31 @@ export function formatMorningPipelineBriefing({
   const counts = Array.isArray(boardCandidates)
     ? countLiveStageCounts(boardCandidates)
     : stageCounts;
+
+  const asOfLabel = formatStamp(asOf) || String(asOf);
   const sections = [];
-  sections.push(`Pipeline briefing — ${asOf} (live Board)`);
+  sections.push(`📋 Pipeline overview — ${asOfLabel} (live Board)`);
   sections.push("");
   sections.push(formatPipelineStageCounts(counts));
-  sections.push(`Total on Board: ${totalLiveCandidates(counts)}`);
-
-  // Always show reminders section (cleaner than emoji blocks)
   sections.push("");
-  sections.push("Reminders due");
+  sections.push(`• Total on Board: ${totalLiveCandidates(counts)}`);
+
+  sections.push("");
+  sections.push("⏰ Reminders due");
   if (Array.isArray(remindersDue) && remindersDue.length) {
     for (const item of remindersDue.slice(0, 12)) {
       const label =
         typeof item === "string"
           ? item
-          : item.text || item.title || item.name || JSON.stringify(item);
-      sections.push(`- ${label}`);
+          : item.text ||
+            item.title ||
+            item.name ||
+            [item.name, item.date, item.note].filter(Boolean).join(" · ") ||
+            JSON.stringify(item);
+      sections.push(`• ${label}`);
     }
   } else {
-    sections.push("- None");
+    sections.push("• None");
   }
 
   const active = (pipelineDetail || []).filter(
@@ -145,29 +230,32 @@ export function formatMorningPipelineBriefing({
   );
   if (active.length) {
     sections.push("");
-    sections.push("Active pipeline");
+    sections.push("📁 Active pipeline");
     for (const c of active.slice(0, 20)) {
       const days = c.daysInStage ?? c.days ?? "?";
       sections.push(
-        `- ${c.name || "Candidate"} — ${c.role || "role"} · ${c.stage || "?"} · ${days}d`,
+        `• ${c.name || "Candidate"} — ${c.role || "role"} · ${c.stage || "?"} · ${days}d`,
       );
     }
   }
 
   sections.push("");
-  sections.push("Team updates (Kimberley Notes)");
+  sections.push("📝 Team updates (Kimberley Notes)");
+  sections.push("");
   if (Array.isArray(teamUpdates) && teamUpdates.length) {
-    // Prefer newest first; keep Kelley/Kelly/Maria/Michelle/Ashton visible
-    const ordered = prioritizeTeamUpdates(teamUpdates).slice(0, 12);
-    for (const note of ordered) {
-      const from = displayAgentName(note.from || note.fromAgent || "Team");
-      const role = note.role || note.agentRole || "";
-      const preview = previewTeamUpdate(note, from);
-      const who = role ? `${from} (${role})` : from;
-      sections.push(`- ${who}: ${preview}`);
-    }
+    const ordered = prioritizeTeamUpdates(teamUpdates).slice(0, 8);
+    ordered.forEach((note, idx) => {
+      sections.push(formatTeamUpdateLikeNotes(note));
+      if (idx < ordered.length - 1) {
+        sections.push("");
+        sections.push("———");
+        sections.push("");
+      }
+    });
   } else {
-    sections.push("- None yet — ask Gina to command Maria / Michelle / Kelley / Ashton, then Check for actions");
+    sections.push(
+      "• None yet — ask Gina to command Maria / Michelle / Kelley / Ashton, then Check for actions",
+    );
   }
 
   return sections.join("\n");

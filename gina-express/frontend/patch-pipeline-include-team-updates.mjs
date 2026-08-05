@@ -54,15 +54,15 @@ copy("routes/kimberley-notes.js");
 const RULE = `
 PIPELINE BRIEFING — TEAM UPDATES RULE (required):
 When Kimberley asks for a pipeline summary / stage counts / morning briefing:
-1) Lead with plain-text Pipeline Stage Counts (New, Screening, Interview, Offer, Hired, Rejected).
-2) ALWAYS include section "Team updates (Kimberley Notes)".
-3) Pull live notes from GET /ats/kimberley-notes/briefing or POST /ats/pipeline-briefing —
+1) Format like Kimberley's Notes (headers, blank lines, • bullets; light emojis OK).
+2) Lead with Pipeline Stage Counts from the LIVE Board (New, Screening, Interview, Offer, Hired, Rejected).
+3) ALWAYS include section "Team updates (Kimberley Notes)" with Ask + full reply blocks
+   (not one-line blurbs). Prefer POST /ats/pipeline-briefing text as-is.
+4) Pull live notes from GET /ats/kimberley-notes/briefing or POST /ats/pipeline-briefing —
    do NOT rely only on a cached /ats/summary payload (it often lacks bot replies).
-4) Include Kelley/Kelly status updates, Maria sourcing, Michelle screening, and Ashton outreach
-   that were filed after Check for actions. Never omit Kelley because the stage-count blob is stale.
-5) EVERY bot reply (Maria / Michelle / Kelley / Ashton) is dual-filed:
-   Kimberley's Notes (full text) AND this Team updates section.
-6) If briefing returns no notes yet, say: Team updates — None yet (ask team bots, then Check for actions).
+5) Include Kelley/Kelly, Maria, Michelle, and Ashton updates filed after Check for actions.
+6) EVERY bot reply is dual-filed: Kimberley's Notes (full text) AND this Team updates section.
+7) If briefing returns no notes yet, say: Team updates — None yet (ask team bots, then Check for actions).
 `.trim();
 
 // Mount routes on server.js
@@ -162,7 +162,7 @@ if (fs.existsSync(ginaPath)) {
 
   if (/get_pipeline_summary/.test(gina)) {
     const cleanDesc =
-      "Return a clean plain-text pipeline briefing from LIVE Board counts only. Lead with Pipeline Stage Counts (New, Screening, Interview, Offer, Hired, Rejected as Label: N). If the Board is empty, every stage is 0 — NEVER invent totals (e.g. New: 64), NEVER reuse an old dated snapshot, NEVER use markdown tables or emojis or Key Takeaways. ALWAYS append Team updates (Kimberley Notes) by calling /ats/kimberley-notes/briefing or /ats/pipeline-briefing so Kelley/Kelly, Maria, Michelle, and Ashton updates appear — never stage counts alone. Do not suggest Michelle screen candidates when New is 0.";
+      "Return a Pipeline overview formatted like Kimberley's Notes from LIVE Board counts only (headers, • bullets, light emojis OK). Lead with Pipeline Stage Counts. If the Board is empty, every stage is 0 — NEVER invent totals (e.g. New: 64), NEVER reuse an old dated snapshot, NEVER use markdown tables or Key Takeaways. ALWAYS append Team updates as Ask + full reply blocks via /ats/kimberley-notes/briefing or /ats/pipeline-briefing so Kelley/Kelly, Maria, Michelle, and Ashton appear — never stage counts alone. Do not suggest Michelle screen candidates when New is 0.";
     const next = gina.replace(
       /(name:\s*["']get_pipeline_summary["'][\s\S]{0,900}?description:\s*)(["'`])([\s\S]*?)\2/,
       `$1'${cleanDesc.replace(/'/g, "\\'")}'`,
