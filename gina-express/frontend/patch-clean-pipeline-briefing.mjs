@@ -49,31 +49,41 @@ copy("lib/kimberley-notes.js");
 copy("routes/kimberley-notes.js");
 
 const RULE = `
-PIPELINE BRIEFING FORMAT RULE (required):
-When Kimberley asks for a pipeline summary / stage counts / morning briefing, reply in PLAIN TEXT only.
-Do NOT use markdown tables. Do NOT use emojis. Do NOT use decorative symbols.
+PIPELINE OVERVIEW FORMAT RULE (required):
+When Kimberley asks for a pipeline summary / overview / stage counts / morning briefing,
+format it like Kimberley's Notes (NOT a dense one-line list, NOT markdown tables).
 
-Use exactly this structure:
+Emojis are OK. Use • bullets, blank lines, and full Team update blocks.
 
-Pipeline briefing — <date/time>
+Prefer calling /ats/pipeline-briefing (POST with live stageCounts + boardCandidates)
+and return that text as-is. Structure:
 
-Pipeline Stage Counts
-New: <n>
-Screening: <n>
-Interview: <n>
-Offer: <n>
-Hired: <n>
-Rejected: <n>
+📋 Pipeline overview — <date/time> (live Board)
 
-Reminders due
-- <item or None>
+📊 Pipeline Stage Counts
+• 🆕 New: <n>
+• 🔍 Screening: <n>
+• 🎙️ Interview: <n>
+• 📄 Offer: <n>
+• ✅ Hired: <n>
+• ❌ Rejected: <n>
+• Total on Board: <n>
 
-Team updates (Kimberley Notes)
-- <Agent>: <short update>
-- (If none: None yet)
+⏰ Reminders due
+• <item or None>
 
-Prefer calling /ats/pipeline-briefing (POST with stageCounts) or /ats/kimberley-notes/briefing
-so Team updates are pulled from Kimberley Notes automatically.
+📝 Team updates (Kimberley Notes)
+
+<Agent emoji> <Agent> (<Role>) — <time>
+Ask: <task>
+
+<full reply body from Kimberley's Notes, with • bullets>
+
+———
+
+(next agent update…)
+
+Never invent New: 64. Never use markdown tables or Key Takeaways marketing copy.
 `;
 
 // Mount pipeline-briefing + ensure kimberley-notes on server.js
@@ -158,7 +168,7 @@ if (fs.existsSync(ginaPath)) {
   if (/get_pipeline_summary/.test(gina)) {
     // Use single-quoted description — never nest " inside "
     const cleanDesc =
-      "Return a clean plain-text pipeline briefing. Lead with Pipeline Stage Counts (New, Screening, Interview, Offer, Hired, Rejected as Label: N). No markdown tables, no emojis. Always include Team updates (Kimberley Notes) from /ats/kimberley-notes/briefing or /ats/pipeline-briefing.";
+      "Return a Pipeline overview formatted like Kimberley's Notes (section headers, blank lines, • bullets, light emojis OK). Lead with live Board Pipeline Stage Counts, then Reminders, then Team updates as Ask + full reply blocks from /ats/pipeline-briefing or /ats/kimberley-notes/briefing. No markdown tables, no Key Takeaways, never invent New: 64.";
     const next = gina.replace(
       /(name:\s*["']get_pipeline_summary["'][\s\S]{0,800}?description:\s*)(["'`])([\s\S]*?)\2/,
       `$1'${cleanDesc.replace(/'/g, "\\'")}'`,
@@ -170,22 +180,12 @@ if (fs.existsSync(ginaPath)) {
     }
   }
 
-  // Soft-replace common emoji-heavy section titles if hardcoded
-  const replacements = [
-    [/📊\s*Pipeline Stage Counts/g, "Pipeline Stage Counts"],
-    [/🔔\s*Reminders Due/g, "Reminders due"],
-    [/🆕\s*/g, ""],
-    [/🔍\s*/g, ""],
-    [/🎙️\s*/g, ""],
-    [/📄\s*/g, ""],
-    [/✅\s*/g, ""],
-    [/❌\s*/g, ""],
-  ];
-  for (const [re, to] of replacements) {
-    if (re.test(gina)) {
-      gina = gina.replace(re, to);
-      changed = true;
-    }
+  // Replace old "no emojis" instructions with Notes-style rule
+  if (/Do NOT use emojis/i.test(gina) || /no emojis/i.test(gina)) {
+    gina = gina.replace(/Do NOT use emojis\.?\s*/gi, "");
+    gina = gina.replace(/,\s*no emojis/gi, ", emojis OK");
+    gina = gina.replace(/no emojis/gi, "emojis OK");
+    changed = true;
   }
 
   if (changed) {
@@ -193,7 +193,7 @@ if (fs.existsSync(ginaPath)) {
     fs.writeFileSync(ginaPath, gina, "utf8");
     console.log("Patched", ginaPath, "backup", bak);
   } else {
-    console.log("gina.js already has clean pipeline rules (or no markers found)");
+    console.log("gina.js already has Notes-style pipeline rules (or no markers found)");
   }
 } else {
   console.warn("gina.js not found — copied routes/formatter only");
@@ -212,9 +212,9 @@ Next:
   cd ${fs.existsSync(path.join(path.dirname(root), ".git")) ? path.dirname(root) : root}
   git add gina-backend/briefing gina-backend/routes gina-backend/lib gina-backend/server.js gina-backend/gina.js
   git status
-  git commit -m "Clean Pipeline Stage Counts + Kimberley Notes in Gina briefing"
+  git commit -m "Pipeline overview formatted like Kimberley Notes"
   git push origin main
 
-Railway Redeploy. Then ask Gina: "Give me the pipeline summary"
-Expect plain Pipeline Stage Counts + Team updates (Kelley/Ashton/etc).
+Railway Redeploy. Then ask Gina: "Give me the pipeline overview"
+Expect Notes-style sections with • bullets, light emojis, and full Team updates.
 `);

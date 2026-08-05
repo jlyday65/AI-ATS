@@ -84,7 +84,7 @@ const LIVE_HELPER = `
 `.trim();
 
 const CLEAN_DESC =
-  "Return a clean plain-text pipeline briefing from LIVE Board counts only. Lead with Pipeline Stage Counts (New, Screening, Interview, Offer, Hired, Rejected as Label: N). If the Board is empty, every stage is 0 — NEVER invent totals (e.g. New: 64), NEVER reuse an old dated snapshot, NEVER use markdown tables or emojis or Key Takeaways. Always include Team updates (Kimberley Notes) from /ats/kimberley-notes/briefing or /ats/pipeline-briefing. Do not suggest Michelle screen candidates when New is 0.";
+  "Return a Pipeline overview formatted like Kimberley's Notes from LIVE Board counts only (section headers, blank lines, • bullets, light emojis OK). Lead with Pipeline Stage Counts. If the Board is empty, every stage is 0 — NEVER invent totals (e.g. New: 64), NEVER reuse an old dated snapshot, NEVER use markdown tables or Key Takeaways. Always include Team updates as Ask + full reply blocks from /ats/kimberley-notes/briefing or /ats/pipeline-briefing. Do not suggest Michelle screen candidates when New is 0.";
 
 function loadEsbuild() {
   try {

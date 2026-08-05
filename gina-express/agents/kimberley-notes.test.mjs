@@ -145,7 +145,7 @@ describe("Pipeline Stage Counts formatter", () => {
       new: 4,
       screening: 2,
     });
-    assert.equal(text.split("\n")[0], "Pipeline Stage Counts");
+    assert.match(text.split("\n")[0], /Pipeline Stage Counts/);
     assert.match(text, /New: 4/);
     assert.match(text, /Screening: 2/);
     assert.match(text, /Interview: 0/);
@@ -162,16 +162,21 @@ describe("Pipeline Stage Counts formatter", () => {
       teamUpdates: [
         {
           from: "Kelley",
+          role: "Pipeline ops",
+          task: "ask Kelly for an update",
           reply:
             "Kelley — status update\nRequest: ask Kelly for an update\nPipeline ops status:\n- Reviewing open ATS actions\n- Flagging stuck stages",
         },
       ],
     });
-    assert.match(brief, /Pipeline Stage Counts/);
+    assert.match(brief, /Pipeline (Stage Counts|overview)/);
     assert.match(brief, /Team updates \(Kimberley Notes\)/);
     assert.match(brief, /Kelley/);
     assert.match(brief, /Reviewing open ATS actions|Flagging stuck stages|ask Kelly for an update/);
     assert.match(brief, /Reminders due/);
+    // Notes-style Ask + bullets (not one-line "Kelley: preview")
+    assert.match(brief, /Ask:/);
+    assert.match(brief, /•/);
   });
 
   it("includes Kelly alias updates in briefing", () => {
