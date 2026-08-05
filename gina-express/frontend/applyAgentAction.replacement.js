@@ -163,6 +163,29 @@
     return [];
   }
 
+  /** Jobs Edit UI requires job.questions to be an array (crashes on .length otherwise). */
+  function normalizeJobQuestions(raw) {
+    if (Array.isArray(raw)) {
+      return raw
+        .map((q) =>
+          typeof q === "string"
+            ? q
+            : q && typeof q === "object"
+              ? String(q.text || q.question || q.label || "")
+              : String(q || ""),
+        )
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    if (typeof raw === "string" && raw.trim()) {
+      return raw
+        .split(/\n+/)
+        .map((s) => s.replace(/^\s*\d+[\.)]\s*/, "").trim())
+        .filter(Boolean);
+    }
+    return [];
+  }
+
   /** Positive integer headcount / sourced count from any common job field. */
   function normalizeHeadcount(raw) {
     if (raw == null || raw === "") return null;
@@ -422,6 +445,9 @@
           normalizeHeadcount(raw.openings ?? raw.positions) ??
           prevOpenings ??
           undefined;
+        const questions = normalizeJobQuestions(
+          raw.questions ?? prevJob.questions,
+        );
         // Do NOT spread prevJob wholesale — old rows may carry context:{} etc.
         saved = {
           id: prevJob.id,
@@ -438,10 +464,15 @@
             preferredSkills.length > 0
               ? preferredSkills
               : normalizeJobSkills(prevJob.preferredSkills),
+          // Required by Jobs Edit — `o.questions.length` crashes if missing.
+          questions,
           status: String(prevJob.status || "open"),
           source: prevJob.source || raw.source || "gina_chat",
           createdAt: prevJob.createdAt || now,
           updatedAt: now,
+          createdDate:
+            prevJob.createdDate ||
+            String(prevJob.createdAt || now).slice(0, 10),
           ...(headcount != null
             ? {
                 headcount,
@@ -450,16 +481,20 @@
                 candidateCount: headcount,
                 pipelineCount: headcount,
               }
-            : {}),
+            : {
+                // Edit form number input expects a value; default 1 if unset.
+                headcount: Number(prevJob.headcount) > 0 ? prevJob.headcount : 1,
+              }),
           ...(openings != null ? { openings, positions: openings } : {}),
         };
         const next = list.slice();
         next[idx] = saved;
         return next;
       }
-      const headcount = incomingHc || undefined;
+      const headcount = incomingHc || 1;
       const openings =
         normalizeHeadcount(raw.openings ?? raw.positions) || undefined;
+      const questions = normalizeJobQuestions(raw.questions);
       saved = {
         id: raw.jobId || raw.id || `job_${Date.now().toString(36)}`,
         title,
@@ -469,19 +504,17 @@
         jobDescription: description,
         requiredSkills,
         preferredSkills,
+        questions,
         status: "open",
         source: raw.source || "gina_chat",
         createdAt: now,
         updatedAt: now,
-        ...(headcount != null
-          ? {
-              headcount,
-              Headcount: headcount,
-              sourcedCount: headcount,
-              candidateCount: headcount,
-              pipelineCount: headcount,
-            }
-          : {}),
+        createdDate: now.slice(0, 10),
+        headcount,
+        Headcount: headcount,
+        sourcedCount: incomingHc || headcount,
+        candidateCount: incomingHc || headcount,
+        pipelineCount: incomingHc || headcount,
         ...(openings != null ? { openings, positions: openings } : {}),
       };
       return [saved, ...list];
