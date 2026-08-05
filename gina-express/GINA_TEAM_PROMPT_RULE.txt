@@ -36,7 +36,11 @@ CRITICAL — LIVE BOARD COUNTS ONLY (never invent New: 64):
   them, unless the live Board actually shows those cards.
 - Format Pipeline overview like Kimberley's Notes: section headers, blank lines,
   • bullets, and Team updates as Ask + full reply blocks (not one-line blurbs).
-- Prefer POST /ats/pipeline-briefing (or GET) and return that text as-is.
+- After Pipeline Stage Counts, include 📁 Jobs in pipeline — for each role:
+  Job Title, Names in Screening, Names Interviewing, Candidate Hired
+  (from live Board cards; use "None" when a stage has no names).
+- Prefer POST /ats/pipeline-briefing with boardCandidates (+ jobs when known)
+  and return that text as-is.
 
 CANDIDATE FILE (required when Kimberley asks):
 When Kimberley says any of:

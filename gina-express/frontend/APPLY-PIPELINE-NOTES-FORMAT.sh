@@ -38,6 +38,11 @@ cp -f "$AI_ATS/gina-express/briefing/format-pipeline-stage-counts.js" "$GINA_BAC
 cp -f "$AI_ATS/gina-express/routes/pipeline-briefing.js" "$GINA_BACKEND/routes/"
 cp -f "$AI_ATS/gina-express/GINA_TEAM_PROMPT_RULE.txt" "$GINA_BACKEND/" 2>/dev/null || true
 
+if [[ -d "$GINA_BACKEND/frontend" ]]; then
+  echo "== Rebuild frontend dist (Jobs rollup in overview) =="
+  (cd "$GINA_BACKEND/frontend" && npm run build) || true
+fi
+
 echo "== Commit + push Gina =="
 cd "$ROOT"
 git add \
@@ -45,15 +50,18 @@ git add \
   gina-backend/routes/pipeline-briefing.js \
   gina-backend/gina.js \
   gina-backend/server.js \
-  gina-backend/GINA_TEAM_PROMPT_RULE.txt 2>/dev/null || true
+  gina-backend/GINA_TEAM_PROMPT_RULE.txt \
+  gina-backend/frontend/src/App.jsx 2>/dev/null || true
 git add -A gina-backend/briefing gina-backend/routes/pipeline-briefing.js gina-backend/gina.js 2>/dev/null || true
+git add -f gina-backend/frontend/dist 2>/dev/null || true
 
 git status
-git commit -m "Pipeline overview formatted like Kimberley Notes (emojis OK)" || true
+git commit -m "Pipeline overview: Jobs rollup (title, screening, interviewing, hired)" || true
 git pull origin main --rebase || true
 git push origin main
 
 echo ""
 echo "Done. After Railway redeploy, ask Gina:"
 echo "  Give me the pipeline overview"
-echo "Expect Notes-style sections with • bullets, light emojis, and full Team updates."
+echo "Expect Notes-style sections plus Jobs in pipeline:"
+echo "  Job Title / Names in Screening / Names Interviewing / Candidate Hired"

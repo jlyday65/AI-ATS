@@ -56,13 +56,15 @@ PIPELINE BRIEFING — TEAM UPDATES RULE (required):
 When Kimberley asks for a pipeline summary / stage counts / morning briefing:
 1) Format like Kimberley's Notes (headers, blank lines, • bullets; light emojis OK).
 2) Lead with Pipeline Stage Counts from the LIVE Board (New, Screening, Interview, Offer, Hired, Rejected).
-3) ALWAYS include section "Team updates (Kimberley Notes)" with Ask + full reply blocks
-   (not one-line blurbs). Prefer POST /ats/pipeline-briefing text as-is.
-4) Pull live notes from GET /ats/kimberley-notes/briefing or POST /ats/pipeline-briefing —
+3) Then include 📁 Jobs in pipeline — for each role: Job Title, Names in Screening,
+   Names Interviewing, Candidate Hired (from live Board; "None" when empty).
+4) ALWAYS include section "Team updates (Kimberley Notes)" with Ask + full reply blocks
+   (not one-line blurbs). Prefer POST /ats/pipeline-briefing with boardCandidates + jobs.
+5) Pull live notes from GET /ats/kimberley-notes/briefing or POST /ats/pipeline-briefing —
    do NOT rely only on a cached /ats/summary payload (it often lacks bot replies).
-5) Include Kelley/Kelly, Maria, Michelle, and Ashton updates filed after Check for actions.
-6) EVERY bot reply is dual-filed: Kimberley's Notes (full text) AND this Team updates section.
-7) If briefing returns no notes yet, say: Team updates — None yet (ask team bots, then Check for actions).
+6) Include Kelley/Kelly, Maria, Michelle, and Ashton updates filed after Check for actions.
+7) EVERY bot reply is dual-filed: Kimberley's Notes (full text) AND this Team updates section.
+8) If briefing returns no notes yet, say: Team updates — None yet (ask team bots, then Check for actions).
 `.trim();
 
 // Mount routes on server.js
@@ -162,7 +164,7 @@ if (fs.existsSync(ginaPath)) {
 
   if (/get_pipeline_summary/.test(gina)) {
     const cleanDesc =
-      "Return a Pipeline overview formatted like Kimberley's Notes from LIVE Board counts only (headers, • bullets, light emojis OK). Lead with Pipeline Stage Counts. If the Board is empty, every stage is 0 — NEVER invent totals (e.g. New: 64), NEVER reuse an old dated snapshot, NEVER use markdown tables or Key Takeaways. ALWAYS append Team updates as Ask + full reply blocks via /ats/kimberley-notes/briefing or /ats/pipeline-briefing so Kelley/Kelly, Maria, Michelle, and Ashton appear — never stage counts alone. Do not suggest Michelle screen candidates when New is 0.";
+      "Return a Pipeline overview formatted like Kimberley's Notes from LIVE Board counts only (headers, • bullets, light emojis OK). Lead with Pipeline Stage Counts, then Jobs in pipeline (Job Title, Names in Screening, Names Interviewing, Candidate Hired). If the Board is empty, every stage is 0 — NEVER invent totals (e.g. New: 64), NEVER reuse an old dated snapshot, NEVER use markdown tables or Key Takeaways. ALWAYS append Team updates as Ask + full reply blocks via /ats/kimberley-notes/briefing or /ats/pipeline-briefing so Kelley/Kelly, Maria, Michelle, and Ashton appear — never stage counts alone. Do not suggest Michelle screen candidates when New is 0.";
     const next = gina.replace(
       /(name:\s*["']get_pipeline_summary["'][\s\S]{0,900}?description:\s*)(["'`])([\s\S]*?)\2/,
       `$1'${cleanDesc.replace(/'/g, "\\'")}'`,
@@ -233,7 +235,7 @@ function canCompile(esbuild, text) {
   }
 }
 
-// Patch App.jsx sendDailySummary to attach teamUpdates
+// Patch App.jsx sendDailySummary to attach teamUpdates + boardCandidates/jobs
 const appPath = path.join(ginaDir, "frontend", "src", "App.jsx");
 if (fs.existsSync(appPath)) {
   let src = fs.readFileSync(appPath, "utf8");
@@ -242,8 +244,6 @@ if (fs.existsSync(appPath)) {
   const before = canCompile(esbuild, src);
   if (!before.ok) {
     console.error("App.jsx does not compile — skip UI inject:", before.error);
-  } else if (/kimberley-notes\/briefing/.test(src) && /teamUpdates/.test(src)) {
-    console.log("App.jsx already fetches Kimberley Notes for pipeline summary");
   } else if (/const summary = \{[\s\S]*?stageCounts[\s\S]*?\};/.test(src)) {
     let next = src;
     if (!/teamUpdates/.test(next)) {
@@ -251,6 +251,16 @@ if (fs.existsSync(appPath)) {
         /(const summary = \{[\s\S]*?pipelineDetail[\s\S]*?)(\};)/,
         `$1,
         teamUpdates: [],
+      $2`,
+      );
+    }
+    // Ensure live Board people + open jobs reach /ats/pipeline-briefing Jobs rollup
+    if (!/boardCandidates\s*:/.test(next)) {
+      next = next.replace(
+        /(const summary = \{[\s\S]*?)(\};)/,
+        `$1,
+        boardCandidates: Array.isArray(candidates) ? candidates : [],
+        jobs: Array.isArray(jobs) ? jobs.map((j) => ({ title: j.title || j.name || j.roleTitle || "", id: j.id })).filter((j) => j.title) : [],
       $2`,
       );
     }
@@ -268,14 +278,40 @@ if (fs.existsSync(appPath)) {
 `,
       );
     }
+    // Prefer server formatter text (includes Jobs in pipeline names)
+    if (!/\/ats\/pipeline-briefing/.test(next)) {
+      next = next.replace(
+        /(const summary = \{[\s\S]*?\};(?:\s*try \{[\s\S]*?catch \(_\) \{\}\s*)?)/,
+        `$1
+      try {
+        const briefRes = await fetch("/ats/pipeline-briefing", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            boardCandidates: summary.boardCandidates || candidates || [],
+            jobs: summary.jobs || jobs || [],
+            stageCounts: summary.stageCounts,
+            remindersDue: summary.remindersDue || [],
+            teamUpdates: summary.teamUpdates || [],
+          }),
+        });
+        const briefJson = await briefRes.json().catch(() => ({}));
+        if (briefRes.ok && briefJson.text) summary.pipelineBriefingText = briefJson.text;
+      } catch (_) {}
+`,
+      );
+    }
     const after = canCompile(esbuild, next);
     if (!after.ok) {
       console.error("REFUSING App.jsx teamUpdates inject:", after.error);
     } else if (next !== src) {
       fs.copyFileSync(appPath, bak);
       fs.writeFileSync(appPath, next, "utf8");
-      console.log("Patched App.jsx sendDailySummary to include teamUpdates");
+      console.log("Patched App.jsx sendDailySummary for teamUpdates + Jobs rollup");
       console.log("Backup:", bak);
+    } else {
+      console.log("App.jsx already has boardCandidates/jobs + briefing hooks (or no change needed)");
     }
   } else {
     console.log("App.jsx summary payload shape not found — server/gina rules still applied");
@@ -297,5 +333,6 @@ Next:
 Then Railway redeploy. Retest:
   1) Ask Gina: Ask Kelly for an update → Check for actions → Kimberley Notes
   2) Ask Gina: Give me the pipeline summary
-  Expect Team updates (Kimberley Notes) to list Kelley.
+  Expect Jobs in pipeline (Job Title / Names in Screening / Interviewing / Hired)
+  and Team updates (Kimberley Notes) to list Kelley.
 `);
