@@ -85,6 +85,18 @@ function sanitizeGinaJob(job) {
   };
   const title = String(job.title || job.name || "").trim();
   if (!title) return null;
+  const asCount = (v) => {
+    const n = Number(String(v ?? "").replace(/[^\\d.]/g, ""));
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+  };
+  const headcount = asCount(
+    job.headcount ??
+      job.Headcount ??
+      job.sourcedCount ??
+      job.candidateCount ??
+      job.pipelineCount,
+  );
+  const openings = asCount(job.openings ?? job.positions);
   return {
     id: job.id || \`job_\${Date.now().toString(36)}\`,
     title,
@@ -98,6 +110,16 @@ function sanitizeGinaJob(job) {
     source: job.source != null ? String(job.source) : undefined,
     createdAt: job.createdAt || undefined,
     updatedAt: job.updatedAt || undefined,
+    ...(headcount != null
+      ? {
+          headcount,
+          Headcount: headcount,
+          sourcedCount: headcount,
+          candidateCount: headcount,
+          pipelineCount: headcount,
+        }
+      : {}),
+    ...(openings != null ? { openings, positions: openings } : {}),
   };
 }
 
