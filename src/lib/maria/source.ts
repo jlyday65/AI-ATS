@@ -174,12 +174,18 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
         match.candidate,
         match.platformHits,
       );
+      const resumeText = match.candidate.resumeText || "";
       return {
         name: match.candidate.fullName,
         email: match.candidate.email,
+        phone: match.candidate.phone || "",
         headline: match.candidate.headline,
         location: match.candidate.location,
-        resumeChars: (match.candidate.resumeText || "").length,
+        // Gina Check for actions can import the Board from this payload in the
+        // same click (does not wait for a second drain of import_candidate).
+        resumeText,
+        summary: match.candidate.summary || match.candidate.headline || "",
+        resumeChars: resumeText.length,
         score: match.score,
         platforms: match.platformHits,
         sourcedFrom,

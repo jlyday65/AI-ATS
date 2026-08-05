@@ -261,12 +261,14 @@
   }
 
   function maybeUpsertJobFromPayload(payload = {}) {
-    const title =
+    const title = String(
       payload.roleTitle ||
-      payload.jobTitle ||
-      payload.title ||
-      payload.context?.roleTitle ||
-      payload.job?.title;
+        payload.jobTitle ||
+        payload.title ||
+        payload.context?.roleTitle ||
+        payload.job?.title ||
+        "",
+    ).trim();
     const description =
       payload.roleDescription ||
       payload.jobDescription ||
@@ -275,6 +277,8 @@
       payload.context?.jobDescription ||
       payload.job?.description;
     if (!title) return null;
+    // Never create a Jobs row for the Candidate File placeholder title.
+    if (/^open role$/i.test(title)) return null;
     // Require a real JD (not just a one-line task) before creating Jobs rows.
     if (!description || String(description).trim().length < 40) return null;
     return upsertJobOnBoard({
@@ -460,19 +464,166 @@
           };
         }
         // Also upsert from server-normalized fields if chat payload was thin.
+        // create_candidate_file returns result.file.job + flattened roleTitle/roleDescription.
+        const fileJob = data.result?.file?.job || data.result?.job || {};
+        const mariaJob =
+          data.result?.mariaResult?.job ||
+          data.result?.mariaResult?.result?.job ||
+          {};
         const fromServer = maybeUpsertJobFromPayload({
           ...(payload || {}),
           roleTitle:
             data.result?.roleTitle ||
+            data.result?.title ||
+            fileJob.title ||
             data.result?.mariaResult?.roleTitle ||
+            mariaJob.title ||
             payload?.roleTitle,
           roleDescription:
             data.result?.roleDescription ||
+            data.result?.jobDescription ||
+            fileJob.description ||
+            data.result?.mariaResult?.roleDescription ||
             payload?.roleDescription ||
             payload?.jobDescription,
-          location: data.result?.location || payload?.location,
+          location:
+            data.result?.location ||
+            fileJob.location ||
+            mariaJob.location ||
+            payload?.location,
+          job: fileJob.title ? fileJob : undefined,
         });
         const jobNote = jobUpserted || fromServer;
+
+        // Maria shortlist often lands in Kimberley Notes first; push queues
+        // import_candidate for a *later* Check for actions. Import from the
+        // live response in this same click so the Board updates immediately.
+        let boardImported = 0;
+        const shortlist =
+          data.result?.mariaResult?.topCandidates ||
+          data.result?.mariaResult?.result?.topCandidates ||
+          data.result?.topCandidates ||
+          data.result?.result?.topCandidates ||
+          [];
+        const jobTitleForBoard =
+          jobNote?.title ||
+          fileJob.title ||
+          mariaJob.title ||
+          data.result?.roleTitle ||
+          payload?.roleTitle ||
+          "";
+        if (Array.isArray(shortlist) && shortlist.length) {
+          for (const c of shortlist.slice(0, 8)) {
+            const name = c?.name || c?.fullName;
+            if (!name) continue;
+            const resumeText =
+              c.resumeText ||
+              c.resume_text ||
+              c.summary ||
+              c.headline ||
+              "";
+            const imported = await applyAgentAction({
+              type: "import_candidate",
+              id: `maria_inline_${Date.now().toString(36)}`,
+              payload: {
+                name,
+                email: c.email || "",
+                phone: c.phone || "",
+                jobTitle: jobTitleForBoard || c.jobTitle || c.role || "",
+                role: jobTitleForBoard || c.jobTitle || c.role || "",
+                headline: c.headline || "",
+                resumeText,
+                summary: c.summary || "",
+                sourcedFrom: c.sourcedFrom || c.platforms || [],
+                sourcedFromText:
+                  c.sourcedFromText ||
+                  (Array.isArray(c.sourcedFrom)
+                    ? c.sourcedFrom.join(" · ")
+                    : "") ||
+                  "SignalHire",
+                platforms: c.platforms || c.linkedProfiles || [],
+                platformIds: c.platformIds || [],
+                source: "SignalHire",
+              },
+            });
+            if (imported?.ok) boardImported += 1;
+          }
+        }
+
+        // Drain follow-on rows created by this action (same Check click):
+        // create_candidate_file → upsert_job + Maria command_agent
+        // Maria source → import_candidate
+        // Guard against recursive drains exploding the stack.
+        let drained = 0;
+        let drainedBoard = 0;
+        const drainDepth = Number(action?._ginaDrainDepth || 0);
+        if (drainDepth < 2) {
+          try {
+            const pendingRes = await fetch("/ats/pending-actions", {
+              credentials: "include",
+            });
+            const pendingJson = await pendingRes.json().catch(() => ({}));
+            const pending = Array.isArray(pendingJson)
+              ? pendingJson
+              : pendingJson.actions || pendingJson.pending || [];
+            const followOns = (Array.isArray(pending) ? pending : [])
+              .filter((a) => {
+                if (!a || String(a.id) === String(action.id)) return false;
+                const t = String(a.type || "");
+                if (
+                  t === "import_candidate" ||
+                  t === "create_candidate" ||
+                  t === "upsert_job"
+                ) {
+                  return true;
+                }
+                // Only auto-run Maria handoffs queued by Candidate File — not
+                // every pending bot command (avoids surprising status runs).
+                if (
+                  type === "create_candidate_file" &&
+                  (t === "command_agent" || t === "source_candidates_signalhire")
+                ) {
+                  const p = a.payload || {};
+                  const agent = String(
+                    p.targetAgent || p.agent || "",
+                  ).toLowerCase();
+                  return agent === "maria" || t === "source_candidates_signalhire";
+                }
+                return false;
+              })
+              .slice(0, 12);
+            for (const next of followOns) {
+              const r = await applyAgentAction({
+                ...next,
+                _ginaDrainDepth: drainDepth + 1,
+              });
+              if (r?.ok) {
+                drained += 1;
+                drainedBoard += Number(r.boardImported || 0);
+                try {
+                  await fetch(`/ats/actions/${next.id}/complete`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ ok: true, summary: r.summary }),
+                  });
+                } catch {
+                  /* optional — outer Check for actions may mark done */
+                }
+              }
+            }
+          } catch {
+            /* pending drain is best-effort */
+          }
+        }
+
+        const totalBoard = boardImported + drainedBoard;
+        const boardNote =
+          totalBoard > 0
+            ? ` · Board: ${totalBoard} candidate(s)`
+            : drained > 0 && type === "create_candidate_file"
+              ? ` · Follow-on ${drained} action(s) applied`
+              : "";
         return {
           ok: true,
           summary:
@@ -480,10 +631,12 @@
               (data.reply
                 ? `${data.result?.agent || "Team"} replied — see Kimberley's Notes`
                 : "Team command executed")) +
-            (jobNote ? ` · Jobs: ${jobNote.title}` : ""),
+            (jobNote ? ` · Jobs: ${jobNote.title}` : "") +
+            boardNote,
           kimberleyNoteId: data.kimberleyNoteId || null,
           reply: data.reply || null,
           job: jobNote || null,
+          boardImported: totalBoard,
         };
       }
 
