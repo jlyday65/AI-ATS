@@ -33,7 +33,7 @@ Keep `auth.js` exporting `requireRelaySecret` separately (used by `/chat`, `/ats
 
 ## Optional: `server.js` note
 
-Do **not** only add Next.js `src/middleware.ts`.  
+Do **not** only add Next.js `src/proxy.ts` (formerly `middleware.ts`).  
 Do **not** expect `/api/jobs` — use `/ats/...`.
 
 If you add standalone middleware, use ESM:

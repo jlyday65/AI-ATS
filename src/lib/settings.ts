@@ -55,7 +55,7 @@ export function normalizeAppSettings(
   };
 }
 
-/** Env bootstrap — used when store has no settings yet, and by middleware. */
+/** Env bootstrap — used when store has no settings yet, and by proxy.ts. */
 export function readAtsModeFromEnv(): AtsMode | null {
   const raw = (process.env.ATS_MODE || process.env.SIGNALHIRE_ATS_MODE || "")
     .trim()

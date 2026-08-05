@@ -35,7 +35,8 @@ function resolveMode(request: NextRequest) {
   return readAtsModeFromEnv() ?? "test";
 }
 
-export async function middleware(request: NextRequest) {
+/** Next.js 16+ network boundary (replaces deprecated middleware.ts). */
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (isPublic(pathname)) return NextResponse.next();
 
