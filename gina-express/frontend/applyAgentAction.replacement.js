@@ -205,24 +205,62 @@
     }).length;
   }
 
+  /** True when description is our thin Gina stub, not Kimberley's real JD. */
+  function isThinJobDescription(text = "") {
+    const s = String(text || "").trim();
+    if (s.length < 40) return true;
+    if (/Full-time role managed in Gina Jobs/i.test(s)) return true;
+    if (/^Ask:\s*Source candidates for\b/i.test(s)) return true;
+    if (/^Role sourced by Maria for\b/i.test(s)) return true;
+    return false;
+  }
+
+  /** Prefer the richest real JD among candidates (never keep a stub over a full JD). */
+  function pickBestJobDescription(...parts) {
+    let best = "";
+    for (const part of parts) {
+      const s = String(part || "").trim();
+      if (!s) continue;
+      if (isThinJobDescription(s) && !isThinJobDescription(best) && best) continue;
+      if (!best || s.length > best.length || (isThinJobDescription(best) && !isThinJobDescription(s))) {
+        best = s;
+      }
+    }
+    return best;
+  }
+
   /**
-   * Write Maria's sourced headcount onto the Jobs row.
+   * Write Maria's sourced headcount (+ full JD) onto the Jobs row.
    * Gina Jobs UI may read headcount / sourcedCount / candidateCount / openings.
    */
   function syncJobSourcedHeadcount(title, count, extra = {}) {
     const hc = normalizeHeadcount(count);
     const role = String(title || "").trim();
-    if (!role || !hc) return null;
+    if (!role) return null;
+    const description = pickBestJobDescription(
+      extra.description,
+      extra.roleDescription,
+      extra.jobDescription,
+      extractJobDescriptionFromText(extra.task || "", role),
+    );
+    // Allow JD-only refresh when headcount is not ready yet.
+    if (!hc && isThinJobDescription(description)) return null;
     return upsertJobOnBoard({
       title: role,
       roleTitle: role,
       location: extra.location || "",
-      description: extra.description || "",
+      description,
+      roleDescription: description,
+      jobDescription: description,
       jobId: extra.jobId,
-      headcount: hc,
-      sourcedCount: hc,
-      candidateCount: hc,
-      pipelineCount: hc,
+      ...(hc
+        ? {
+            headcount: hc,
+            sourcedCount: hc,
+            candidateCount: hc,
+            pipelineCount: hc,
+          }
+        : {}),
       // Only set openings when the row has none yet (openings ≠ sourced).
       openings: extra.openings,
       positions: extra.positions,
@@ -321,25 +359,29 @@
     ).trim();
     if (!title) return null;
     if (/^open role$/i.test(title)) return null;
-    let description = String(
-      raw.description ||
-        raw.jobDescription ||
-        raw.roleDescription ||
-        raw.context?.roleDescription ||
-        raw.context?.jobDescription ||
-        "",
-    ).trim();
+    let description = pickBestJobDescription(
+      raw.description,
+      raw.jobDescription,
+      raw.roleDescription,
+      raw.context?.roleDescription,
+      raw.context?.jobDescription,
+      extractJobDescriptionFromText(raw.task || "", title),
+    );
     // Always land a Jobs row when Maria/CF sourced a real title — synthesize if thin.
-    if (description.length < 40) {
+    if (isThinJobDescription(description)) {
       const loc = String(raw.location || raw.context?.location || "").trim();
-      description = [
-        `${title}${loc ? ` — ${loc}` : ""}.`,
-        "",
-        "Full-time role managed in Gina Jobs (from Kimberley Candidate File / Maria sourcing).",
-        raw.task ? `Ask: ${String(raw.task).slice(0, 500)}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
+      const fromTask = extractJobDescriptionFromText(raw.task || "", title);
+      description = pickBestJobDescription(
+        fromTask,
+        [
+          `${title}${loc ? ` — ${loc}` : ""}.`,
+          "",
+          "Full-time role managed in Gina Jobs (from Kimberley Candidate File / Maria sourcing).",
+          raw.task ? `Ask: ${String(raw.task).slice(0, 1200)}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
     }
     const location = String(
       raw.location || raw.context?.location || "",
@@ -363,9 +405,11 @@
       );
       if (idx >= 0) {
         const prevJob = list[idx];
-        const thin =
-          !prevJob.description ||
-          String(prevJob.description).trim().length < 40;
+        const prevDesc = String(
+          prevJob.description || prevJob.jobDescription || "",
+        ).trim();
+        // Keep the richest JD — never let a headcount-only sync wipe Kimberley's JD.
+        const mergedDescription = pickBestJobDescription(description, prevDesc);
         const prevHc = normalizeHeadcount(prevJob);
         const headcount =
           incomingHc != null
@@ -384,11 +428,8 @@
           title,
           name: title,
           location: location || String(prevJob.location || ""),
-          description:
-            description || String(prevJob.description || prevJob.jobDescription || ""),
-          jobDescription:
-            description ||
-            String(prevJob.jobDescription || prevJob.description || ""),
+          description: mergedDescription,
+          jobDescription: mergedDescription,
           requiredSkills:
             requiredSkills.length > 0
               ? requiredSkills
@@ -411,7 +452,6 @@
               }
             : {}),
           ...(openings != null ? { openings, positions: openings } : {}),
-          ...(thin && description ? { description, jobDescription: description } : {}),
         };
         const next = list.slice();
         next[idx] = saved;
@@ -1004,25 +1044,62 @@
           totalBoard || 0,
           boardCount || 0,
         );
+        const bestDescription = pickBestJobDescription(
+          data.roleDescription,
+          data.result?.roleDescription,
+          data.result?.jobDescription,
+          fileJob.description,
+          mariaDesc,
+          mariaJob.description,
+          payload?.roleDescription,
+          payload?.jobDescription,
+          payload?.context?.roleDescription,
+          payload?.context?.jobDescription,
+          jobNote?.description,
+          jobNote?.jobDescription,
+          extractJobDescriptionFromText(
+            [taskHint, data.reply, data.summary, data.result?.reply]
+              .filter(Boolean)
+              .join("\n"),
+            roleForHc,
+          ),
+        );
         let jobWithHc = jobNote;
-        if (roleForHc && headcount > 0) {
+        if (roleForHc && (headcount > 0 || !isThinJobDescription(bestDescription))) {
           jobWithHc =
-            syncJobSourcedHeadcount(roleForHc, headcount, {
+            syncJobSourcedHeadcount(roleForHc, headcount || null, {
               location:
                 jobNote?.location ||
                 mariaJob.location ||
                 fileJob.location ||
+                data.location ||
                 payload?.location ||
                 "",
-              description:
-                jobNote?.description ||
-                fileJob.description ||
-                mariaDesc ||
-                "",
+              description: bestDescription,
+              roleDescription: bestDescription,
+              jobDescription: bestDescription,
               jobId: jobNote?.id || mariaJob.id || fileJob.id,
               source: "maria_sourced_headcount",
               task: taskHint,
             }) || jobNote;
+        }
+        // Final guarantee: Jobs row always carries the richest JD we have.
+        if (
+          jobWithHc?.title &&
+          !isThinJobDescription(bestDescription) &&
+          isThinJobDescription(jobWithHc.description)
+        ) {
+          jobWithHc =
+            upsertJobOnBoard({
+              ...jobWithHc,
+              title: jobWithHc.title,
+              description: bestDescription,
+              roleDescription: bestDescription,
+              jobDescription: bestDescription,
+              headcount: jobWithHc.headcount || headcount || undefined,
+              source: "jd_backfill",
+              task: taskHint,
+            }) || jobWithHc;
         }
         const boardNote =
           totalBoard > 0
@@ -1032,6 +1109,10 @@
               : "";
         const hcNote =
           jobWithHc && headcount > 0 ? ` · Headcount: ${headcount}` : "";
+        const jdNote =
+          jobWithHc && !isThinJobDescription(jobWithHc.description || bestDescription)
+            ? " · JD saved"
+            : "";
         return {
           ok: true,
           summary:
@@ -1041,6 +1122,7 @@
                 : "Team command executed")) +
             (jobWithHc ? ` · Jobs: ${jobWithHc.title}` : "") +
             hcNote +
+            jdNote +
             boardNote,
           kimberleyNoteId: data.kimberleyNoteId || null,
           reply: data.reply || null,
