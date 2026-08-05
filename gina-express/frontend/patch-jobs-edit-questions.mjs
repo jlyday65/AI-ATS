@@ -3,8 +3,10 @@
  * Fix: Jobs Tab Edit crashes —
  *   TypeError: undefined is not an object (evaluating 'o.questions.length')
  *
- * Maria/Candidate File upserts omitted job.questions. The Jobs editor assumes
- * questions is always an array.
+ * The Jobs editor does useState(job) and then reads form.questions.length.
+ * Maria-upserted jobs omit questions. Patch BOTH App.jsx source patterns
+ * (form/draft/job/etc.) AND the built dist bundle so Railway cannot ship
+ * the unsafe access again.
  *
  * ONE LINE:
  *   node gina-express/frontend/patch-jobs-edit-questions.mjs ~/lyday-gina-backend/gina-backend
@@ -64,6 +66,146 @@ function canCompile(esbuild, text) {
   }
 }
 
+/** Make every foo.questions.length / .map safe, without double-wrapping. */
+function hardenQuestionsAccess(text) {
+  let out = text;
+  let n = 0;
+  // Already safe: (x.questions || []).length  / (x.questions||[]).length
+  // Unsafe: x.questions.length  (but not when already wrapped)
+  out = out.replace(
+    /(?<!\|\| \[\]\)\.)(?<!\|\|\[\]\)\.)(?<!\(\s*)\b([A-Za-z_$][\w$]*)\.questions\.length\b/g,
+    (m, id) => {
+      n += 1;
+      return `(${id}.questions || []).length`;
+    },
+  );
+  out = out.replace(
+    /(?<!\|\| \[\]\)\.)(?<!\|\|\[\]\)\.)(?<!\(\s*)\b([A-Za-z_$][\w$]*)\.questions\.map\b/g,
+    (m, id) => {
+      n += 1;
+      return `(${id}.questions || []).map`;
+    },
+  );
+  // h&&h.questions.length → h&&h.questions&&h.questions.length (then first pass wraps)
+  out = out.replace(
+    /\b([A-Za-z_$][\w$]*)&&\1\.questions\.length\b/g,
+    (m, id) => {
+      n += 1;
+      return `${id}&&${id}.questions&&(${id}.questions || []).length`;
+    },
+  );
+  // Collapse accidental double wraps
+  out = out.replace(
+    /\(\(([A-Za-z_$][\w$]*)\.questions \|\| \[\]\)\.length\)/g,
+    "($1.questions || []).length",
+  );
+  return { text: out, n };
+}
+
+function ensureNormalizeHelper(src) {
+  if (src.includes("function __ginaNormalizeJobForEdit")) return { src, added: false };
+  const helper = `
+function __ginaNormalizeJobForEdit(job = {}) {
+  const base = job && typeof job === "object" ? job : {};
+  const q = Array.isArray(base.questions) ? base.questions : [];
+  const hc = Number(base.headcount);
+  return {
+    ...base,
+    questions: q,
+    headcount: Number.isFinite(hc) && hc > 0 ? hc : 1,
+    description: base.description || base.jobDescription || "",
+    jobDescription: base.jobDescription || base.description || "",
+    title: base.title || base.name || "",
+    status: base.status || "open",
+  };
+}
+`;
+  const appAt = src.search(
+    /export\s+default\s+function\s+App\b|function\s+(?:App|CandidateTracker)\b/,
+  );
+  if (appAt < 0) {
+    return { src: helper + "\n" + src, added: true };
+  }
+  return { src: src.slice(0, appAt) + helper + "\n" + src.slice(appAt), added: true };
+}
+
+function normalizeEditorUseState(src) {
+  const marker = src.indexOf("Screening questions for this role");
+  if (marker < 0) return { src, changed: false };
+  const windowStart = Math.max(0, marker - 4000);
+  const slice = src.slice(windowStart, marker + 200);
+  // Match: const [form, setForm] = useState(job)  OR useState(e) OR useState(initialJob)
+  const re =
+    /const\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)\s*\]\s*=\s*useState\(\s*([A-Za-z_$][\w$]*)\s*\)/;
+  const m = slice.match(re);
+  if (!m) return { src, changed: false };
+  if (m[0].includes("__ginaNormalizeJobForEdit")) return { src, changed: false };
+  const at = windowStart + slice.indexOf(m[0]);
+  const stateVar = m[1];
+  const setter = m[2];
+  const initVar = m[3];
+  const replacement = `const [${stateVar}, ${setter}] = useState(() => __ginaNormalizeJobForEdit(${initVar}))`;
+  return {
+    src: src.slice(0, at) + replacement + src.slice(at + m[0].length),
+    changed: true,
+  };
+}
+
+function patchDistBundles(frontendDir) {
+  const assetsDir = path.join(frontendDir, "dist", "assets");
+  if (!fs.existsSync(assetsDir)) {
+    console.warn("No dist/assets yet — build first, then re-run or rely on APPLY script order");
+    return 0;
+  }
+  let files = 0;
+  for (const name of fs.readdirSync(assetsDir)) {
+    if (!/^index-.*\.js$/.test(name)) continue;
+    const fp = path.join(assetsDir, name);
+    let js = fs.readFileSync(fp, "utf8");
+    if (!js.includes("Screening questions for this role") && !js.includes(".questions.length")) {
+      continue;
+    }
+    const before = js;
+    // Nuclear dist harden
+    js = js.replace(
+      /(?<!\|\|\[\]\)\.)(?<!\|\| \[\]\)\.)\b([A-Za-z_$][\w$]*)\.questions\.length\b/g,
+      "($1.questions||[]).length",
+    );
+    js = js.replace(
+      /(?<!\|\|\[\]\)\.)(?<!\|\| \[\]\)\.)\b([A-Za-z_$][\w$]*)\.questions\.map\b/g,
+      "($1.questions||[]).map",
+    );
+    // Normalize Job editor useState(e) in minified form: useState(e) near Screening questions
+    const marker = js.indexOf("Screening questions for this role");
+    if (marker > 0) {
+      const windowStart = Math.max(0, marker - 2500);
+      const slice = js.slice(windowStart, marker);
+      const m = slice.match(
+        /\[(\w+),(\w+)\]=(\w+)\.useState\((\w+)\)/,
+      );
+      if (m && !slice.includes("__ginaNormalizeJobForEdit")) {
+        // Inline normalize at useState without helper (dist-safe):
+        // useState(e) → useState({...e,questions:Array.isArray(e.questions)?e.questions:[],headcount:Number(e.headcount)>0?Number(e.headcount):1})
+        const at = windowStart + slice.lastIndexOf(m[0]);
+        const state = m[1];
+        const setState = m[2];
+        const react = m[3];
+        const init = m[4];
+        const repl = `[${state},${setState}]=${react}.useState({...${init},questions:Array.isArray(${init}.questions)?${init}.questions:[],headcount:Number(${init}.headcount)>0?Number(${init}.headcount):1,description:${init}.description||${init}.jobDescription||"",jobDescription:${init}.jobDescription||${init}.description||""})`;
+        js = js.slice(0, at) + repl + js.slice(at + m[0].length);
+      }
+    }
+    if (js !== before) {
+      fs.writeFileSync(fp, js, "utf8");
+      files += 1;
+      console.log("Patched dist bundle:", name);
+    } else {
+      console.log("Dist bundle already safe or no match:", name);
+    }
+  }
+  return files;
+}
+
 let src = fs.readFileSync(appPath, "utf8");
 const bak = `${appPath}.bak-jobs-edit-q-${Date.now()}`;
 fs.copyFileSync(appPath, bak);
@@ -77,170 +219,28 @@ if (!before.ok) {
 
 let changed = 0;
 
-// 1) Defensive questions length checks in Jobs editor / candidate create
-const replacements = [
-  [/o\.questions\.length/g, "(o.questions || []).length"],
-  [/v&&v\.questions\.length/g, "v&&v.questions&&v.questions.length"],
-  [/R&&R\.questions\.length/g, "R&&R.questions&&R.questions.length"],
-  [
-    /v&&v\.questions&&v\.questions\.length\?v\.questions:i/g,
-    "v&&v.questions&&v.questions.length?v.questions:i",
-  ],
-];
-for (const [re, to] of replacements) {
-  const next = src.replace(re, to);
-  if (next !== src) {
-    src = next;
-    changed += 1;
-    console.log("Patched", String(re));
-  }
+const helper = ensureNormalizeHelper(src);
+src = helper.src;
+if (helper.added) {
+  changed += 1;
+  console.log("Inserted __ginaNormalizeJobForEdit helper");
 }
 
-// 2) Normalize job when opening Jobs editor: useState(e) → safe clone
-if (
-  !src.includes("__ginaNormalizeJobForEdit") &&
-  /useState\(\s*e\s*\)/.test(src)
-) {
-  // Prefer the Job editor pattern near "Screening questions for this role"
-  const marker = src.indexOf("Screening questions for this role");
-  if (marker > 0) {
-    const windowStart = Math.max(0, marker - 2500);
-    const slice = src.slice(windowStart, marker);
-    const m = slice.match(/const\s*\[\s*o\s*,\s*a\s*\]\s*=\s*useState\(\s*e\s*\)/);
-    if (m) {
-      const at = windowStart + slice.lastIndexOf(m[0]);
-      const helper = `
-function __ginaNormalizeJobForEdit(job = {}) {
-  const q = Array.isArray(job.questions) ? job.questions : [];
-  const hc = Number(job.headcount);
-  return {
-    ...job,
-    questions: q,
-    headcount: Number.isFinite(hc) && hc > 0 ? hc : 1,
-    description: job.description || job.jobDescription || "",
-    jobDescription: job.jobDescription || job.description || "",
-  };
-}
-`;
-      if (!src.includes("function __ginaNormalizeJobForEdit")) {
-        const appAt = src.search(/export\s+default\s+function\s+App\b|function\s+App\b/);
-        if (appAt >= 0) {
-          src = src.slice(0, appAt) + helper + "\n" + src.slice(appAt);
-          changed += 1;
-          console.log("Inserted __ginaNormalizeJobForEdit helper");
-        }
-      }
-      src =
-        src.slice(0, at) +
-        "const [o, a] = useState(() => __ginaNormalizeJobForEdit(e))" +
-        src.slice(at + m[0].length);
-      changed += 1;
-      console.log("Normalized Jobs editor useState(e)");
-    }
-  }
+const editor = normalizeEditorUseState(src);
+src = editor.src;
+if (editor.changed) {
+  changed += 1;
+  console.log("Normalized Jobs editor useState(job) → __ginaNormalizeJobForEdit");
 }
 
-// 3) Update sanitizeGinaJob to always include questions: []
-if (src.includes("function sanitizeGinaJob(")) {
-  if (!/questions,\s*\n\s*status:/.test(src) && !/questions:\s*questions/.test(src)) {
-    // Re-run headcount patch which rewrites sanitize — or inject questions into return
-    const start = src.indexOf("function sanitizeGinaJob(");
-    const brace = src.indexOf("{", start);
-    let depth = 0;
-    let end = -1;
-    for (let i = brace; i < src.length; i++) {
-      if (src[i] === "{") depth++;
-      else if (src[i] === "}") {
-        depth--;
-        if (depth === 0) {
-          end = i + 1;
-          break;
-        }
-      }
-    }
-    if (start >= 0 && end > start) {
-      const REPLACEMENT = `function sanitizeGinaJob(job) {
-  if (!job || typeof job !== "object") return null;
-  const asSkills = (v) => {
-    if (Array.isArray(v)) {
-      return v
-        .map((x) =>
-          typeof x === "string"
-            ? x
-            : x && typeof x === "object"
-              ? String(x.name || x.label || x.skill || "")
-              : String(x || ""),
-        )
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    if (typeof v === "string" && v.trim()) {
-      return v.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
-    }
-    return [];
-  };
-  const title = String(job.title || job.name || "").trim();
-  if (!title) return null;
-  const asCount = (v) => {
-    const n = Number(String(v ?? "").replace(/[^\\d.]/g, ""));
-    return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
-  };
-  const headcount = asCount(
-    job.headcount ??
-      job.Headcount ??
-      job.sourcedCount ??
-      job.candidateCount ??
-      job.pipelineCount,
-  );
-  const openings = asCount(job.openings ?? job.positions);
-  const questions = Array.isArray(job.questions)
-    ? job.questions
-        .map((q) =>
-          typeof q === "string"
-            ? q
-            : q && typeof q === "object"
-              ? String(q.text || q.question || q.label || "")
-              : String(q || ""),
-        )
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
-  const hc = headcount != null ? headcount : 1;
-  return {
-    id: job.id || \`job_\${Date.now().toString(36)}\`,
-    title,
-    name: String(job.name || title),
-    location: String(job.location || ""),
-    description: String(job.description || job.jobDescription || ""),
-    jobDescription: String(job.jobDescription || job.description || ""),
-    requiredSkills: asSkills(job.requiredSkills),
-    preferredSkills: asSkills(job.preferredSkills),
-    questions,
-    status: String(job.status || "open"),
-    source: job.source != null ? String(job.source) : undefined,
-    createdAt: job.createdAt || undefined,
-    updatedAt: job.updatedAt || undefined,
-    createdDate:
-      job.createdDate ||
-      (job.createdAt ? String(job.createdAt).slice(0, 10) : undefined),
-    headcount: hc,
-    Headcount: hc,
-    sourcedCount: headcount,
-    candidateCount: headcount,
-    pipelineCount: headcount,
-    ...(openings != null ? { openings, positions: openings } : {}),
-  };
-}`;
-      src = src.slice(0, start) + REPLACEMENT + src.slice(end);
-      changed += 1;
-      console.log("Updated sanitizeGinaJob with questions + headcount defaults");
-    }
-  } else {
-    console.log("sanitizeGinaJob already looks questions-safe");
-  }
+const hardened = hardenQuestionsAccess(src);
+src = hardened.text;
+if (hardened.n) {
+  changed += 1;
+  console.log("Hardened questions length/map accesses:", hardened.n);
 }
 
-// 4) Boot backfill: ensure every persisted job has questions:[]
+// Boot backfill: ensure every persisted job has questions:[]
 if (!src.includes("__ginaJobsQuestionsBackfill")) {
   const jobsState = src.search(
     /const\s*\[\s*jobs\s*,\s*setJobs\s*\]\s*=\s*useState\s*\(/,
@@ -259,7 +259,10 @@ if (!src.includes("__ginaJobsQuestionsBackfill")) {
         }
       }
     }
-    while (end > 0 && (src[end] === ";" || src[end] === "\n" || src[end] === "\r")) {
+    while (
+      end > 0 &&
+      (src[end] === ";" || src[end] === "\n" || src[end] === "\r")
+    ) {
       if (src[end] === ";") {
         end += 1;
         break;
@@ -269,8 +272,6 @@ if (!src.includes("__ginaJobsQuestionsBackfill")) {
     if (end > 0) {
       const inject = `
   useEffect(() => {
-    if (typeof window !== "undefined" && window.__ginaJobsQuestionsBackfill) return;
-    if (typeof window !== "undefined") window.__ginaJobsQuestionsBackfill = true;
     try {
       setJobs((prev) => {
         const list = Array.isArray(prev) ? prev : [];
@@ -290,11 +291,27 @@ if (!src.includes("__ginaJobsQuestionsBackfill")) {
         return dirty ? next : list;
       });
     } catch (e) { /* ignore */ }
+    if (typeof window !== "undefined") window.__ginaJobsQuestionsBackfill = true;
   }, []);
 `;
       src = src.slice(0, end) + inject + src.slice(end);
       changed += 1;
       console.log("Injected jobs questions/headcount backfill useEffect");
+    }
+  }
+}
+
+// Keep sanitizeGinaJob questions-safe if present
+if (src.includes("function sanitizeGinaJob(") && !/questions,\s*\n\s*status:/.test(src) && !src.includes("questions,\n    status:")) {
+  if (!src.includes("// Jobs Edit crashes on o.questions.length")) {
+    // Light touch: ensure return includes questions: Array.isArray...
+    src = src.replace(
+      /preferredSkills:\s*asSkills\(job\.preferredSkills\),\s*\n(\s*)status:/,
+      `preferredSkills: asSkills(job.preferredSkills),\n$1questions: Array.isArray(job.questions) ? job.questions : [],\n$1status:`,
+    );
+    if (src.includes("questions: Array.isArray(job.questions)")) {
+      changed += 1;
+      console.log("Injected questions into sanitizeGinaJob return");
     }
   }
 }
@@ -321,12 +338,17 @@ if (check.status !== 0) {
   process.exit(check.status || 2);
 }
 
+// If dist already exists, harden it now (APPLY script also rebuilds then re-hardens)
+const distPatched = patchDistBundles(path.join(ginaDir, "frontend"));
+console.log("Dist bundles patched:", distPatched);
+
 console.log(`
 Next:
   cd ${path.join(ginaDir, "frontend")} && npm run build
+  node ${path.join(__dirname, "patch-jobs-edit-questions-dist.mjs")} ${ginaDir}
   git add -f frontend/dist frontend/src/App.jsx
-  git commit -m "Fix Jobs Edit crash: ensure job.questions is an array"
+  git commit -m "Fix Jobs Edit crash: safe questions access in source + dist"
   git push
 
-Then hard-refresh Gina ATS and Edit the job again.
+Then hard-refresh Gina ATS (new index-*.js hash) and Edit the job again.
 `);
