@@ -48,39 +48,38 @@ export function archiveCandidatesToTalentPool(
   }
 
   const now = new Date().toISOString();
-  const rows: TalentPoolCandidate[] = input.candidates
-    .map((raw) => {
-      const fullName = String(raw.fullName || raw.name || "").trim();
-      if (!fullName) return null;
-      const resumeText = String(raw.resumeText || raw.resume || "").trim();
-      const headline = String(raw.headline || raw.role || "").trim();
-      const skills = [
-        ...(raw.skills || []),
-        ...extractSkills(`${headline} ${resumeText}`),
-      ];
-      return {
-        id: `tp_${randomUUID().slice(0, 10)}`,
-        fullName,
-        email: raw.email ? String(raw.email).trim() : undefined,
-        phone: raw.phone ? String(raw.phone).trim() : undefined,
-        headline: headline || undefined,
-        location: raw.location ? String(raw.location).trim() : undefined,
-        skills: [...new Set(skills.map((s) => s.trim()).filter(Boolean))],
-        resumeText: resumeText || undefined,
-        summary: raw.summary ? String(raw.summary).trim() : undefined,
-        source: raw.source ? String(raw.source) : "job_save_export",
-        stage: raw.stage ? String(raw.stage) : undefined,
-        archivedFromJobTitle: jobTitle,
-        archivedFromJobDescription: input.jobDescription?.trim() || undefined,
-        archivedAt: now,
-        tags: [
-          "archived",
-          input.label || "job_save_export",
-          input.clientName ? `client:${input.clientName}` : "",
-        ].filter(Boolean),
-      } satisfies TalentPoolCandidate;
-    })
-    .filter((row): row is TalentPoolCandidate => Boolean(row));
+  const rows: TalentPoolCandidate[] = [];
+  for (const raw of input.candidates) {
+    const fullName = String(raw.fullName || raw.name || "").trim();
+    if (!fullName) continue;
+    const resumeText = String(raw.resumeText || raw.resume || "").trim();
+    const headline = String(raw.headline || raw.role || "").trim();
+    const skills = [
+      ...(raw.skills || []),
+      ...extractSkills(`${headline} ${resumeText}`),
+    ];
+    rows.push({
+      id: `tp_${randomUUID().slice(0, 10)}`,
+      fullName,
+      email: raw.email ? String(raw.email).trim() : undefined,
+      phone: raw.phone ? String(raw.phone).trim() : undefined,
+      headline: headline || undefined,
+      location: raw.location ? String(raw.location).trim() : undefined,
+      skills: [...new Set(skills.map((s) => s.trim()).filter(Boolean))],
+      resumeText: resumeText || undefined,
+      summary: raw.summary ? String(raw.summary).trim() : undefined,
+      source: raw.source ? String(raw.source) : "job_save_export",
+      stage: raw.stage ? String(raw.stage) : undefined,
+      archivedFromJobTitle: jobTitle,
+      archivedFromJobDescription: input.jobDescription?.trim() || undefined,
+      archivedAt: now,
+      tags: [
+        "archived",
+        input.label || "job_save_export",
+        input.clientName ? `client:${input.clientName}` : "",
+      ].filter(Boolean),
+    });
+  }
 
   const saved = upsertTalentCandidates(rows);
   return { saved, count: saved.length };
