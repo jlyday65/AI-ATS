@@ -20,6 +20,16 @@ const simple = parseCandidateFileInstruction(
 assert.equal(simple.sendToMaria, true);
 assert.ok(simple.job.description.includes("Maria"));
 
+const detroit = parseCandidateFileInstruction(
+  "Please send a Candidate File to Maria: An Auto Production Floor Supervisor in Detroit, MI manages daily assembly line operations, supervises production staff, enforces safety rules, and meets shift quotas. This full-time role includes shift supervision, quality control, and process improvement. Job Duties Lead and direct assembly line workers. Requirements High school diploma or GED required.",
+);
+assert.equal(detroit.sendToMaria, true);
+assert.match(detroit.job.title, /Auto Production Floor Supervisor/i);
+assert.match(detroit.job.location, /Detroit/i);
+assert.ok(detroit.job.description.length >= 40);
+assert.match(detroit.job.description, /assembly line/i);
+assert.notEqual(detroit.job.title, "Open role");
+
 const reply = buildGinaCandidateFileReply({
   file: {
     id: "cf_test",

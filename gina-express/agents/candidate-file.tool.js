@@ -38,9 +38,46 @@ function stamp() {
   });
 }
 
+function cleanRoleTitle(raw = "") {
+  let s = String(raw || "")
+    .replace(/^(?:an?\s+|the\s+)/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/[?.!,;:]+$/g, "")
+    .trim();
+  if (!s || /^(the|a|an|candidate|file|open role|role|job|position|maria|michelle)$/i.test(s)) {
+    return "";
+  }
+  if (s.length < 3 || s.length > 90) return "";
+  return s;
+}
+
+function cleanLocation(raw = "") {
+  return String(raw || "")
+    .replace(/\s+/g, " ")
+    .replace(/[?.!,;:]+$/g, "")
+    .trim();
+}
+
+/**
+ * "Candidate File to Maria: An Auto Production Floor Supervisor in Detroit, MI manages…"
+ * → title + location + remainder as JD body.
+ */
+function parseColonRoleBlob(text = "") {
+  const m = String(text || "").match(
+    /\bcandidate\s+file(?:\s+to\s+\w+)?\s*:\s*(?:an?\s+|the\s+)?([A-Z][A-Za-z0-9 /&-]{2,80}?)\s+in\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)\s+([\s\S]+)/i,
+  );
+  if (!m) return null;
+  const title = cleanRoleTitle(m[1]);
+  const location = cleanLocation(m[2]);
+  const description = String(m[3] || "").trim();
+  if (!title || description.length < 40) return null;
+  return { title, location, description };
+}
+
 /** Pull structured fields from Kimberley's natural-language ask. */
 export function parseCandidateFileInstruction(task = "", context = {}) {
   const text = String(task || "").trim();
+  const colonBlob = parseColonRoleBlob(text);
   const clientName =
     context.clientName ||
     text.match(/\b(?:client|company)\s*[:\-]\s*([^\n,]+)/i)?.[1]?.trim() ||
@@ -48,26 +85,35 @@ export function parseCandidateFileInstruction(task = "", context = {}) {
     "";
 
   let title =
-    context.roleTitle ||
-    context.jobTitle ||
-    context.title ||
-    text.match(/\bjob title\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() ||
-    text.match(
-      /\b(?:for|role|position|title)\s*[:\-]?\s*(?:an?\s+|the\s+)?([A-Z][A-Za-z0-9 /&-]{2,60}?)(?:\s+in\s+|\s+at\s+|,\s*\$|\s+salary|\s+candidate|\s*$)/,
-    )?.[1]?.trim() ||
-    text.match(
-      /\bcandidate file\s+(?:for|on)\s+(?:an?\s+|the\s+)?([A-Za-z0-9 /&-]{2,60}?)(?:\s+in\s+|,\s*\$|\s+and\s+|$)/i,
-    )?.[1]?.trim() ||
+    cleanRoleTitle(context.roleTitle || context.jobTitle || context.title || "") ||
+    cleanRoleTitle(text.match(/\bjob title\s*[:\-]\s*([^\n]+)/i)?.[1] || "") ||
+    cleanRoleTitle(colonBlob?.title || "") ||
+    cleanRoleTitle(
+      text.match(
+        /\b(?:for|role|position|title)\s*[:\-]?\s*(?:an?\s+|the\s+)?([A-Z][A-Za-z0-9 /&-]{2,60}?)(?:\s+in\s+|\s+at\s+|,\s*\$|\s+salary|\s+candidate|\s*$)/,
+      )?.[1] || "",
+    ) ||
+    cleanRoleTitle(
+      text.match(
+        /\bcandidate file\s+(?:for|on)\s+(?:an?\s+|the\s+)?([A-Za-z0-9 /&-]{2,60}?)(?:\s+in\s+|,\s*\$|\s+and\s+|$)/i,
+      )?.[1] || "",
+    ) ||
+    cleanRoleTitle(
+      text.match(
+        /\b(?:an?\s+|the\s+)?([A-Z][A-Za-z0-9/&-]+(?:\s+[A-Z][A-Za-z0-9/&-]+){1,6})\s+in\s+[A-Z]/,
+      )?.[1] || "",
+    ) ||
     "";
 
-  if (!title || /^(the|a|an|candidate|file)$/i.test(title)) {
+  if (!title) {
     title = "Open role";
   }
 
   const location =
-    context.location ||
-    text.match(/\blocation\s*[:\-]\s*([^\n]+)/i)?.[1]?.trim() ||
-    text.match(/\bin\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)/i)?.[1]?.trim() ||
+    cleanLocation(context.location || "") ||
+    cleanLocation(colonBlob?.location || "") ||
+    cleanLocation(text.match(/\blocation\s*[:\-]\s*([^\n]+)/i)?.[1] || "") ||
+    cleanLocation(text.match(/\bin\s+([A-Za-z .]+(?:,\s*[A-Z]{2})?)/i)?.[1] || "") ||
     "";
 
   const salary =
@@ -80,7 +126,21 @@ export function parseCandidateFileInstruction(task = "", context = {}) {
     context.jobDescription ||
     context.description ||
     text.match(/\bjob description\s*[:\-]\s*([\s\S]+?)(?:\n\s*\n|send to maria|$)/i)?.[1]?.trim() ||
+    (colonBlob?.description && colonBlob.description.length >= 40
+      ? colonBlob.description
+      : "") ||
     "";
+
+  // Unlabeled JD after "ROLE in CITY, ST …" when colon blob missed but title+location known.
+  if (!description || description.length < 40) {
+    const unlabeled = text.match(
+      new RegExp(
+        `${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+in\\s+${location.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+([\\s\\S]+)`,
+        "i",
+      ),
+    )?.[1]?.trim();
+    if (unlabeled && unlabeled.length >= 40) description = unlabeled;
+  }
 
   if (!description) {
     description = [
@@ -197,6 +257,30 @@ export async function createCandidateFileFromInstruction(input = {}) {
     }
   }
 
+  let jobQueued = null;
+  if (
+    typeof input.queueAction === "function" &&
+    parsed.job.title &&
+    !/^open role$/i.test(parsed.job.title) &&
+    String(parsed.job.description || "").trim().length >= 40
+  ) {
+    try {
+      jobQueued = await input.queueAction("upsert_job", {
+        roleTitle: parsed.job.title,
+        title: parsed.job.title,
+        location: parsed.job.location,
+        roleDescription: parsed.job.description,
+        jobDescription: parsed.job.description,
+        salary: parsed.job.salary,
+        source: "candidate_file",
+        candidateFileId: file.id,
+        queuedAt: new Date().toISOString(),
+      });
+    } catch {
+      jobQueued = null;
+    }
+  }
+
   let mariaQueued = null;
   if (parsed.sendToMaria && typeof input.queueAction === "function") {
     try {
@@ -206,6 +290,10 @@ export async function createCandidateFileFromInstruction(input = {}) {
         targetRole: "Sourcer",
         route: "/maria",
         requestedBy: parsed.requestedBy || "Kimberley",
+        roleTitle: parsed.job.title,
+        location: parsed.job.location,
+        roleDescription: parsed.job.description,
+        jobDescription: parsed.job.description,
         task: `Source candidates for ${parsed.job.title}${parsed.job.location ? ` in ${parsed.job.location}` : ""}. All candidates must have a resume on file. Add each shortlisted candidate + resume text into Candidate File ${file.id} (${parsed.job.title}).`,
         context: {
           candidateFileId: file.id,
@@ -226,7 +314,15 @@ export async function createCandidateFileFromInstruction(input = {}) {
     ok: true,
     file,
     candidateFileId: file.id,
+    // Flatten for Check for actions → Jobs tab upsert (maybeUpsertJobFromPayload).
+    roleTitle: parsed.job.title,
+    title: parsed.job.title,
+    roleDescription: parsed.job.description,
+    jobDescription: parsed.job.description,
+    location: parsed.job.location,
+    salary: parsed.job.salary,
     kimberleyNoteId,
+    jobActionId: jobQueued || null,
     mariaActionId: mariaQueued || null,
     sendToMaria: parsed.sendToMaria,
     reply,
