@@ -163,6 +163,74 @@
     return [];
   }
 
+  /** Positive integer headcount / sourced count from any common job field. */
+  function normalizeHeadcount(raw) {
+    if (raw == null || raw === "") return null;
+    if (typeof raw === "object") {
+      return normalizeHeadcount(
+        raw.headcount ??
+          raw.Headcount ??
+          raw.sourcedCount ??
+          raw.candidateCount ??
+          raw.pipelineCount ??
+          raw.positions ??
+          raw.openings ??
+          raw.hc,
+      );
+    }
+    const n = Number(String(raw).replace(/[^\d.]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.min(9999, Math.floor(n));
+  }
+
+  /** Count Board cards tied to a job title (or jobId). */
+  function countBoardCandidatesForJob(title = "", jobId = "") {
+    const list =
+      typeof candidates !== "undefined" && Array.isArray(candidates)
+        ? candidates
+        : typeof window !== "undefined" && Array.isArray(window.__ginaCandidates)
+          ? window.__ginaCandidates
+          : [];
+    const t = String(title || "").trim().toLowerCase();
+    const id = String(jobId || "").trim();
+    if (!t && !id) return 0;
+    return list.filter((c) => {
+      if (!c) return false;
+      if (id && String(c.jobId || "") === id) return true;
+      if (!t) return false;
+      const role = String(c.jobTitle || c.role || c.title || "")
+        .trim()
+        .toLowerCase();
+      return role === t;
+    }).length;
+  }
+
+  /**
+   * Write Maria's sourced headcount onto the Jobs row.
+   * Gina Jobs UI may read headcount / sourcedCount / candidateCount / openings.
+   */
+  function syncJobSourcedHeadcount(title, count, extra = {}) {
+    const hc = normalizeHeadcount(count);
+    const role = String(title || "").trim();
+    if (!role || !hc) return null;
+    return upsertJobOnBoard({
+      title: role,
+      roleTitle: role,
+      location: extra.location || "",
+      description: extra.description || "",
+      jobId: extra.jobId,
+      headcount: hc,
+      sourcedCount: hc,
+      candidateCount: hc,
+      pipelineCount: hc,
+      // Only set openings when the row has none yet (openings ≠ sourced).
+      openings: extra.openings,
+      positions: extra.positions,
+      source: extra.source || "maria_sourced_headcount",
+      task: extra.task || "",
+    });
+  }
+
   /** Resolve Jobs setter — App usually has setJobs; keep window fallback. */
   function resolveSetJobsFn() {
     try {
@@ -282,6 +350,7 @@
     const preferredSkills = normalizeJobSkills(
       raw.preferredSkills ?? raw.context?.preferredSkills,
     );
+    const incomingHc = normalizeHeadcount(raw);
     const now = new Date().toISOString();
     let saved = null;
     setJobsFn((prev) => {
@@ -297,6 +366,18 @@
         const thin =
           !prevJob.description ||
           String(prevJob.description).trim().length < 40;
+        const prevHc = normalizeHeadcount(prevJob);
+        const headcount =
+          incomingHc != null
+            ? Math.max(incomingHc, prevHc || 0)
+            : prevHc || undefined;
+        const prevOpenings = normalizeHeadcount(
+          prevJob.openings ?? prevJob.positions,
+        );
+        const openings =
+          normalizeHeadcount(raw.openings ?? raw.positions) ??
+          prevOpenings ??
+          undefined;
         // Do NOT spread prevJob wholesale — old rows may carry context:{} etc.
         saved = {
           id: prevJob.id,
@@ -320,12 +401,25 @@
           source: prevJob.source || raw.source || "gina_chat",
           createdAt: prevJob.createdAt || now,
           updatedAt: now,
+          ...(headcount != null
+            ? {
+                headcount,
+                Headcount: headcount,
+                sourcedCount: headcount,
+                candidateCount: headcount,
+                pipelineCount: headcount,
+              }
+            : {}),
+          ...(openings != null ? { openings, positions: openings } : {}),
           ...(thin && description ? { description, jobDescription: description } : {}),
         };
         const next = list.slice();
         next[idx] = saved;
         return next;
       }
+      const headcount = incomingHc || undefined;
+      const openings =
+        normalizeHeadcount(raw.openings ?? raw.positions) || undefined;
       saved = {
         id: raw.jobId || raw.id || `job_${Date.now().toString(36)}`,
         title,
@@ -339,6 +433,16 @@
         source: raw.source || "gina_chat",
         createdAt: now,
         updatedAt: now,
+        ...(headcount != null
+          ? {
+              headcount,
+              Headcount: headcount,
+              sourcedCount: headcount,
+              candidateCount: headcount,
+              pipelineCount: headcount,
+            }
+          : {}),
+        ...(openings != null ? { openings, positions: openings } : {}),
       };
       return [saved, ...list];
     });
@@ -874,12 +978,60 @@
         }
 
         const totalBoard = boardImported + drainedBoard;
+        const mariaSourced = normalizeHeadcount(
+          data.headcount ||
+            data.candidateCount ||
+            data.result?.mariaResult?.candidateCount ||
+            data.result?.mariaResult?.result?.candidateCount ||
+            data.result?.candidateCount ||
+            data.result?.headcount ||
+            (Array.isArray(shortlist) && shortlist.length
+              ? shortlist.length
+              : 0) ||
+            totalBoard ||
+            0,
+        );
+        const roleForHc =
+          jobNote?.title ||
+          jobTitleForBoard ||
+          forcedTitle ||
+          "";
+        const boardCount = roleForHc
+          ? countBoardCandidatesForJob(roleForHc, jobNote?.id || mariaJob.id)
+          : 0;
+        const headcount = Math.max(
+          mariaSourced || 0,
+          totalBoard || 0,
+          boardCount || 0,
+        );
+        let jobWithHc = jobNote;
+        if (roleForHc && headcount > 0) {
+          jobWithHc =
+            syncJobSourcedHeadcount(roleForHc, headcount, {
+              location:
+                jobNote?.location ||
+                mariaJob.location ||
+                fileJob.location ||
+                payload?.location ||
+                "",
+              description:
+                jobNote?.description ||
+                fileJob.description ||
+                mariaDesc ||
+                "",
+              jobId: jobNote?.id || mariaJob.id || fileJob.id,
+              source: "maria_sourced_headcount",
+              task: taskHint,
+            }) || jobNote;
+        }
         const boardNote =
           totalBoard > 0
             ? ` · Board: ${totalBoard} candidate(s)`
             : drained > 0 && type === "create_candidate_file"
               ? ` · Follow-on ${drained} action(s) applied`
               : "";
+        const hcNote =
+          jobWithHc && headcount > 0 ? ` · Headcount: ${headcount}` : "";
         return {
           ok: true,
           summary:
@@ -887,12 +1039,14 @@
               (data.reply
                 ? `${data.result?.agent || "Team"} replied — see Kimberley's Notes`
                 : "Team command executed")) +
-            (jobNote ? ` · Jobs: ${jobNote.title}` : "") +
+            (jobWithHc ? ` · Jobs: ${jobWithHc.title}` : "") +
+            hcNote +
             boardNote,
           kimberleyNoteId: data.kimberleyNoteId || null,
           reply: data.reply || null,
-          job: jobNote || null,
+          job: jobWithHc || null,
           boardImported: totalBoard,
+          headcount: headcount || null,
         };
       }
 

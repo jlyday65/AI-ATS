@@ -290,6 +290,14 @@ router.post("/run-command", async (req, res) => {
             null,
           location:
             result?.job?.location || result?.location || payload.location || null,
+          candidateCount:
+            result?.candidateCount ??
+            result?.topCandidates?.length ??
+            null,
+          headcount:
+            result?.candidateCount ??
+            result?.topCandidates?.length ??
+            null,
           result,
         });
       } catch (err) {
@@ -429,6 +437,16 @@ router.post("/run-command", async (req, res) => {
           result.mariaResult?.location ||
           mariaJob.location ||
           payload.location ||
+          null,
+        candidateCount:
+          result.mariaResult?.candidateCount ??
+          result.mariaResult?.result?.candidateCount ??
+          result.mariaResult?.topCandidates?.length ??
+          null,
+        headcount:
+          result.mariaResult?.candidateCount ??
+          result.mariaResult?.result?.candidateCount ??
+          result.mariaResult?.topCandidates?.length ??
           null,
         result,
       });
