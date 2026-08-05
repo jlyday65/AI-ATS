@@ -197,3 +197,30 @@ export function mergeJobContext(base = {}, jobCtx = {}) {
     ),
   };
 }
+
+/**
+ * Build a Jobs-tab row from a Maria / Candidate File / chat payload.
+ * Used so Gina can populate Jobs when Kimberley sends a new role + JD.
+ */
+export function jobRecordFromContext(input = {}, { idPrefix = "job" } = {}) {
+  const ctx = extractJobContext(input);
+  const title = ctx.roleTitle;
+  if (!title) return null;
+  const description = ctx.roleDescription || ctx.jobDescription || "";
+  const now = new Date().toISOString();
+  return {
+    id: ctx.jobId || `${idPrefix}_${Date.now().toString(36)}`,
+    title,
+    name: title,
+    location: ctx.location || "",
+    description,
+    jobDescription: description,
+    requiredSkills: ctx.requiredSkills || [],
+    preferredSkills: ctx.preferredSkills || [],
+    seniority: ctx.seniority || "",
+    status: "open",
+    source: "gina_chat",
+    createdAt: now,
+    updatedAt: now,
+  };
+}

@@ -143,6 +143,114 @@
     return Boolean(name) && BOT_NAMES.has(name);
   }
 
+  /** Upsert a Jobs-tab row from Maria / chat JD so Kimberley does not re-enter it. */
+  function upsertJobOnBoard(raw = {}) {
+    if (typeof setJobs !== "function") return null;
+    const title = String(
+      raw.title || raw.roleTitle || raw.jobTitle || raw.name || "",
+    ).trim();
+    if (!title) return null;
+    const description = String(
+      raw.description ||
+        raw.jobDescription ||
+        raw.roleDescription ||
+        raw.context?.roleDescription ||
+        raw.context?.jobDescription ||
+        "",
+    ).trim();
+    const location = String(
+      raw.location || raw.context?.location || "",
+    ).trim();
+    const now = new Date().toISOString();
+    let saved = null;
+    setJobs((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const idx = list.findIndex(
+        (j) =>
+          String(j.title || j.name || "")
+            .trim()
+            .toLowerCase() === title.toLowerCase(),
+      );
+      if (idx >= 0) {
+        const prevJob = list[idx];
+        const thin =
+          !prevJob.description ||
+          String(prevJob.description).trim().length < 40;
+        saved = {
+          ...prevJob,
+          title,
+          name: title,
+          location: location || prevJob.location || "",
+          description: description || prevJob.description || "",
+          jobDescription: description || prevJob.jobDescription || prevJob.description || "",
+          requiredSkills: raw.requiredSkills || prevJob.requiredSkills || [],
+          preferredSkills: raw.preferredSkills || prevJob.preferredSkills || [],
+          status: prevJob.status || "open",
+          updatedAt: now,
+          // Prefer richer incoming JD
+          ...(thin && description ? { description, jobDescription: description } : {}),
+        };
+        const next = list.slice();
+        next[idx] = saved;
+        return next;
+      }
+      saved = {
+        id: raw.jobId || raw.id || `job_${Date.now().toString(36)}`,
+        title,
+        name: title,
+        location,
+        description,
+        jobDescription: description,
+        requiredSkills: raw.requiredSkills || [],
+        preferredSkills: raw.preferredSkills || [],
+        status: "open",
+        source: raw.source || "gina_chat",
+        createdAt: now,
+        updatedAt: now,
+      };
+      return [saved, ...list];
+    });
+    // Select the job when helpers exist so Maria/Michelle see it next.
+    try {
+      if (typeof setSelectedJob === "function") setSelectedJob(saved);
+      else if (typeof setActiveJob === "function") setActiveJob(saved);
+      else if (typeof setCurrentJob === "function") setCurrentJob(saved);
+    } catch {
+      /* optional */
+    }
+    return saved;
+  }
+
+  function maybeUpsertJobFromPayload(payload = {}) {
+    const title =
+      payload.roleTitle ||
+      payload.jobTitle ||
+      payload.title ||
+      payload.context?.roleTitle ||
+      payload.job?.title;
+    const description =
+      payload.roleDescription ||
+      payload.jobDescription ||
+      payload.description ||
+      payload.context?.roleDescription ||
+      payload.context?.jobDescription ||
+      payload.job?.description;
+    if (!title) return null;
+    // Require a real JD (not just a one-line task) before creating Jobs rows.
+    if (!description || String(description).trim().length < 40) return null;
+    return upsertJobOnBoard({
+      ...payload,
+      title,
+      roleTitle: title,
+      description,
+      location: payload.location || payload.context?.location,
+      requiredSkills: payload.requiredSkills || payload.context?.requiredSkills,
+      preferredSkills: payload.preferredSkills || payload.context?.preferredSkills,
+      jobId: payload.jobId || payload.context?.jobId,
+      source: "kimberley_notify",
+    });
+  }
+
   function resolveTeamBotName(raw) {
     const text = String(raw || "").trim().toLowerCase();
     if (!text) return null;
@@ -235,8 +343,44 @@
         }
       }
 
+      // --- Jobs tab: create/update when Kimberley sends a new role + JD ---
+      if (
+        type === "upsert_job" ||
+        type === "create_job" ||
+        type === "ensure_job" ||
+        type === "import_job"
+      ) {
+        const job = upsertJobOnBoard({
+          ...payload,
+          title: payload.title || payload.roleTitle || payload.jobTitle,
+          description:
+            payload.description ||
+            payload.jobDescription ||
+            payload.roleDescription,
+          location: payload.location,
+          requiredSkills: payload.requiredSkills,
+          preferredSkills: payload.preferredSkills,
+          jobId: payload.jobId || payload.id,
+          source: payload.source || "gina_upsert_job",
+        });
+        if (!job) {
+          return {
+            ok: false,
+            reason:
+              "upsert_job needs title/roleTitle and a job description (40+ chars).",
+          };
+        }
+        return {
+          ok: true,
+          summary: `Jobs tab updated: ${job.title}${job.description ? " (description saved)" : ""}`,
+          job,
+        };
+      }
+
       // --- Team commands (Kimberley → Gina → Maria/Michelle/Kelley/Ashton) ---
       if (type === "command_agent" || type === "source_candidates_signalhire" || type === "create_candidate_file") {
+        // When Kimberley includes a new job + JD for Maria, populate Jobs first.
+        const jobUpserted = maybeUpsertJobFromPayload(payload || {});
         const res = await fetch("/ats/run-command", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -276,15 +420,31 @@
                 `Command failed (${res.status})`) + dbg,
           };
         }
+        // Also upsert from server-normalized fields if chat payload was thin.
+        const fromServer = maybeUpsertJobFromPayload({
+          ...(payload || {}),
+          roleTitle:
+            data.result?.roleTitle ||
+            data.result?.mariaResult?.roleTitle ||
+            payload?.roleTitle,
+          roleDescription:
+            data.result?.roleDescription ||
+            payload?.roleDescription ||
+            payload?.jobDescription,
+          location: data.result?.location || payload?.location,
+        });
+        const jobNote = jobUpserted || fromServer;
         return {
           ok: true,
           summary:
-            data.summary ||
-            (data.reply
-              ? `${data.result?.agent || "Team"} replied — see Kimberley's Notes`
-              : "Team command executed"),
+            (data.summary ||
+              (data.reply
+                ? `${data.result?.agent || "Team"} replied — see Kimberley's Notes`
+                : "Team command executed")) +
+            (jobNote ? ` · Jobs: ${jobNote.title}` : ""),
           kimberleyNoteId: data.kimberleyNoteId || null,
           reply: data.reply || null,
+          job: jobNote || null,
         };
       }
 
