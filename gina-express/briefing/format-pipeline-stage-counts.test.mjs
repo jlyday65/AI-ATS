@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   formatMorningPipelineBriefing,
   formatPipelineStageCounts,
+  formatJobsPipelineRollup,
   formatTeamUpdateLikeNotes,
 } from "./format-pipeline-stage-counts.js";
 
@@ -56,5 +57,50 @@ assert.match(briefing, /• None/);
 assert.match(briefing, /Maria \(Sourcer\)/);
 assert.match(briefing, /Ask: Source role/);
 assert.doesNotMatch(briefing, /Key Takeaways/);
+
+const rollup = formatJobsPipelineRollup({
+  boardCandidates: [
+    {
+      name: "Ava Chen",
+      jobTitle: "Auto Production Floor Supervisor",
+      stage: "screening",
+    },
+    {
+      name: "Ben Lee",
+      role: "Auto Production Floor Supervisor",
+      stage: "interview",
+    },
+    {
+      name: "Cara Diaz",
+      jobTitle: "Auto Production Floor Supervisor",
+      stage: "hired",
+    },
+    { name: "Dana Ok", jobTitle: "Warehouse Mechanic", stage: "screening" },
+  ],
+  jobs: [{ title: "Auto Production Floor Supervisor" }, { title: "Warehouse Mechanic" }],
+});
+assert.match(rollup, /📁 Jobs in pipeline/);
+assert.match(rollup, /Job Title: Auto Production Floor Supervisor/);
+assert.match(rollup, /Names in Screening: Ava Chen/);
+assert.match(rollup, /Names Interviewing: Ben Lee/);
+assert.match(rollup, /Candidate Hired: Cara Diaz/);
+assert.match(rollup, /Job Title: Warehouse Mechanic/);
+assert.match(rollup, /Names in Screening: Dana Ok/);
+
+const briefingWithBoard = formatMorningPipelineBriefing({
+  boardCandidates: [
+    {
+      name: "Ava Chen",
+      jobTitle: "Auto Production Floor Supervisor",
+      stage: "screening",
+    },
+  ],
+  jobs: [{ title: "Auto Production Floor Supervisor" }],
+  teamUpdates: [],
+});
+assert.match(briefingWithBoard, /Job Title: Auto Production Floor Supervisor/);
+assert.match(briefingWithBoard, /Names in Screening: Ava Chen/);
+assert.match(briefingWithBoard, /Names Interviewing: None/);
+assert.match(briefingWithBoard, /Candidate Hired: None/);
 
 console.log("format-pipeline-stage-counts tests passed");

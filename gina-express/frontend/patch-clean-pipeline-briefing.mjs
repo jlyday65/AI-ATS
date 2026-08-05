@@ -55,7 +55,7 @@ format it like Kimberley's Notes (NOT a dense one-line list, NOT markdown tables
 
 Emojis are OK. Use • bullets, blank lines, and full Team update blocks.
 
-Prefer calling /ats/pipeline-briefing (POST with live stageCounts + boardCandidates)
+Prefer calling /ats/pipeline-briefing (POST with live boardCandidates + jobs)
 and return that text as-is. Structure:
 
 📋 Pipeline overview — <date/time> (live Board)
@@ -68,6 +68,13 @@ and return that text as-is. Structure:
 • ✅ Hired: <n>
 • ❌ Rejected: <n>
 • Total on Board: <n>
+
+📁 Jobs in pipeline
+
+Job Title: <role>
+• Names in Screening: <names or None>
+• Names Interviewing: <names or None>
+• Candidate Hired: <names or None>
 
 ⏰ Reminders due
 • <item or None>
@@ -168,7 +175,7 @@ if (fs.existsSync(ginaPath)) {
   if (/get_pipeline_summary/.test(gina)) {
     // Use single-quoted description — never nest " inside "
     const cleanDesc =
-      "Return a Pipeline overview formatted like Kimberley's Notes (section headers, blank lines, • bullets, light emojis OK). Lead with live Board Pipeline Stage Counts, then Reminders, then Team updates as Ask + full reply blocks from /ats/pipeline-briefing or /ats/kimberley-notes/briefing. No markdown tables, no Key Takeaways, never invent New: 64.";
+      "Return a Pipeline overview formatted like Kimberley's Notes (section headers, blank lines, • bullets, light emojis OK). Lead with live Board Pipeline Stage Counts, then Jobs in pipeline (Job Title, Names in Screening, Names Interviewing, Candidate Hired), then Reminders, then Team updates as Ask + full reply blocks from /ats/pipeline-briefing or /ats/kimberley-notes/briefing. No markdown tables, no Key Takeaways, never invent New: 64.";
     const next = gina.replace(
       /(name:\s*["']get_pipeline_summary["'][\s\S]{0,800}?description:\s*)(["'`])([\s\S]*?)\2/,
       `$1'${cleanDesc.replace(/'/g, "\\'")}'`,

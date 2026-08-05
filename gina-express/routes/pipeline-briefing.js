@@ -6,8 +6,10 @@
  *   app.use("/ats", pipelineBriefingRouter);
  *
  * POST /ats/pipeline-briefing
- *   body: { stageCounts, remindersDue?, pipelineDetail?, asOf? }
+ *   body: { boardCandidates?, jobs?, stageCounts?, remindersDue?, pipelineDetail?, asOf? }
  *   → { ok, text, teamUpdates }
+ *   Jobs rollup uses boardCandidates (+ jobs seed) for:
+ *   Job Title, Names in Screening, Names Interviewing, Candidate Hired
  *
  * GET /ats/pipeline-briefing
  *   → same using empty/default stage counts + latest Kimberley Notes
@@ -71,12 +73,14 @@ async function build(body = {}) {
   const teamUpdates = Array.isArray(body.teamUpdates)
     ? body.teamUpdates
     : await loadTeamUpdates();
+  const jobs = body.jobs || body.jobList || body.openJobs || [];
   const text = formatMorningPipelineBriefing({
     stageCounts,
     boardCandidates: Array.isArray(boardCandidates) ? boardCandidates : null,
     remindersDue: body.remindersDue || body.reminders_due || [],
     pipelineDetail: body.pipelineDetail || body.pipeline_detail || [],
     teamUpdates,
+    jobs: Array.isArray(jobs) ? jobs : [],
     asOf: body.asOf || body.as_of || new Date().toLocaleString("en-US", {
       timeZone: "America/New_York",
     }),

@@ -27,6 +27,132 @@ export const PIPELINE_STAGES = [
 
 export { countLiveStageCounts, totalLiveCandidates };
 
+function normalizeStageKey(raw) {
+  let s = String(raw || "new")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (
+    s === "phone_screen" ||
+    s === "phonescreen" ||
+    s === "pre_screen" ||
+    s === "prescreen" ||
+    s === "screen" ||
+    s === "screening"
+  ) {
+    return "screening";
+  }
+  if (
+    s === "on_site" ||
+    s === "onsite" ||
+    s === "final" ||
+    s === "interview" ||
+    s === "interviewing"
+  ) {
+    return "interview";
+  }
+  if (s === "hired" || s === "hire") return "hired";
+  if (s === "offer") return "offer";
+  if (s === "rejected" || s === "reject") return "rejected";
+  if (s === "new") return "new";
+  return "new";
+}
+
+function candidateJobTitle(c = {}) {
+  return String(
+    c.jobTitle || c.role || c.title || c.job?.title || c.requisitionTitle || "",
+  ).trim();
+}
+
+function candidateName(c = {}) {
+  return String(c.name || c.fullName || c.full_name || "").trim();
+}
+
+function formatNameList(names = []) {
+  const unique = [];
+  const seen = new Set();
+  for (const n of names) {
+    const name = String(n || "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(name);
+  }
+  return unique.length ? unique.join(", ") : "None";
+}
+
+/**
+ * Group live Board candidates by Job Title with stage name lists.
+ * Output fields Kimberley asked for:
+ *   Job Title, Names in Screening, Names Interviewing, Candidate Hired
+ */
+export function formatJobsPipelineRollup({
+  boardCandidates = null,
+  pipelineDetail = [],
+  jobs = [],
+} = {}) {
+  const people = [];
+  if (Array.isArray(boardCandidates) && boardCandidates.length) {
+    for (const c of boardCandidates) people.push(c);
+  } else if (Array.isArray(pipelineDetail) && pipelineDetail.length) {
+    for (const c of pipelineDetail) people.push(c);
+  }
+
+  /** @type {Map<string, { title: string, screening: string[], interview: string[], hired: string[], other: number }>} */
+  const byJob = new Map();
+
+  const ensureJob = (title) => {
+    const key = title.toLowerCase();
+    if (!byJob.has(key)) {
+      byJob.set(key, {
+        title,
+        screening: [],
+        interview: [],
+        hired: [],
+        other: 0,
+      });
+    }
+    return byJob.get(key);
+  };
+
+  // Seed open jobs so empty roles still appear with "None"
+  for (const job of Array.isArray(jobs) ? jobs : []) {
+    const title = String(job?.title || job?.name || job?.roleTitle || "").trim();
+    if (title) ensureJob(title);
+  }
+
+  for (const c of people) {
+    const title = candidateJobTitle(c) || "Open role (unassigned)";
+    const name = candidateName(c);
+    if (!name) continue;
+    const bucket = ensureJob(title);
+    const stage = normalizeStageKey(c.stage ?? c.status);
+    if (stage === "screening") bucket.screening.push(name);
+    else if (stage === "interview") bucket.interview.push(name);
+    else if (stage === "hired") bucket.hired.push(name);
+    else bucket.other += 1;
+  }
+
+  const lines = ["📁 Jobs in pipeline", ""];
+  if (!byJob.size) {
+    lines.push("• None yet — source candidates onto the Board, then Check for actions");
+    return lines.join("\n");
+  }
+
+  const ordered = [...byJob.values()].sort((a, b) =>
+    a.title.localeCompare(b.title),
+  );
+  ordered.forEach((job, idx) => {
+    lines.push(`Job Title: ${job.title}`);
+    lines.push(`• Names in Screening: ${formatNameList(job.screening)}`);
+    lines.push(`• Names Interviewing: ${formatNameList(job.interview)}`);
+    lines.push(`• Candidate Hired: ${formatNameList(job.hired)}`);
+    if (idx < ordered.length - 1) lines.push("");
+  });
+  return lines.join("\n");
+}
+
 /**
  * @param {Record<string, number>} stageCounts
  * @returns {string}
@@ -188,6 +314,7 @@ export function formatMorningPipelineBriefing({
   remindersDue = [],
   pipelineDetail = [],
   teamUpdates = [],
+  jobs = [],
   asOf = new Date().toISOString(),
 } = {}) {
   // Prefer live Board cards when provided — blocks invented New: 64 snapshots.
@@ -202,6 +329,16 @@ export function formatMorningPipelineBriefing({
   sections.push(formatPipelineStageCounts(counts));
   sections.push("");
   sections.push(`• Total on Board: ${totalLiveCandidates(counts)}`);
+
+  // Job Title + names in Screening / Interviewing / Hired
+  sections.push("");
+  sections.push(
+    formatJobsPipelineRollup({
+      boardCandidates: Array.isArray(boardCandidates) ? boardCandidates : null,
+      pipelineDetail,
+      jobs,
+    }),
+  );
 
   sections.push("");
   sections.push("⏰ Reminders due");
@@ -219,24 +356,6 @@ export function formatMorningPipelineBriefing({
     }
   } else {
     sections.push("• None");
-  }
-
-  const active = (pipelineDetail || []).filter(
-    (c) =>
-      c.stage !== "hired" &&
-      c.stage !== "rejected" &&
-      c.stage !== "Hired" &&
-      c.stage !== "Rejected",
-  );
-  if (active.length) {
-    sections.push("");
-    sections.push("📁 Active pipeline");
-    for (const c of active.slice(0, 20)) {
-      const days = c.daysInStage ?? c.days ?? "?";
-      sections.push(
-        `• ${c.name || "Candidate"} — ${c.role || "role"} · ${c.stage || "?"} · ${days}d`,
-      );
-    }
   }
 
   sections.push("");
