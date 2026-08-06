@@ -20,11 +20,15 @@ const counts = countLiveStageCounts([
   { name: "C", stage: "screening" },
   { name: "D", stage: "Phone Screen" },
   { name: "E", stage: "interview" },
+  { name: "F", stage: "interviewing" },
+  { name: "G", stage: "Rejected" },
+  { name: "H", stage: "reject" },
 ]);
 assert.equal(counts.new, 2);
 assert.equal(counts.screening, 2);
-assert.equal(counts.interview, 1);
-assert.equal(totalLiveCandidates(counts), 5);
+assert.equal(counts.interview, 2);
+assert.equal(counts.rejected, 2);
+assert.equal(totalLiveCandidates(counts), 8);
 
 // Empty board must never look like 64
 assert.equal(totalLiveCandidates(countLiveStageCounts([])), 0);

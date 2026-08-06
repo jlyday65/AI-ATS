@@ -419,6 +419,9 @@ router.post("/run-command", async (req, res) => {
           `${result.agent} update filed in Kimberley's Note Panel`,
         kimberleyNoteId: result.kimberleyNoteId || null,
         reply: result.reply || null,
+        // Kelley/Michelle Board moves — Check for actions applies these so
+        // candidates slide under the correct column.
+        boardActions: result.boardActions || [],
         // Flatten Maria job fields so Gina Jobs tab can upsert without digging.
         roleTitle:
           result.mariaResult?.roleTitle ||

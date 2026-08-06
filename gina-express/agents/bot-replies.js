@@ -47,13 +47,28 @@ function extractQuotedNames(task = "") {
 
 function extractStageHint(task = "") {
   const m = String(task).match(
-    /\b(new|screening|phone screen|interview|offer|hired|rejected|reject)\b/i,
+    /\b(new|screening|phone screen|interview(?:ing)?|offer|hired|rejected|reject)\b/i,
   );
   if (!m) return "";
   const raw = m[1].toLowerCase();
-  if (raw === "phone screen") return "Screening";
-  if (raw === "reject") return "Rejected";
-  return raw.charAt(0).toUpperCase() + raw.slice(1);
+  if (raw === "phone screen" || raw === "screening") return "screening";
+  if (raw === "reject" || raw === "rejected") return "rejected";
+  if (raw === "interviewing" || raw === "interview") return "interview";
+  if (raw === "hired" || raw === "offer" || raw === "new") return raw;
+  return raw;
+}
+
+function stageLabel(key = "") {
+  const k = String(key || "").toLowerCase();
+  const map = {
+    new: "New",
+    screening: "Screening",
+    interview: "Interview",
+    offer: "Offer",
+    hired: "Hired",
+    rejected: "Rejected",
+  };
+  return map[k] || (k ? k.charAt(0).toUpperCase() + k.slice(1) : "");
 }
 
 function extractRoleHint(task = "") {
@@ -275,6 +290,16 @@ export function buildKelleyReply({ task, result } = {}) {
     ) && !isBlog;
   const names = extractQuotedNames(task);
   const stage = extractStageHint(task) || result?.stage || "";
+  const stageMoves = Array.isArray(result?.stageMoves)
+    ? result.stageMoves.filter((m) => m?.name && m?.stage)
+    : Array.isArray(result?.boardActions)
+      ? result.boardActions
+          .map((a) => ({
+            name: a?.payload?.match?.name || a?.match?.name,
+            stage: a?.payload?.stage || a?.stage,
+          }))
+          .filter((m) => m.name && m.stage)
+      : [];
 
   if (isBlog) {
     return [
@@ -322,19 +347,30 @@ export function buildKelleyReply({ task, result } = {}) {
     ].join("\n");
   }
 
+  const moveLines = stageMoves.length
+    ? stageMoves.map(
+        (m) =>
+          `Board move: ${m.name} → ${stageLabel(m.stage)} (card slides under that column).`,
+      )
+    : stage && names.length
+      ? [
+          `Board move: ${names.join(", ")} → ${stageLabel(stage)} (card slides under that column).`,
+        ]
+      : [];
+
   return [
     `Kelley — pipeline ops update (${stamp()})`,
     "",
     `Request: ${task}`,
     names.length ? `Candidates: ${names.join(", ")}` : null,
-    stage ? `Requested stage: ${stage}` : null,
+    stage ? `Requested stage: ${stageLabel(stage)}` : null,
     "",
     "Status:",
     bullets([
-      stage && names.length
-        ? `Preparing to move ${names.join(", ")} → ${stage} when the board match is unambiguous.`
-        : "Working the ATS pipeline: stages, notes, and housekeeping.",
-      "Will move candidates only when the stage is unambiguous (New → Screening → Interview → Offer).",
+      ...(moveLines.length
+        ? moveLines
+        : ["Working the ATS pipeline: stages, notes, and housekeeping."]),
+      "Board columns: New → Screening → Interview → Offer → Hired / Rejected.",
       "Anything needing Kimberley's call will stay in Notes until approved.",
     ]),
     "",
@@ -342,6 +378,7 @@ export function buildKelleyReply({ task, result } = {}) {
     "",
     "Handoff:",
     bullets([
+      "Confirm the Board tab — moved candidates should sit under the new column.",
       "After stage moves, Michelle can re-screen if new resumes land.",
       "Ashton drafts outreach only for stages Kimberley has cleared.",
       "Ask Gina for the pipeline summary to confirm this update is listed under Team updates.",

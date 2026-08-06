@@ -27,6 +27,43 @@
     return keys;
   }
 
+  /** Map "Rejected" / "Phone Screen" / "interviewing" → Board STAGES.key */
+  function normalizeBoardStageKey(raw) {
+    let s = String(raw || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[→➞]/g, " ")
+      .replace(/[\s-]+/g, "_")
+      .replace(/_+/g, "_");
+    if (!s) return null;
+    if (
+      s === "phone_screen" ||
+      s === "phonescreen" ||
+      s === "pre_screen" ||
+      s === "prescreen" ||
+      s === "screen" ||
+      s === "phone"
+    ) {
+      return "screening";
+    }
+    if (
+      s === "interviewing" ||
+      s === "interviews" ||
+      s === "on_site" ||
+      s === "onsite" ||
+      s === "final"
+    ) {
+      return "interview";
+    }
+    if (s === "reject" || s === "rejection" || s === "declined" || s === "pass") {
+      return "rejected";
+    }
+    if (s === "hire") return "hired";
+    if (s === "offered") return "offer";
+    const allowed = ["new", "screening", "interview", "offer", "hired", "rejected"];
+    return allowed.includes(s) ? s : null;
+  }
+
   function sameBoardPerson(a = {}, b = {}) {
     const ae = String(a.email || "").trim().toLowerCase();
     const be = String(b.email || "").trim().toLowerCase();
@@ -1387,12 +1424,49 @@
               task: taskHint,
             }) || jobWithHc;
         }
+
+        // Kelley / Michelle stage moves — slide cards under the right Board column
+        // in this same Check for actions click (not Notes-only).
+        let stageMoved = 0;
+        const boardActions =
+          data.boardActions ||
+          data.result?.boardActions ||
+          data.result?.result?.boardActions ||
+          [];
+        if (Array.isArray(boardActions) && boardActions.length) {
+          for (const ba of boardActions.slice(0, 12)) {
+            const stagePayload = ba?.payload || ba || {};
+            const moved = await applyAgentAction({
+              type: "update_stage",
+              id: `board_move_${Date.now().toString(36)}_${stageMoved}`,
+              payload: {
+                match: stagePayload.match || { name: stagePayload.name },
+                stage: stagePayload.stage,
+                email: stagePayload.email,
+                phone: stagePayload.phone,
+                jobTitle:
+                  stagePayload.jobTitle ||
+                  stagePayload.role ||
+                  roleForHc ||
+                  "",
+                candidateFileId:
+                  stagePayload.candidateFileId ||
+                  payload?.context?.candidateFileId ||
+                  data.result?.candidateFileId,
+              },
+            });
+            if (moved?.ok) stageMoved += 1;
+          }
+        }
+
         const boardNote =
           totalBoard > 0
             ? ` · Board: ${totalBoard} candidate(s)`
             : drained > 0 && type === "create_candidate_file"
               ? ` · Follow-on ${drained} action(s) applied`
               : "";
+        const stageNote =
+          stageMoved > 0 ? ` · Board stage moves: ${stageMoved}` : "";
         const hcNote =
           jobWithHc && headcount > 0 ? ` · Headcount: ${headcount}` : "";
         const jdNote =
@@ -1412,11 +1486,13 @@
             hcNote +
             jdNote +
             boardNote +
+            stageNote +
             linkNote,
           kimberleyNoteId: data.kimberleyNoteId || null,
           reply: data.reply || null,
           job: jobWithHc || null,
           boardImported: totalBoard,
+          stageMoved,
           headcount: headcount || null,
           linkedToJob,
         };
@@ -1721,8 +1797,16 @@
             reason: `${match.count} cards shared that name — Board was deduped; Check for actions again (or match by email).`,
           };
         }
-        if (!STAGES.some((s) => s.key === payload?.stage)) return { ok: false, reason: `"${payload?.stage}" isn't a valid stage.` };
-        setStage(match.id, payload.stage);
+        // Normalize Title Case / aliases ("Rejected", "Phone Screen",
+        // "interviewing") to Board STAGES keys so cards slide correctly.
+        const stageKey = normalizeBoardStageKey(payload?.stage);
+        if (!stageKey || !STAGES.some((s) => s.key === stageKey)) {
+          return {
+            ok: false,
+            reason: `"${payload?.stage}" isn't a valid stage.`,
+          };
+        }
+        setStage(match.id, stageKey);
         await syncLiveCandidateFile({
           type: "update_stage",
           fromAgent: "Kelley",
@@ -1731,10 +1815,17 @@
           jobTitle: match.jobTitle || match.role || payload?.jobTitle || "",
           jobId: match.jobId,
           name: match.name,
-          stage: payload.stage,
-          candidate: { name: match.name, stage: payload.stage, jobTitle: match.jobTitle || match.role },
+          stage: stageKey,
+          candidate: {
+            name: match.name,
+            stage: stageKey,
+            jobTitle: match.jobTitle || match.role,
+          },
         });
-        return { ok: true, summary: `Moved ${match.name} to ${stageMeta(payload.stage).label}` };
+        return {
+          ok: true,
+          summary: `Moved ${match.name} to ${stageMeta(stageKey).label}`,
+        };
       }
 
       if (type === "add_note") {

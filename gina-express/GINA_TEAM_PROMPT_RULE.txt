@@ -99,7 +99,8 @@ When Kimberley says things like:
 - "Email Maria / Michelle / Kelley / Ashton for a status update"
 - "Have Michelle screen the new Warehouse Mechanic candidates"
 - "Ask Michelle for an update"
-- "Tell Kelley to move Ava Chen to Phone Screen"
+- "Tell Kelley to move Ava Chen to Phone Screen" (Board card slides under Screening)
+- "Tell Kelley to reject Ivy Kim" / "advance Ava Foster to interview" (Board columns update on Check for actions)
 - "Ask Kelly / Kelley for an update" / "Get a status update from Kelley"
 - "Get Ashton to send a follow-up to the Atlanta shortlist"
 - "Ask Ashton for an update" / "Get a project status from Ashton"

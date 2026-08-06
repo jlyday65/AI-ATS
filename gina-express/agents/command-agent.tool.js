@@ -14,6 +14,10 @@
 import { listCommandableAgents, resolveAgent } from "./registry.js";
 import { buildBotReply } from "./bot-replies.js";
 import {
+  boardActionsFromTask,
+  extractCandidateNames,
+} from "../lib/board-stage.js";
+import {
   extractJobContext,
   mergeJobContext,
   screeningQuestionsFromJob,
@@ -140,12 +144,46 @@ async function persistKimberleyNote({
   }
 }
 
+function buildBoardActionsForAgent(agent, task, jobCtx = {}) {
+  const base = {
+    jobTitle: jobCtx.roleTitle || "",
+    candidateFileId: jobCtx.candidateFileId,
+  };
+  // Kelley (and Kelly) — explicit reject / advance / move instructions.
+  if (agent.id === "kelley" || agent.id === "kelly") {
+    return boardActionsFromTask(task, base);
+  }
+  // Michelle screening a named candidate → slide them under Screening.
+  if (agent.id === "michelle") {
+    const parsed = boardActionsFromTask(task, base);
+    if (parsed.length) return parsed;
+    const names = extractCandidateNames(task);
+    if (
+      names.length &&
+      /\b(screen|screening|interview|evaluate)\b/i.test(String(task || ""))
+    ) {
+      return names.map((name) => ({
+        type: "update_stage",
+        payload: {
+          match: { name },
+          stage: "screening",
+          jobTitle: base.jobTitle,
+          role: base.jobTitle,
+          candidateFileId: base.candidateFileId,
+        },
+      }));
+    }
+  }
+  return [];
+}
+
 async function executeAgentWork({ agent, task, requestedBy, context, actionId }) {
   let mariaResult = null;
   let michelleResult = null;
   let error = null;
   let reply;
   const jobCtx = mergeJobContext(context || {}, extractJobContext(context || {}));
+  const boardActions = buildBoardActionsForAgent(agent, task, jobCtx);
 
   if (agent.id === "maria" && looksLikeSourceTask(task)) {
     try {
@@ -209,7 +247,14 @@ async function executeAgentWork({ agent, task, requestedBy, context, actionId })
       reply = buildBotReply({
         agentId: "michelle",
         task,
-        result: michelleResult,
+        result: {
+          ...michelleResult,
+          boardActions,
+          stageMoves: boardActions.map((a) => ({
+            name: a.payload?.match?.name,
+            stage: a.payload?.stage,
+          })),
+        },
       });
     } catch (err) {
       error = String(err?.message || err);
@@ -217,11 +262,22 @@ async function executeAgentWork({ agent, task, requestedBy, context, actionId })
         agentId: "michelle",
         task,
         error,
-        result: jobCtx,
+        result: { ...jobCtx, boardActions },
       });
     }
   } else {
-    reply = buildBotReply({ agentId: agent.id, task, result: jobCtx });
+    reply = buildBotReply({
+      agentId: agent.id,
+      task,
+      result: {
+        ...jobCtx,
+        boardActions,
+        stageMoves: boardActions.map((a) => ({
+          name: a.payload?.match?.name,
+          stage: a.payload?.stage,
+        })),
+      },
+    });
   }
 
   const note = await persistKimberleyNote({
@@ -245,14 +301,18 @@ async function executeAgentWork({ agent, task, requestedBy, context, actionId })
     capabilities: agent.capabilities,
     mariaResult,
     michelleResult,
+    boardActions,
     error,
     reply,
     kimberleyNoteId: note?.id || null,
     message: error
       ? `${agent.displayName} hit an error — filed in Kimberley's Notes (and flagged for pipeline Team updates).`
-      : `${agent.displayName} responded. Filed to Kimberley's Notes${note?.id ? ` (#${note.id})` : ""} and Gina's pipeline summary Team updates.`,
-    nextStep:
-      "Open Kimberley's Notes for the full reply, then ask Gina for the pipeline summary — this update must appear under Team updates (Kimberley Notes).",
+      : boardActions.length
+        ? `${agent.displayName} responded and queued ${boardActions.length} Board stage move(s). Filed to Kimberley's Notes${note?.id ? ` (#${note.id})` : ""}.`
+        : `${agent.displayName} responded. Filed to Kimberley's Notes${note?.id ? ` (#${note.id})` : ""} and Gina's pipeline summary Team updates.`,
+    nextStep: boardActions.length
+      ? "Check for actions applies Board stage moves so candidates slide under the correct column (New → Screening → Interview → Offer → Hired / Rejected)."
+      : "Open Kimberley's Notes for the full reply, then ask Gina for the pipeline summary — this update must appear under Team updates (Kimberley Notes).",
   };
 }
 
