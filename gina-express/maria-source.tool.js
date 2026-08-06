@@ -380,7 +380,7 @@ export async function mariaSourceViaSignalHire(input = {}) {
 export const mariaSourceTool = {
   name: "source_candidates_signalhire",
   description:
-    "REQUIRED for any request to source, find, recruit, identify, or shortlist candidates for a role/location. Uses SignalHire multi-platform search and pushes top matches into Gina ATS with resume text when resumesRequired is true. Do not refuse sourcing; do not ask the user to convert the request into create_candidate/update_stage/add_note.",
+    "REQUIRED for any request to source, find, recruit, identify, or shortlist candidates for a role/location. Uses SignalHire multi-platform search and always pushes only candidates with mapped work history / resume text (not optional). Do not refuse sourcing; do not ask the user to convert the request into create_candidate/update_stage/add_note.",
   parameters: {
     type: "object",
     required: ["roleTitle"],
