@@ -150,6 +150,46 @@ async function executeAgentWork({ agent, task, requestedBy, context, actionId })
   if (agent.id === "maria" && looksLikeSourceTask(task)) {
     try {
       mariaResult = await runMariaFromTask(task, jobCtx);
+      // Keep the live Candidate File current — Kimberley should not fill it.
+      try {
+        const { upsertCandidatesIntoLiveFile } = await import(
+          "../lib/candidate-file-live.js"
+        );
+        const people =
+          mariaResult?.topCandidates ||
+          mariaResult?.result?.topCandidates ||
+          mariaResult?.candidates ||
+          [];
+        if (Array.isArray(people) && people.length) {
+          const sync = await upsertCandidatesIntoLiveFile(
+            {
+              candidateFileId: jobCtx.candidateFileId || context.candidateFileId,
+              jobTitle:
+                jobCtx.roleTitle ||
+                mariaResult?.roleTitle ||
+                mariaResult?.job?.title ||
+                "",
+            },
+            people,
+            {
+              fromAgent: "Maria",
+              agentRole: "Sourcer",
+              notify: true,
+              actionId: actionId || null,
+              sourceDefault: "Maria / SignalHire",
+            },
+          );
+          if (sync?.ok) {
+            mariaResult = {
+              ...mariaResult,
+              candidateFileId: sync.file?.id || jobCtx.candidateFileId,
+              candidateFileUpserted: sync.upserted,
+            };
+          }
+        }
+      } catch {
+        // non-fatal — Board import still happens in Check for actions
+      }
       reply = buildBotReply({
         agentId: "maria",
         task,
@@ -393,6 +433,24 @@ async function runMichelleScreen(task, context = {}) {
   if (jobCtx.candidateFileId && files?.getFile) {
     file = await files.getFile(jobCtx.candidateFileId);
   }
+  // Auto-resolve live Candidate File by role title when id missing
+  if (!file && files) {
+    try {
+      const { findLiveCandidateFile, notifyCandidateFileUpdate } = await import(
+        "../lib/candidate-file-live.js"
+      );
+      file = await findLiveCandidateFile(
+        {
+          jobTitle: jobCtx.roleTitle || extractRoleFromTask(task),
+          jobId: jobCtx.jobId,
+        },
+        files,
+      );
+      void notifyCandidateFileUpdate;
+    } catch {
+      file = null;
+    }
+  }
 
   const roleTitle =
     jobCtx.roleTitle || file?.job?.title || extractRoleFromTask(task) || "";
@@ -421,6 +479,24 @@ async function runMichelleScreen(task, context = {}) {
       candidateFileId,
       questions.map((q) => q.question),
     );
+    try {
+      const { notifyCandidateFileUpdate } = await import(
+        "../lib/candidate-file-live.js"
+      );
+      await notifyCandidateFileUpdate({
+        file,
+        fromAgent: "Michelle",
+        agentRole: "Screener",
+        changeType: "screening",
+        summary: `Michelle set ${questions.length} screening question(s) on the live Candidate File`,
+        detail: questions
+          .slice(0, 8)
+          .map((q, i) => `${i + 1}. ${q.question}`)
+          .join("\n"),
+      });
+    } catch {
+      // non-fatal
+    }
   }
 
   const candidateCount = Array.isArray(file?.candidates)
@@ -440,7 +516,7 @@ async function runMichelleScreen(task, context = {}) {
     candidateCount: candidateCount ?? undefined,
     reviewedCount: candidateCount ?? undefined,
     message: roleDescription
-      ? `Built ${questions.length} screening questions from the Jobs/Candidate File description for ${roleTitle || "the open role"}.`
+      ? `Built ${questions.length} screening questions from the Jobs/Candidate File description for ${roleTitle || "the open role"} and saved them on the live Candidate File.`
       : `Built ${questions.length} screening questions for ${roleTitle || "the open role"} (limited JD on file).`,
   };
 }

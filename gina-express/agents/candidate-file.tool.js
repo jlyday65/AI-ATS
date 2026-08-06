@@ -176,18 +176,24 @@ export function buildGinaCandidateFileReply({ file, sendToMaria, task }) {
     `Request: ${task || "Fill out the Candidate File"}`,
     "",
     "Status:",
-    `• Candidate File created: ${file.id}`,
+    `• LIVE Candidate File created: ${file.id}`,
     `• Role: ${file.job?.title || "(untitled)"}`,
     file.job?.salary ? `• Salary: ${file.job.salary}` : null,
     file.clientName ? `• Client: ${file.clientName}` : null,
-    `• Open: /candidate-file (select this file for manual edits)`,
+    `• Open anytime: /candidate-file?id=${file.id} (also on the ATS dashboard)`,
+    "",
+    "How it stays current:",
+    "• Bots update this file automatically (Maria resumes, Michelle questions/answers, Kelley stages, Ashton notes).",
+    "• Kimberley reviews / edits only when needed — she should not fill the file from scratch.",
+    "• File stays LIVE until Kimberley Sends to client, Cancels, or Deletes.",
     "",
     "Handoff:",
     sendToMaria
-      ? "• Maria — source candidates with resumes on file; add them to this Candidate File."
-      : "• Kimberley can edit the file manually at /candidate-file, or ask Gina to send it to Maria.",
-    "• After Maria fills candidates → Michelle for screening questions/answers on the same file.",
-    "• Export for client review when ready.",
+      ? "• Maria — source candidates with resumes; each shortlist lands on this Candidate File + Board."
+      : "• Ask Gina to send this file to Maria when ready to source.",
+    "• Michelle → screening questions/answers on the same live file.",
+    "• Each bot update dual-files Kimberley's Notes + Gina pipeline Team updates.",
+    "• When complete: Open file → Send to client (freezes). Preview export anytime while LIVE.",
   ]
     .filter((l) => l != null)
     .join("\n");
@@ -327,18 +333,18 @@ export async function createCandidateFileFromInstruction(input = {}) {
     sendToMaria: parsed.sendToMaria,
     reply,
     message: parsed.sendToMaria
-      ? `Candidate File ${file.id} created and handed to Maria. Open /candidate-file or Kimberley's Notes.`
-      : `Candidate File ${file.id} created. Open /candidate-file for manual entry.`,
+      ? `LIVE Candidate File ${file.id} created — bots will keep it current. Open /candidate-file?id=${file.id} or the dashboard anytime.`
+      : `LIVE Candidate File ${file.id} created. Open /candidate-file?id=${file.id} anytime.`,
     nextStep: parsed.sendToMaria
-      ? "Agent → Check for actions so Maria can source. Or open /candidate-file to enter candidates manually."
-      : "Open /candidate-file to finish job details and add candidates, or ask Gina to send it to Maria.",
+      ? "Agent → Check for actions (Maria sources into Board + Candidate File). Kimberley reviews; she should not fill the file."
+      : "Ask Gina to send it to Maria, or open /candidate-file to review.",
   };
 }
 
 export const createCandidateFileTool = {
   name: "create_candidate_file",
   description:
-    'REQUIRED when Kimberley asks Gina to fill out / create / open a Candidate File (especially "fill out the candidate file and send to Maria"). Creates the Candidate File with job title, description, and salary when provided, files a Kimberley Note, and queues Maria to source into that file when asked to send to Maria. Manual edits remain at /candidate-file.',
+    'REQUIRED when Kimberley asks Gina to fill out / create / open a Candidate File (especially "fill out the candidate file and send to Maria"). Creates a LIVE Candidate File with job title, description, and salary when provided, files a Kimberley Note + pipeline update, and queues Maria to source into that file. Bots keep the file current until Kimberley Sends to client, Cancels, or Deletes. Kimberley reviews at /candidate-file or the dashboard — she should not fill it from scratch.',
   parameters: {
     type: "object",
     required: ["task"],

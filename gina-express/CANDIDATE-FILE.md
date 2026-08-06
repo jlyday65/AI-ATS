@@ -1,83 +1,70 @@
-# Candidate File
+# Candidate File (LIVE)
 
-Gina creates a **Candidate File** for a client role. Maria fills it with candidates + resumes. Michelle adds screening questions and answers. Kimberley exports a client-ready packet and keeps an archived copy.
+Gina creates a **live Candidate File** for a client role. Bots keep it current automatically:
+
+| Bot | Updates the file with |
+|-----|------------------------|
+| **Maria** | Candidates + resume text (on source / Board import) |
+| **Michelle** | Screening questions (+ answers when recorded) |
+| **Kelley** | Stage moves |
+| **Ashton** | Candidate notes |
+
+Kimberley **views anytime** and edits only when needed — she should not fill the file from scratch.
+
+The file stays **LIVE** until Kimberley:
+
+- **Send to client** (export + freeze → status `sent`), or
+- **Cancel**, or
+- **Delete**
+
+Every bot update also dual-files **Kimberley's Notes** and **Gina's pipeline Team updates**.
+
+## Where to open
+
+- ATS **dashboard** → Live Candidate Files panel
+- Toolbar **Candidate File** → `/candidate-file`
+- Deep link: `/candidate-file?id=<cfId>`
+- API: `/ats/candidate-files` · `/ats/candidate-files/live`
 
 ## Flow
 
 ```
-Kimberley → Gina: "fill out the candidate file and send to Maria"
-         → create_candidate_file / /ats/candidate-files/from-instruction
-         → Candidate File shell + Kimberley Note + Maria queued
-Maria → Add candidates + resume text
-Michelle → Screening questions + answers
-Client  → Review export packet
-Archive → .data/candidate-file-archives/
+Kimberley → Gina: create Candidate File (+ send to Maria)
+         → LIVE file shell + Note + Maria queued
+Maria    → shortlist → Board + Candidate File (auto)
+Michelle → screening Qs/answers → Candidate File (auto)
+Kelley   → stage moves → Candidate File (auto)
+Ashton   → notes → Candidate File (auto)
+Kimberley → review on dashboard /candidate-file → Send to client (freeze)
+Archive  → .data/candidate-file-archives/
 ```
 
-Manual entry: ATS toolbar **Candidate File** button → `/candidate-file`
-
-## Mac install (Gina command + page + toolbar)
+## Mac install
 
 ```bash
-cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-
-# 1) API + page (if not already)
-node gina-express/frontend/patch-candidate-files.mjs ~/lyday-gina-backend/gina-backend
-
-# 2) Gina chat: fill Candidate File → Maria
-node gina-express/frontend/patch-gina-candidate-file-command.mjs ~/lyday-gina-backend/gina-backend
-
-# 3) ATS toolbar button (manual entry)
-node gina-express/frontend/patch-candidate-file-toolbar.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
-cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
-
-cd ~/lyday-gina-backend
-git add gina-backend/agents gina-backend/lib gina-backend/routes gina-backend/GINA_TEAM_PROMPT_RULE.txt gina-backend/gina.js gina-backend/candidate-file-page.route.js gina-backend/frontend gina-backend/server.js
-git status
-git commit -m "Candidate File: Gina→Maria command + ATS toolbar button"
-git push origin main
+cd ~/AI-ATS && git pull origin cursor/live-candidate-file-4f1f
+bash gina-express/frontend/APPLY-LIVE-CANDIDATE-FILE.sh ~/lyday-gina-backend
 ```
-
-## URLs (after patch + redeploy)
-
-- UI: `/candidate-file` (also `/candidate-files`)
-- API: `/ats/candidate-files`
 
 ## API sketch
 
 | Method | Path | Who |
 |--------|------|-----|
-| `POST` | `/ats/candidate-files` | Gina — create shell |
-| `GET` | `/ats/candidate-files` | List |
+| `POST` | `/ats/candidate-files` | Gina — create live shell |
+| `GET` | `/ats/candidate-files/live` | Dashboard — live files only |
 | `GET` | `/ats/candidate-files/:id` | Load |
-| `POST` | `/ats/candidate-files/:id/candidates` | Maria — add candidate + resume |
+| `POST` | `/ats/candidate-files/sync` | Board/bots — stage/note/candidate sync |
+| `POST` | `/ats/candidate-files/upsert-candidates` | Maria bulk shortlist |
+| `POST` | `/ats/candidate-files/:id/candidates` | Add/override candidate |
 | `POST` | `/ats/candidate-files/:id/screening-questions` | Michelle |
 | `POST` | `/ats/candidate-files/:id/candidates/:cid/answers` | Michelle |
-| `POST` | `/ats/candidate-files/:id/export` | Build + archive client packet |
+| `POST` | `/ats/candidate-files/:id/export` | Preview packet (**stays live**) |
+| `POST` | `/ats/candidate-files/:id/send` | Freeze + send to client |
+| `POST` | `/ats/candidate-files/:id/cancel` | Cancel |
+| `DELETE` | `/ats/candidate-files/:id` | Soft delete |
 | `GET` | `/ats/candidate-files/:id/export.txt` | Download `.txt` |
 
-## Mac install
+## Statuses
 
-If Railway shows **502 Bad Gateway**, roll back first:
-
-```bash
-cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-node gina-express/frontend/rollback-candidate-files.mjs ~/lyday-gina-backend/gina-backend
-cd ~/lyday-gina-backend
-git add gina-backend/server.js gina-backend/gina.js
-git commit -m "Rollback Candidate File mount (restore ATS from 502)"
-git push origin main
-```
-
-Then install the fixed mount (server.js only):
-
-```bash
-cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
-node gina-express/frontend/patch-candidate-files.mjs ~/lyday-gina-backend/gina-backend
-cd ~/lyday-gina-backend
-git add gina-backend/lib/candidate-files.js gina-backend/routes/candidate-files.js gina-backend/candidate-file-page.route.js gina-backend/frontend/public/candidate-file.html gina-backend/frontend/candidate-file.html gina-backend/server.js gina-backend/gina.js
-git commit -m "Add Candidate File handoff (Gina → Maria → Michelle → client)"
-git push origin main
-```
-
-Railway Redeploy → open `/candidate-file`.
+- Live: `draft` · `sourcing` · `screening` · `ready`
+- Closed: `sent` · `canceled` · `deleted`

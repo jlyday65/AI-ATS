@@ -54,18 +54,27 @@ POST /ats/candidate-files/from-instruction) with Kimberley's FULL ask in 'task'
 (include the entire job description — Job Duties, Requirements, Benefits),
 plus any roleTitle / jobDescription / salary / location / clientName you already
 know. That:
-1) Creates the Candidate File shell (job title, description, salary)
+1) Creates a LIVE Candidate File shell (job title, description, salary)
 2) Populates the Jobs tab with the same role + JD (upsert_job)
-3) Files a Kimberley Note
+3) Files a Kimberley Note (+ pipeline Team updates)
 4) Queues Maria to source into that file when she says "send to Maria"
+
+LIVE FILE RULE (critical):
+- The Candidate File stays LIVE until Kimberley Sends to client, Cancels, or Deletes.
+- Kimberley should NOT fill it out — bots update it automatically:
+  Maria → candidates + resumes; Michelle → screening Q&A; Kelley → stages; Ashton → notes.
+- Every bot update must dual-file Kimberley's Notes AND Gina's pipeline Team updates.
+- Kimberley can open anytime: dashboard Live Candidate Files panel, or /candidate-file?id=…
+- Preview export anytime while LIVE; Send to client freezes the packet.
 
 Also queue upsert_job yourself when the ask includes a new role + JD (same
 fields as NEW JOB → JOBS TAB below) so the Jobs tab is never empty.
 
-Manual entry UI: /candidate-file (also a button on the ATS toolbar).
+Manual review UI: /candidate-file (also toolbar + dashboard). Overrides allowed;
+Kimberley is not expected to enter Maria/Michelle data by hand.
 Do NOT pretend the file was created if the tool/API fails — report the error.
-After queuing, tell Kimberley: Jobs tab + Candidate File ready → Check for actions
-(Maria sources; Board cards import on that same click when push succeeds).
+After queuing, tell Kimberley: LIVE Candidate File + Jobs ready → Check for actions
+(Maria sources; Board + Candidate File update on that same click when push succeeds).
 
 CRITICAL — bots are NOT candidates:
 - NEVER queue update_stage or add_note with match.name "Maria", "Michelle",

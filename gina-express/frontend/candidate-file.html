@@ -75,15 +75,17 @@
         </div>
       </header>
       <p class="lead">
-        Gina creates the shell (job title, description, salary). Maria adds candidates and resumes.
-        Michelle adds screening questions and answers. Export a client-ready packet and save it for later.
+        LIVE Candidate File — bots keep this dossier current (Maria resumes, Michelle screening,
+        Kelley stages, Ashton notes). Kimberley reviews anytime and edits only when needed.
+        Stays live until you <strong>Send to client</strong>, <strong>Cancel</strong>, or <strong>Delete</strong>.
+        Each bot update also lands in Kimberley's Notes and Gina's pipeline Team updates.
       </p>
-      <p class="flow">Handoff: Gina → Maria → Michelle → Client review → archive</p>
+      <p class="flow">Gina creates → bots update live → Kimberley reviews → Send to client (freeze) or Cancel</p>
       <p class="err" id="err" hidden></p>
       <p class="ok" id="msg" hidden></p>
 
       <div class="card" id="createCard">
-        <h2 style="margin-top:0">Create Candidate File (Gina)</h2>
+        <h2 style="margin-top:0">Create Candidate File (usually via Gina chat)</h2>
         <div class="grid2">
           <div>
             <label>Client name</label>
@@ -117,9 +119,18 @@
       <div id="detail" hidden>
         <h2 id="detailTitle">File</h2>
         <p class="meta" id="detailMeta"></p>
+        <div class="row" id="fileActions" style="margin-bottom:12px">
+          <button type="button" class="primary" id="sendBtn">Send to client (freeze)</button>
+          <button type="button" id="cancelBtn">Cancel file</button>
+          <button type="button" id="deleteBtn">Delete</button>
+        </div>
+        <div class="card">
+          <h2 style="margin-top:0">Bot activity</h2>
+          <div id="activityLog" class="meta">—</div>
+        </div>
 
         <div class="card">
-          <h2 style="margin-top:0">Add candidate (Maria)</h2>
+          <h2 style="margin-top:0">Override — add candidate (optional)</h2>
           <div class="grid2">
             <div>
               <label>Name *</label>
@@ -138,7 +149,7 @@
         </div>
 
         <div class="card">
-          <h2 style="margin-top:0">Screening questions (Michelle)</h2>
+          <h2 style="margin-top:0">Screening questions (override)</h2>
           <label>One question per line</label>
           <textarea id="questions" placeholder="Do you have X experience?&#10;Are you available for Y shifts?"></textarea>
           <div class="row" style="margin-top:10px">
@@ -150,8 +161,9 @@
 
         <div class="card">
           <h2 style="margin-top:0">Client packet</h2>
+          <p class="meta">Preview anytime while LIVE. Use <strong>Send to client</strong> above to freeze.</p>
           <div class="row">
-            <button type="button" class="primary" id="exportBtn">Export for client &amp; save</button>
+            <button type="button" id="exportBtn">Preview packet (stays LIVE)</button>
             <a class="btn" id="downloadLink" href="#" target="_blank" rel="noreferrer">Download .txt</a>
             <button type="button" id="copyBtn">Copy packet</button>
           </div>
@@ -197,11 +209,17 @@
             return;
           }
           el.innerHTML = data.files.map(function (f) {
+            var live = f.live !== false && !/^(sent|canceled|cancelled|deleted)$/i.test(f.status || "");
+            var badge = live
+              ? '<span style="color:#2f6459;font-weight:650"> · LIVE</span>'
+              : '<span class="meta"> · ' + f.status + '</span>';
             return (
               '<div class="card" style="cursor:pointer" data-id="' + f.id + '">' +
-              "<strong>" + (f.job && f.job.title ? f.job.title : f.id) + "</strong> " +
-              '<span class="meta">· ' + f.status + (f.clientName ? " · " + f.clientName : "") +
-              " · " + (f.candidates ? f.candidates.length : 0) + " candidates</span></div>"
+              "<strong>" + (f.job && f.job.title ? f.job.title : f.id) + "</strong>" + badge +
+              '<span class="meta">' + (f.clientName ? " · " + f.clientName : "") +
+              " · " + (f.candidates ? f.candidates.length : 0) + " candidates" +
+              (f.updatedAt ? " · updated " + new Date(f.updatedAt).toLocaleString() : "") +
+              "</span></div>"
             );
           }).join("");
           Array.prototype.forEach.call(el.querySelectorAll("[data-id]"), function (node) {
@@ -213,11 +231,26 @@
           activeId = file.id;
           $("detail").hidden = false;
           $("detailTitle").textContent = (file.job && file.job.title) || file.id;
-          $("detailMeta").textContent =
+          var live = file.live !== false && !/^(sent|canceled|cancelled|deleted)$/i.test(file.status || "");
+          $("detailMeta").innerHTML =
+            (live ? '<strong style="color:#2f6459">LIVE</strong> · ' : '') +
             "id " + file.id + " · " + file.status +
             (file.clientName ? " · " + file.clientName : "") +
-            (file.job && file.job.salary ? " · " + file.job.salary : "");
+            (file.job && file.job.salary ? " · " + file.job.salary : "") +
+            (file.updatedAt ? " · updated " + new Date(file.updatedAt).toLocaleString() : "");
           $("downloadLink").href = "/ats/candidate-files/" + file.id + "/export.txt";
+          var act = $("fileActions");
+          if (act) act.style.display = live ? "flex" : "flex";
+          var log = $("activityLog");
+          if (log) {
+            var rows = (file.activityLog || []).slice(0, 12);
+            log.innerHTML = rows.length
+              ? rows.map(function (a) {
+                  return '<div class="meta">• ' + (a.fromAgent || "") + " — " + (a.summary || a.type) +
+                    (a.at ? " · " + new Date(a.at).toLocaleString() : "") + "</div>";
+                }).join("")
+              : '<p class="meta">No bot activity yet.</p>';
+          }
           $("questions").value = (file.screeningQuestions || [])
             .map(function (q) { return q.question || q; }).join("\n");
           if (file.lastExportText) {
@@ -386,13 +419,62 @@
           }
         };
 
+        
+        $("sendBtn").onclick = async function () {
+          if (!activeId) return showErr("Open a Candidate File first");
+          if (!confirm("Send this Candidate File to the client and freeze it? Bots will stop updating it.")) return;
+          try {
+            var data = await api("/ats/candidate-files/" + activeId + "/send", {
+              method: "POST",
+              body: JSON.stringify({}),
+            });
+            lastText = data.text || "";
+            $("exportOut").textContent = lastText;
+            showMsg(data.handoff || "Sent to client — file frozen.");
+            renderDetail(data.file);
+            await refreshList();
+          } catch (e) { showErr(e.message || String(e)); }
+        };
+        $("cancelBtn").onclick = async function () {
+          if (!activeId) return showErr("Open a Candidate File first");
+          if (!confirm("Cancel this Candidate File? It will no longer stay live.")) return;
+          try {
+            var data = await api("/ats/candidate-files/" + activeId + "/cancel", {
+              method: "POST",
+              body: JSON.stringify({ reason: "Canceled by Kimberley" }),
+            });
+            showMsg("Candidate File canceled.");
+            renderDetail(data.file);
+            await refreshList();
+          } catch (e) { showErr(e.message || String(e)); }
+        };
+        $("deleteBtn").onclick = async function () {
+          if (!activeId) return showErr("Open a Candidate File first");
+          if (!confirm("Delete this Candidate File?")) return;
+          try {
+            await api("/ats/candidate-files/" + activeId, { method: "DELETE" });
+            showMsg("Candidate File deleted.");
+            activeId = null;
+            $("detail").hidden = true;
+            await refreshList();
+          } catch (e) { showErr(e.message || String(e)); }
+        };
+
         $("refreshBtn").onclick = function () {
           refreshList().then(function () {
             if (activeId) return openFile(activeId);
           }).catch(function (e) { showErr(e.message || String(e)); });
         };
 
-        refreshList().catch(function (e) { showErr(e.message || String(e)); });
+        var params = new URLSearchParams(location.search || "");
+        var deepId = params.get("id");
+        refreshList().then(function () {
+          if (deepId) return openFile(deepId);
+        }).catch(function (e) { showErr(e.message || String(e)); });
+        setInterval(function () {
+          if (!activeId) return;
+          openFile(activeId).catch(function () {});
+        }, 45000);
       })();
     </script>
   </body>

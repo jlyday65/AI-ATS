@@ -74,7 +74,7 @@ function buildLink({ classNameAttr = "", styleBody = "" } = {}) {
             cursor: "pointer",
             marginLeft: 8,
           }}
-          title="Manual Candidate File entry"
+          title="Live Candidate Files — bots keep these current"
         >
           Candidate File
         </a>`;

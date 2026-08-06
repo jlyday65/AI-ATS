@@ -43,6 +43,20 @@
     return Boolean(an && bn && an === bn);
   }
 
+  /** Keep live Candidate File in sync with Board / bot actions (non-blocking). */
+  async function syncLiveCandidateFile(event = {}) {
+    try {
+      await fetch("/ats/candidate-files/sync", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(event),
+      });
+    } catch (_) {
+      /* Candidate File may not be mounted yet — Board still updates */
+    }
+  }
+
   function beginCandidateImportSession() {
     const keys = new Set();
     const list =
@@ -1045,6 +1059,11 @@
                 headline: c.headline || "",
                 resumeText,
                 summary: c.summary || "",
+                candidateFileId:
+                  payload?.context?.candidateFileId ||
+                  data.result?.candidateFileId ||
+                  data.result?.mariaResult?.candidateFileId ||
+                  undefined,
                 sourcedFrom: c.sourcedFrom || c.platforms || [],
                 sourcedFromText:
                   c.sourcedFromText ||
@@ -1432,6 +1451,15 @@
             };
             return [...list, created];
           });
+          await syncLiveCandidateFile({
+            type: "import_candidate",
+            fromAgent: "Maria",
+            agentRole: "Sourcer",
+            candidateFileId: payload.candidateFileId,
+            jobTitle: importRoleTitle || incoming.role,
+            jobId,
+            candidate: incoming,
+          });
           return {
             ok: true,
             summary:
@@ -1472,6 +1500,15 @@
 
         addCandidate(incoming);
         rememberImportPerson(incoming);
+        await syncLiveCandidateFile({
+          type: "import_candidate",
+          fromAgent: "Maria",
+          agentRole: "Sourcer",
+          candidateFileId: payload.candidateFileId,
+          jobTitle: importRoleTitle || incoming.role,
+          jobId,
+          candidate: incoming,
+        });
         return { ok: true, summary: `Created candidate: ${payload.name}` };
       }
 
@@ -1497,6 +1534,17 @@
         }
         if (!STAGES.some((s) => s.key === payload?.stage)) return { ok: false, reason: `"${payload?.stage}" isn't a valid stage.` };
         setStage(match.id, payload.stage);
+        await syncLiveCandidateFile({
+          type: "update_stage",
+          fromAgent: "Kelley",
+          agentRole: "Pipeline ops",
+          candidateFileId: payload.candidateFileId,
+          jobTitle: match.jobTitle || match.role || payload?.jobTitle || "",
+          jobId: match.jobId,
+          name: match.name,
+          stage: payload.stage,
+          candidate: { name: match.name, stage: payload.stage, jobTitle: match.jobTitle || match.role },
+        });
         return { ok: true, summary: `Moved ${match.name} to ${stageMeta(payload.stage).label}` };
       }
 
@@ -1522,6 +1570,17 @@
         }
         if (!payload?.text) return { ok: false, reason: "Missing note text in payload." };
         addNote(match.id, payload.text);
+        await syncLiveCandidateFile({
+          type: "add_note",
+          fromAgent: payload.fromAgent || "Ashton",
+          agentRole: payload.agentRole || "Outreach",
+          candidateFileId: payload.candidateFileId,
+          jobTitle: match.jobTitle || match.role || "",
+          jobId: match.jobId,
+          name: match.name,
+          text: payload.text,
+          candidate: { name: match.name, jobTitle: match.jobTitle || match.role },
+        });
         return { ok: true, summary: `Added a note to ${match.name}` };
       }
 
