@@ -1,0 +1,773 @@
+# Gina team: Kimberley → Gina → Maria / Michelle / Kelley / Ashton
+
+| Person | Role | Route | What they do |
+|--------|------|-------|----------------|
+| **Kimberley** | Operator | — | Issues requests to Gina |
+| **Gina** | Orchestrator | `/chat` | Queues commands for the four bots |
+| **Maria** | Sourcer | `/maria` | SignalHire sourcing + resume-on-file shortlists |
+| **Michelle** | Screener | `/michelle` | Resume/job screening, stage recommendations |
+| **Kelley** | Pipeline ops | `/kelly` | Stages, notes, ATS housekeeping (alias: Kelly) |
+| **Ashton** | Outreach | `/ashton` | Candidate/client outreach drafts + follow-ups |
+
+## Candidate File (Gina → Maria → Michelle → client)
+
+Create a shared packet per requisition:
+
+1. **Gina** opens `/candidate-file` → Create (job title, description, salary, client)
+2. **Maria** adds candidates + resume text on that file
+3. **Michelle** saves screening questions and per-candidate answers
+4. **Export for client & save** → downloadable `.txt` + archive under `.data/candidate-file-archives/`
+
+Install on Gina:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-candidate-files.mjs ~/lyday-gina-backend/gina-backend
+```
+
+See `CANDIDATE-FILE.md`.
+
+## Sound communication contract
+
+```
+Kimberley → Gina (/chat) queues command_agent | source_candidates_signalhire
+         → Agent → Check for actions → POST /ats/run-command (executeNow)
+              → Maria     → SignalHire → board import + Kimberley note
+              → Michelle  → screening update note (+ handoff to Kelley/Ashton)
+              → Kelley    → pipeline ops note (+ handoff)
+              → Ashton    → outreach note (+ handoff)
+         → Kimberley's Notes panel + morning Pipeline Stage Counts briefing
+```
+
+Rules implemented in code:
+1. **Queue ≠ execute** — Gina queuing only files a short ack. Work runs on Check for actions.
+2. **One note per action** — execute replaces the ack for the same `actionId`.
+3. **No silent Maria default** — `command_agent` requires `targetAgent`.
+4. **Maria errors still file a note** — so Kimberley sees the break (relay/env) instead of silence.
+5. **Every working reply includes Handoff** — who acts next (Michelle → Kelley → Ashton, etc.).
+
+## Fix: ATS white screen (blank page)
+
+Common causes: Kimberley Notes UI left in `App.jsx`, helpers above `import`,
+or Board/Education call sites that compile but `ReferenceError` at runtime.
+Railway serves **`frontend/dist`** — source-only commits do nothing.
+
+**Preferred one-shot (Mac):**
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+bash gina-express/frontend/CLEAR-ATS-WHITE-SCREEN.sh
+```
+
+Then Railway → **Redeploy** (wait for Success) → **Cmd+Shift+R**.
+
+That script: picks a Notes-free compiling `App.jsx` from git history, strips
+Notes/Board/Education crash sites, injects a **red on-screen error banner**,
+rebuilds `dist`, commits, and pushes.
+
+If you still see a blank page, you should now see **red error text** — paste
+that whole banner to Cursor. Do **not** re-run Education / Board From / Notes
+patches until the Board is confirmed up.
+
+## Auto-fill Jobs tab + Maria / Michelle from JD (no paste loop)
+
+When Kimberley notifies Gina of a **new job + description** (e.g. “Ask Maria to
+source for ROLE … [JD]”), Check for actions should:
+
+1. **Upsert the Jobs tab** (`upsert_job` / auto from Maria payload)
+2. Pass that JD into **Maria** sourcing and **Michelle** screening questions
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+npx vercel --prod
+
+node gina-express/frontend/patch-inject-job-context.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/lib/job-context.js gina-backend/agents gina-backend/routes/run-command.js \
+  gina-backend/maria-source.tool.js gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
+git commit -m "Populate Jobs tab from Kimberley JD + Maria/Michelle reuse"
+git pull origin main --rebase && git push origin main
+```
+
+Redeploy Gina. **Paste** updated `gina-express/GINA_TEAM_PROMPT_RULE.txt` into
+Gina’s system prompt (NEW JOB → JOBS TAB + JOB DESCRIPTION RULE).
+
+Workflow: tell Gina the role + full JD → Check for actions → Jobs tab shows the
+job → Maria sources against that JD → Michelle builds screening questions from it.
+
+### If ATS crashes after Jobs-tab patch (red banner / minified Br@… stack)
+
+Safari often hides the real message (`Can't find variable: …`). Run the safe fix:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-job-context-crash.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx gina-backend/frontend/dist gina-backend/frontend/index.html
+git commit -m "Fix ATS crash: safe Jobs-tab job context helpers"
+git pull origin main --rebase && git push origin main
+```
+
+Hard-refresh Gina (Cmd+Shift+R). Jobs upsert via Check for actions still works.
+
+### React #31 — “Objects are not valid as a React child (keys {})”
+
+Something is rendering an empty object `{}` (often Jobs `requiredSkills` / `selectedJob || …`).
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/diagnose-react-31.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/fix-react-31.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx gina-backend/frontend/dist
+git commit -m "Fix React #31: do not render empty job objects"
+git pull origin main --rebase && git push origin main
+```
+
+In the browser console once: `localStorage.clear(); sessionStorage.clear(); location.reload();`
+
+## Bring Kimberley's Notes back (safe)
+
+After emergency disable (white screen), use the one-shot bring-back — **not** the old `patch-kimberley-notes.mjs` alone:
+
+```bash
+cd ~/AI-ATS
+git pull origin cursor/ai-ats-b2b-platform-4f1f
+
+node gina-express/frontend/bring-back-team-comms.mjs /Users/jameslyday/lyday-gina-backend/gina-backend
+
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend/gina-backend
+git add agents lib routes maria-source.tool.js briefing GINA_TEAM_PROMPT_RULE.txt frontend/src/App.jsx server.js
+git status
+git commit -m "Restore team comms: Kimberley Notes + queue/execute handoffs"
+git push origin main
+```
+
+Railway → Redeploy. Open **Kimberley's Notes** → **Refresh**.
+
+## Soundness check (new chat)
+
+Ask Gina (one at a time or as a short batch):
+
+```text
+Ask Maria to source a Warehouse Mechanic in Atlanta, GA. All candidates must have a resume on file.
+Have Michelle screen the Warehouse Mechanic candidates that just came in.
+Tell Kelley to move Ava Chen to Screening and note "Kimberley requested".
+Get Ashton to draft a follow-up email to "Ava Chen".
+```
+
+Then: **Agent → Check for actions** → **Kimberley's Notes → Refresh**.
+
+Expect:
+- Maria note with shortlist / SignalHire status (or a clear env error)
+- Michelle / Kelley / Ashton notes with **Handoff** lines
+- No duplicate ack+result for the same action
+- No “No candidate found matching Maria”
+
+## Fix: Gina says she only has three ATS actions
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/inspect-and-fix-gina-js.mjs ~/lyday-gina-backend/gina-backend/gina.js
+```
+
+Commit/push that Gina repo, confirm Railway root dir, redeploy, **new chat**.
+
+## Fix: Check for actions skips Maria / unknown action type
+
+After a nuclear App.jsx restore, re-wire handlers (esbuild-gated):
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+Then commit `gina-backend/frontend/src/App.jsx` (+ routes/agents/lib if copied), `git pull origin main --rebase`, `git push origin main`.
+
+If the patch says `Expected "(" but found "applyAgentAction"`, pull again — that was a bad await rewriter (fixed). Do **not** skip the patch; Check for actions will keep saying Unknown action type without it.
+
+Also restore toolbar + Gina/bot branding after nuclear restore:
+
+```bash
+node gina-express/frontend/patch-ats-toolbar-links.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+node gina-express/frontend/patch-bot-nav-branding.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+Nav labels become: 👩🏿 Gina · 👩🏻 Maria · 👩🏾 Michelle · 👩🏼 Kelley · 👨 Ashton
+
+## Fix: Duplicate replies in Kimberley's Notes
+
+Ack + working update (or double Check for actions) created two rows for the same `action_id`. Notes now upsert by action id, collapse dupes on list, and expose a one-shot cleanup.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git commit -m "Dedupe Kimberley Notes by action id"
+git pull origin main --rebase
+git push origin main
+```
+
+After Railway redeploy, clean existing duplicates (while logged into Gina):
+
+```bash
+curl -sS -X POST https://lyday-gina-backend-production.up.railway.app/ats/kimberley-notes/dedupe -H "Content-Type: application/json" -b "YOUR_SESSION_COOKIE"
+```
+
+Or open Kimberley's Notes → Refresh (list already hides same-action duplicates). New Check for actions runs replace the ack instead of adding a second card.
+
+## Fix: Gina emailed Maria (team bots are never emailed)
+
+Maria / Michelle / Kelley / Ashton are internal agents. "Email Maria for an update"
+must queue `command_agent`, not `send_email`.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-no-email-team-bots.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/GINA_TEAM_PROMPT_RULE.txt gina-backend/gina.js gina-backend/frontend/src/App.jsx
+git commit -m "Never email Maria/Michelle/Kelley/Ashton — use command_agent"
+git pull origin main --rebase
+git push origin main
+```
+
+After deploy: Agent → **Check for actions** on the queued email (e.g. #242) — it rewrites to a Maria team command and files the reply in Kimberley's Notes.
+
+Correct ask: “Ask Maria for an update on Home Depot sourcing” (not “send Maria an email”).
+
+If Kimberley's Notes show **Status: blocked / Maria needs a roleTitle** on a Home Depot
+*status* ask, Gina still has the old command-agent. Re-run:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+# that copies agents/command-agent.tool.js + bot-replies.js
+cd ~/lyday-gina-backend
+git add gina-backend/agents/command-agent.tool.js gina-backend/agents/bot-replies.js
+git commit -m "Maria status updates are not source jobs (Home Depot Sourcing)"
+git pull origin main --rebase
+git push origin main
+```
+
+Then ask again: “Ask Maria for an update on Home Depot sourcing” → Check for actions.
+
+## Fix: Check for actions — `Can't find variable: beginCandidateImportSession`
+
+An earlier no-duplicates patch called `beginCandidateImportSession()` from Check for
+actions without that helper in scope (Safari: “Can't find variable”). Candidate File
+#251 / Maria sourcing hit this on Agent → Check for actions.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/repair-begin-import-session.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx
+git commit -m "Fix Check for actions: beginCandidateImportSession undefined"
+git pull origin main --rebase && git push origin main
+```
+
+That repair re-applies Check for actions helpers, exports them on `window`, and wraps
+bare calls with `typeof` guards. Hard-refresh Gina ATS, then **Check for actions**
+again (action #251). No need to re-queue the Candidate File if it is still pending.
+
+## Fix: Education missing on ATS resume / candidate profile
+
+Live Coresignal / PDL / Bright Data resume blobs dropped the `EDUCATION` section
+(demo resumes still had it). AI-ATS now always embeds Education in `resumeText`,
+passes `education` to Gina, and the ATS profile shows an **Education** block.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+# restart AI-ATS npm run dev so new sourced resumes include EDUCATION
+
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/patch-show-resume-education.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx
+git commit -m "ATS candidate profile: show Education on resume"
+git pull origin main --rebase && git push origin main
+```
+
+Hard-refresh Gina, re-run Maria source + Check for actions — open a candidate:
+Education appears above Resume (and inside the resume text).
+
+## Board: show which platform each candidate was sourced from
+
+Maria → SignalHire now sends `sourcedFrom` / `sourcedFromText` (e.g. Coresignal,
+People Data Labs, LinkedIn). Board cards show **From: …** under the name.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+# AI-ATS already has the push fields after pull — restart npm run dev
+
+node gina-express/frontend/patch-board-sourced-from.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx
+git commit -m "Board cards show sourced-from platforms"
+git pull origin main --rebase && git push origin main
+```
+
+Re-source via Maria + Check for actions to see labels on **new** imports (older
+cards without `sourcedFrom` only show a generic source if present).
+
+## Fix: Railway `ECONNREFUSED 127.0.0.1:5432` (Postgres)
+
+Start command is fine (`gina-backend@1.0.0 start` → `node server.js`). Gina then crashes because
+it tries to open Postgres on **localhost:5432** inside the container — there is no DB there.
+
+```text
+Failed to initialize database schema: AggregateError [ECONNREFUSED]
+address: '127.0.0.1', port: 5432
+```
+
+**Cause:** `DATABASE_URL` (or `POSTGRES_URL`) is missing / not linked on the Gina service,
+so `pg` falls back to `127.0.0.1:5432`.
+
+### Fix in Railway (no code push required)
+
+1. Project → **New** → **Database** → **PostgreSQL** (or use your existing Postgres service).
+2. Open the **Gina** service → **Variables**.
+3. Add a reference variable (not a hardcoded localhost URL):
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+
+   (In the UI: **Add variable** → **Add reference** → pick the Postgres service → `DATABASE_URL`.)
+
+4. Optional but common for Railway Postgres:
+
+| Variable | Value |
+|---|---|
+| `PGSSL` | leave unset (Gina kit defaults to SSL) |
+
+5. **Redeploy** Gina. Logs should show schema setup succeeding, not `ECONNREFUSED`.
+
+### Quick checks
+
+- Gina and Postgres must be in the **same Railway project**.
+- Do **not** set `DATABASE_URL=postgresql://…@127.0.0.1:5432/…` on Railway.
+- Mac local Gina can use localhost Postgres; Railway cannot.
+
+## Fix: Railway Railpack — “No start command detected”
+
+Build log looks like:
+
+```text
+⚠ No node package manager detected, using npm
+✖ No start command detected
+railpack process exited with an error
+```
+
+**Meaning:** the folder Railway is building has no usable `package.json` → `scripts.start`
+(and often no `package.json` at all). Gina lives in a **nested** folder.
+
+### One-line Mac fix (do this first)
+
+Pass the **monorepo root** (not only `gina-backend`). The script adds `scripts.start`
+on the app **and** a root `package.json` so a blank Railway Root Directory still works.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-railway-start.mjs ~/lyday-gina-backend
+cd ~/lyday-gina-backend
+git add package.json railway.json gina-backend/package.json gina-backend/railway.json
+git status   # must show package.json at repo ROOT if nested
+git commit -m "Railway: root + app npm start for Railpack"
+git pull origin main --rebase && git push origin main
+```
+
+### Railway UI (required — code alone is not enough)
+
+Gina service → **Settings** → **Save** → **Redeploy**:
+
+| Setting | Value |
+|---|---|
+| **Root Directory** | **leave blank** (after the script writes root `package.json`) |
+| **Custom Start Command** | `npm start` |
+| **Connected repo** | Gina repo (`lyday-gina-backend`) — **not** `AI-ATS` |
+
+If you prefer nested root: Root Directory = `gina-backend`, Start = `npm start`.
+
+Wrong settings that cause this exact error:
+
+- Root Directory = `gina-express` (AI-ATS kit — no `package.json`)
+- Root Directory = `gina-backend` when that folder is empty/missing on GitHub
+- Connected to `jlyday65/AI-ATS` instead of the Gina backend repo
+- Fixed files locally but **not committed/pushed** (Railpack builds GitHub, not your Mac)
+
+### Confirm GitHub has the files Railway needs
+
+```bash
+cd ~/lyday-gina-backend
+git ls-files package.json gina-backend/package.json server.js gina-backend/server.js
+```
+
+You need either:
+- `package.json` + `server.js` at repo root, or
+- `gina-backend/package.json` + `gina-backend/server.js` **and** (recommended) root `package.json` with `"start": "node gina-backend/server.js"`
+
+Do **not** deploy AI-ATS to this Gina Railway service — Maria/SignalHire stays on your Mac via ngrok.
+
+## Home Depot / “New: 64” but Board shows 0
+
+**Ignore emoji pipeline tables like this** — they are invented Gina chat copy, not the Board:
+
+```text
+ATS snapshot as of July 30, 2026 … New | 64 … Maria has 64 candidates …
+Suggested Next Step: ask Michelle to begin screening the 64 new candidates
+```
+
+**Those 64 candidates are not on the Board.** Maria never successfully imported a
+Home Depot shortlist via SignalHire. Home Depot traffic was **status-update** asks
+(often mis-routed / roleTitle-blocked), not a landed shortlist. Trust the Board UI (0).
+
+Fix so Gina stops inventing counts:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-live-pipeline-counts.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add -A && git commit -m "Pipeline summary uses live Board counts only (no invented New: 64)"
+git pull origin main --rebase && git push origin main
+```
+
+Then ask again: **Give me the pipeline summary** → expect `New: 0` (or real Board count),
+plain text, no July 30 emoji table.
+
+Successful Maria imports in this project were small demo batches for roles like
+**Warehouse Assistant Manager**, **Operations Manager**, and **Senior Manager**
+(typically ~5 per Check for actions) — not 64 Home Depot people.
+
+To actually fill the Board for Home Depot:
+
+```text
+Ask Maria to source 20 Warehouse Assistant Manager candidates in Atlanta, GA for Home Depot. All must have a resume on file.
+```
+
+Then: keep `npm run dev` + `ngrok http 3000` up → Gina **Check for actions** → open Board
+(filter/select that job title). Repeat with the real Home Depot role titles you need.
+
+## Fix: No duplicate Board candidates
+
+Maria imports must **update in place** — never create Omar Sato × N.
+Cause: Check for actions applied several `import_candidate` rows while React
+still saw a stale `candidates` array, so name/email dedupe missed siblings
+in the same batch.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-no-duplicate-candidates.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add gina-backend/frontend/src/App.jsx gina-backend/lib/candidate-dedupe.js
+git commit -m "No duplicate Board candidates on Maria import"
+git pull origin main --rebase
+git push origin main
+```
+
+After deploy: open Board or run **Check for actions** once — existing duplicate
+cards collapse; new Maria shortlists merge by email/phone/name.
+
+## Fix: Skipped action — SignalHire Maria source failed (404)
+
+Queue/role parsing worked; Gina called the wrong host for Maria sourcing (or `SIGNALHIRE_BASE_URL` is unset/localhost). Gina must call **AI-ATS** `POST /api/maria/source`, not Gina itself.
+
+### Correct URL shape (common mistake)
+
+WRONG — Gina's Railway host (or glued onto ngrok):
+```
+https://lyday-gina-backend-production.up.railway.app
+https://lyday-gina-backend-production.up.railway.app.ngrok-free.dev
+```
+
+RIGHT — copy the https URL from the ngrok window after `ngrok http 3000`:
+```
+https://some-random-words.ngrok-free.dev
+```
+
+### If the URL is `*.ngrok-free.dev` and you see ERR_NGROK_3200 / offline
+
+The laptop tunnel is down. **Preferred fix:** stop using ngrok — deploy AI-ATS
+once (Vercel) and set Gina `SIGNALHIRE_BASE_URL` to that permanent URL.
+See [`docs/SIGNALHIRE-ALWAYS-ON.md`](../docs/SIGNALHIRE-ALWAYS-ON.md).
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+npx vercel --prod
+node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-AI-ATS.vercel.app
+```
+
+Gina Railway (once):
+
+- `SIGNALHIRE_BASE_URL=https://YOUR-AI-ATS.vercel.app`
+- `RELAY_SECRET` = same as Vercel / SignalHire
+
+No Mac sign-in, no ngrok. Check for actions only needs that URL online.
+
+Temporary laptop workaround (not seamless):
+
+```bash
+cd ~/AI-ATS && npm run dev   # Terminal A
+ngrok http 3000              # Terminal B — update SIGNALHIRE_BASE_URL if subdomain changes
+```
+
+### If you use a permanent host (Vercel)
+
+1) Probe:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/diagnose-signalhire-base-url.mjs https://YOUR-AI-ATS.vercel.app
+```
+
+Expect JSON with `"agent":"maria"`. A 404 means that host is not AI-ATS.
+
+2) On **Gina Railway** set:
+
+- `SIGNALHIRE_BASE_URL=https://YOUR-AI-ATS.vercel.app` (no trailing slash)
+- `RELAY_SECRET` = same value as SignalHire `/ats`
+
+3) Copy improved errors + UI reason handling:
+
+```bash
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git commit -m "Clearer Maria SignalHire 404 errors + command_agent error field"
+git pull origin main --rebase
+git push origin main
+```
+
+Redeploy Gina, then Check for actions again (87–89).
+
+## Fix: Skipped action — Command failed (200)
+
+`command_agent` returned `ok: false` with a message but the UI only showed `Command failed (200)`. The same `patch-check-for-actions` step above surfaces `error` / `summary` / `result.error`.
+
+## Fix: Skipped action — Maria needs a roleTitle / missing targetAgent
+
+Live queue rows (e.g. 88/89) look like:
+`{ "role": "Warehouse Assistant Manager", "agent": "Maria", "location": "Atlanta, Georgia", "requirements": ["Must have a resume"] }`
+— no `roleTitle` / `targetAgent` / `task`. run-command now accepts those aliases and builds a task.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git status
+git commit -m "Accept role/agent aliases on Maria source + command_agent"
+git pull origin main --rebase
+git push origin main
+```
+
+After Railway redeploy, **Check for actions again** — pending 88/89 should run without re-queueing if they still have `role` + `location`.
+
+## Fix: Chat HTTP 500 `{"error":"SYSTEM_PROMPT is not defined"}`
+
+Gina chat still references `SYSTEM_PROMPT` after a restore stripped `const SYSTEM_PROMPT = \`...\``. (Same class of break as `pool` / `anthropic`.)
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-gina-system-prompt-undefined.mjs ~/lyday-gina-backend/gina-backend --force
+node --check ~/lyday-gina-backend/gina-backend/gina.js
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git status
+git commit -m "Fix SYSTEM_PROMPT is not defined in Gina chat"
+git pull origin main --rebase
+git push origin main
+```
+
+The script restores from a `gina.js.bak*` / git copy when possible, otherwise builds from `GINA_TEAM_RULES` / the kit prompt rule. Wait for Railway, then re-ask Gina to queue Maria.
+
+## Fix: Chat HTTP 500 `{"error":"anthropic is not defined"}`
+
+Gina chat calls `anthropic.messages.create` but lost the SDK client after a restore:
+
+```js
+import Anthropic from "@anthropic-ai/sdk";
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+```
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-gina-anthropic-undefined.mjs ~/lyday-gina-backend/gina-backend --force
+node --check ~/lyday-gina-backend/gina-backend/gina.js
+cd ~/lyday-gina-backend/gina-backend && npm install @anthropic-ai/sdk
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git status
+git commit -m "Fix anthropic is not defined in Gina chat"
+git pull origin main --rebase
+git push origin main
+```
+
+Confirm Railway env has `ANTHROPIC_API_KEY`, wait for redeploy, then re-ask Gina to queue Maria.
+
+## Fix: Chat HTTP 500 `{"error":"pool is not defined"}`
+
+Gina chat tried to queue an Ashton/Maria/etc. action but a backend file used `pool` without a **top-level** import (often after nuclear restore). Older fixes could wrongly skip files that only had `function foo({ pool })`.
+
+**Must push Gina repo + wait for Railway** after the script. Kit-only pull does not change production.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend --diagnose
+node gina-express/frontend/fix-gina-pool-undefined.mjs ~/lyday-gina-backend/gina-backend --force
+node --check ~/lyday-gina-backend/gina-backend/gina.js
+cd ~/lyday-gina-backend
+git add -u gina-backend
+git status
+git commit -m "Fix pool is not defined — recursive top-level import"
+git pull origin main --rebase
+git push origin main
+```
+
+Look for `Fixed:` or `MISSING IMPORT` in the script output. If everything says `BOUND` but chat still 500s, paste that diagnose output back. After Railway finishes deploying, retest: "Gina please get an update from Ashton on his projects"
+
+## Fix: Railway `Unexpected identifier 'task'` in gina.js
+
+Orphan Candidate File / TEAM prompt prose (with backticks around 'task') was pasted into `gina.js` outside a string.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/repair-gina-js-syntax.mjs ~/lyday-gina-backend/gina-backend
+node --check ~/lyday-gina-backend/gina-backend/gina.js
+cd ~/lyday-gina-backend
+git add gina-backend/gina.js
+git status
+git commit -m "Repair gina.js prompt syntax (Candidate File / TEAM rules)"
+git pull origin main --rebase
+git push origin main
+```
+
+Prompt patches now inject rules only via `const GINA_TEAM_RULES = \`...\`` (never raw paste).
+
+## Fix: Railway `Cannot find module '/app/routes/agents/command-agent.tool.js'`
+
+`routes/candidate-files.js` (or another route) imported `./agents/...` instead of `../agents/...`.
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/fix-routes-agent-imports.mjs ~/lyday-gina-backend/gina-backend
+node --check ~/lyday-gina-backend/gina-backend/routes/candidate-files.js
+cd ~/lyday-gina-backend
+git add gina-backend/routes gina-backend/agents gina-backend/lib
+git status
+git commit -m "Fix routes agent import paths (../agents not ./agents)"
+git pull origin main --rebase
+git push origin main
+```
+
+## Fix: Railway `Unexpected identifier 'TEAM'` in webhooks.js
+
+Orphan **TEAM BOT UPDATE RULE** / **GINA TEAM COMMAND RULE** prose was pasted into `routes/webhooks.js` (not inside a string). Strip it:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/repair-js-orphan-prose.mjs ~/lyday-gina-backend/gina-backend
+node --check ~/lyday-gina-backend/gina-backend/routes/webhooks.js
+cd ~/lyday-gina-backend
+git add gina-backend/routes/webhooks.js
+git status
+git commit -m "Strip orphan TEAM prompt prose from webhooks.js"
+git pull origin main --rebase
+git push origin main
+```
+
+Team prompt patches now **skip `routes/` and `webhooks.js`** so this does not repeat.
+
+## Fix: Bot updates must hit Notes AND pipeline summary
+
+Every bot Check-for-actions reply (Maria / Michelle / Kelley / Ashton) is dual-filed:
+
+1. **Kimberley's Notes** (full text)
+2. **Gina pipeline summary → Team updates (Kimberley Notes)**
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-kelley-updates.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+Then commit agents/routes/briefing/lib/gina.js (+ App.jsx/server.js if patched), pull --rebase, push, Railway redeploy.
+
+Retest (new Gina chat):
+1. Ask Gina for an update from any bot → Check for actions → Kimberley Notes
+2. Ask Gina: Give me the pipeline summary → expect that bot under Team updates
+
+## Fix: Kelley update must hit Notes AND pipeline summary
+
+Kelley’s Check-for-actions reply is dual-filed (same as all bots — use patch above).
+
+## Fix: Kelley update missing from Gina pipeline summary
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/patch-pipeline-include-team-updates.mjs ~/lyday-gina-backend/gina-backend
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+Then commit `gina.js` + briefing/routes/lib (+ App.jsx if patched), pull --rebase, push, Railway redeploy.
+
+Retest: Ask any bot for an update → Check for actions → ask Gina for pipeline summary → expect **Team updates (Kimberley Notes)** to list them.
+
+Railway: `SIGNALHIRE_BASE_URL` + `RELAY_SECRET`. Redeploy, re-ask Gina, Check for actions.
+
+## Fix: Vite build `Expected ";" but found "TEAM"`
+
+Orphan **GINA TEAM COMMAND RULE** prose was pasted into `App.jsx` (not a string). Strip it, then rebuild:
+
+```bash
+cd ~/AI-ATS && git pull origin cursor/ai-ats-b2b-platform-4f1f
+node gina-express/frontend/strip-app-jsx-prose.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+If build still fails, nuclear-restore + re-patch Check for actions + toolbar:
+
+```bash
+node gina-express/frontend/nuclear-restore-app-jsx.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/patch-check-for-actions.mjs ~/lyday-gina-backend/gina-backend
+node gina-express/frontend/patch-ats-toolbar-links.mjs ~/lyday-gina-backend/gina-backend/frontend/src/App.jsx
+cd ~/lyday-gina-backend/gina-backend/frontend && npm run build
+```
+
+`patch-gina-team-commands.mjs` / `patch-gina-chat-tools.mjs` now **skip `*.jsx`** so this does not repeat.
+
+## Env (Railway Gina)
+
+- `RELAY_SECRET` — shared with SignalHire  
+- `SIGNALHIRE_BASE_URL` — SignalHire public URL (Maria)
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `agents/registry.js` | Canonical bot list + aliases |
+| `agents/command-agent.tool.js` | Queue vs execute `command_agent` |
+| `agents/bot-replies.js` | Ack + working replies with handoffs |
+| `lib/kimberley-notes.js` | Notes store + upsert by actionId |
+| `routes/run-command.js` | Check for actions executor |
+| `routes/kimberley-notes.js` | Notes + briefing API |
+| `frontend/bring-back-team-comms.mjs` | Sync files + safe Notes re-enable |
+| `frontend/reenable-kimberley-notes.mjs` | Notes panel + error boundary only |
+| `GINA_TEAM_PROMPT_RULE.txt` | Paste into Gina system prompt |
+| `MARIA.md` | Maria sourcing details |

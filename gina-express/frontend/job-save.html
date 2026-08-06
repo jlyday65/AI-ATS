@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Save Board + Candidate File</title>
+    <style>
+      :root {
+        --ink: #1c2b28;
+        --muted: #5c6f6a;
+        --line: #d7e0dc;
+        --bg: #f3f7f5;
+        --card: #fff;
+        --accent: #2f6459;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Source Sans 3", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, #e7f2ee, transparent 40%),
+          var(--bg);
+        min-height: 100vh;
+        padding: 24px;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 28px;
+        box-shadow: 0 10px 30px rgba(28, 43, 40, 0.06);
+      }
+      h1 { margin: 0 0 8px; font-size: 1.6rem; }
+      p { color: var(--muted); line-height: 1.5; }
+      label { display: block; font-weight: 600; margin: 16px 0 6px; }
+      input, textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font: inherit;
+      }
+      textarea { min-height: 120px; }
+      button {
+        margin-top: 20px;
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 16px;
+        font: inherit;
+        cursor: pointer;
+      }
+      .hint {
+        margin-top: 18px;
+        padding: 12px 14px;
+        background: #eef6f3;
+        border-radius: 10px;
+        color: var(--ink);
+        font-size: 0.95rem;
+      }
+      #status { margin-top: 14px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Save Board + Candidate File</h1>
+      <p>
+        Best after Michelle finishes screening. Downloads one <code>.txt</code>
+        packet (Board + Candidate File). Save it to your external drive.
+        People are also archived for Maria on similar future jobs.
+      </p>
+
+      <label for="jobTitle">Job title</label>
+      <input id="jobTitle" placeholder="Warehouse Mechanic" />
+
+      <label for="location">Location (optional)</label>
+      <input id="location" placeholder="Atlanta, GA" />
+
+      <label for="clientName">Client (optional)</label>
+      <input id="clientName" placeholder="Client name" />
+
+      <label for="jobDescription">Job description (optional, helps Maria match later)</label>
+      <textarea id="jobDescription" placeholder="Paste role description / requirements"></textarea>
+
+      <label for="boardJson">Board candidates JSON (optional if using ATS Save button)</label>
+      <textarea
+        id="boardJson"
+        placeholder='[{"name":"Alex","email":"a@x.com","resumeText":"...","stage":"new"}]'
+      ></textarea>
+
+      <button id="saveBtn" type="button">Download Save / Export</button>
+      <div class="hint">
+        Stage tip: export after Michelle completes Q&amp;A. This is a snapshot —
+        it does not clear the Board or stop Maria/Michelle.
+      </div>
+      <div id="status"></div>
+    </main>
+    <script>
+      const statusEl = document.getElementById("status");
+      document.getElementById("saveBtn").addEventListener("click", async () => {
+        statusEl.textContent = "Saving…";
+        let boardCandidates = [];
+        const raw = document.getElementById("boardJson").value.trim();
+        if (raw) {
+          try {
+            boardCandidates = JSON.parse(raw);
+          } catch (e) {
+            statusEl.textContent = "Board JSON is invalid: " + e.message;
+            return;
+          }
+        }
+        const body = {
+          jobTitle: document.getElementById("jobTitle").value.trim(),
+          location: document.getElementById("location").value.trim(),
+          clientName: document.getElementById("clientName").value.trim(),
+          jobDescription: document.getElementById("jobDescription").value.trim(),
+          boardCandidates,
+          pushToTalentPool: true,
+          download: true,
+        };
+        if (!body.jobTitle) {
+          statusEl.textContent = "Job title is required.";
+          return;
+        }
+        try {
+          const res = await fetch("/ats/job-save-export.txt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const text = await res.text();
+          if (!res.ok) {
+            statusEl.textContent = "Save failed: " + text;
+            return;
+          }
+          const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          const safe = body.jobTitle.replace(/[^\w.-]+/g, "_").slice(0, 40);
+          a.href = url;
+          a.download = "job-save-" + safe + ".txt";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          statusEl.textContent =
+            "Downloaded. Save the file to your external drive.\nMaria can reuse matching people on similar jobs.";
+        } catch (e) {
+          statusEl.textContent = "Save failed: " + (e.message || e);
+        }
+      });
+    </script>
+  </body>
+</html>
