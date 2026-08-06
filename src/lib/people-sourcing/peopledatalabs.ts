@@ -7,6 +7,10 @@ import {
   educationFromProviderRow,
   ensureEducationInResumeText,
 } from "@/lib/resumes/education";
+import {
+  experienceFromProviderRow,
+  experienceTextFromLines,
+} from "@/lib/resumes/experience";
 import type { CandidateProfile } from "@/lib/types";
 
 const SEARCH_URL = "https://api.peopledatalabs.com/v5/person/search";
@@ -24,6 +28,7 @@ function firstString(...values: unknown[]): string | undefined {
 
 function buildQuery(query: PeopleSearchQuery) {
   const must: Array<Record<string, unknown>> = [];
+  const should: Array<Record<string, unknown>> = [];
   const title = query.job.title.trim();
   if (title) {
     must.push({
@@ -50,13 +55,21 @@ function buildQuery(query: PeopleSearchQuery) {
     }
   }
 
+  // Prefer people with work history so Maria can build a real resume blob.
+  // Experience is base-bundle on PDL; summary/headline are often premium-empty
+  // for blue-collar titles (e.g. Mobility Driver).
+  must.push({ exists: { field: "experience" } });
+
+  // Skills boost relevance but must not be hard filters — many driver /
+  // warehouse profiles have sparse skill tags and would otherwise return
+  // name-only shells that look like "no resume" on the Board.
   for (const skill of [
     ...query.job.requiredSkills,
     ...query.job.preferredSkills,
   ].slice(0, 6)) {
     const value = skill.trim();
     if (!value) continue;
-    must.push({
+    should.push({
       term: {
         skills: value.toLowerCase(),
       },
@@ -71,7 +84,12 @@ function buildQuery(query: PeopleSearchQuery) {
     size: Math.min(query.limit ?? 18, 25),
     dataset: "resume",
     query: {
-      bool: { must },
+      bool: {
+        must,
+        ...(should.length
+          ? { should, minimum_should_match: 0 }
+          : {}),
+      },
     },
   };
 }
@@ -88,7 +106,8 @@ function asPeople(payload: unknown): Record<string, unknown>[] {
   return [];
 }
 
-function mapCandidate(
+/** Exported for unit tests — maps one PDL person row into a CandidateProfile. */
+export function mapPeopleDataLabsCandidate(
   row: Record<string, unknown>,
   index: number,
   jobId: string,
@@ -125,7 +144,7 @@ function mapCandidate(
   const skills = Array.isArray(row.skills)
     ? row.skills.map(String).slice(0, 16)
     : [];
-  const summary = firstString(row.summary, row.job_summary);
+  const summary = firstString(row.summary, row.job_summary, row.headline);
   const profileUrl =
     firstString(row.linkedin_url, row.linkedin_username) ||
     (typeof row.linkedin_username === "string"
@@ -140,6 +159,24 @@ function mapCandidate(
       ? row.inferred_years_experience
       : undefined;
   const educationLines = educationFromProviderRow(row);
+  const experienceLines = experienceFromProviderRow(row);
+  const experienceBody =
+    experienceTextFromLines(experienceLines) ||
+    [headline || "Role", company ? `— ${company}` : ""]
+      .filter(Boolean)
+      .join(" ");
+  const summaryBody =
+    summary ||
+    [
+      headline || "Professional",
+      company ? `at ${company}` : null,
+      experienceYears != null ? `with ${experienceYears}+ years experience` : null,
+      location ? `· ${location}` : null,
+    ]
+      .filter(Boolean)
+      .join(" ") ||
+    `People Data Labs profile matched for the open role${company ? ` (current: ${company})` : ""}.`;
+
   const baseResume = [
     fullName,
     headline || "",
@@ -149,11 +186,10 @@ function mapCandidate(
     profileUrl,
     "",
     "SUMMARY",
-    summary ||
-      `People Data Labs profile with overlap for the open role${company ? ` (current: ${company})` : ""}.`,
+    summaryBody,
     "",
     "EXPERIENCE",
-    [headline || "Role", company ? `— ${company}` : ""].filter(Boolean).join(" "),
+    experienceBody,
     "",
     "SKILLS",
     skills.join(", ") || "see People Data Labs / LinkedIn profile",
@@ -192,16 +228,16 @@ function mapCandidate(
           ]
         : []),
     ],
-    summary:
-      summary ||
-      [headline || "Professional", company ? `at ${company}` : null, location ? `· ${location}` : null]
-        .filter(Boolean)
-        .join(" "),
+    summary: summaryBody,
     resumeText,
     sourceSignals: [
       "People Data Labs Person Search API",
       company ? `Current company: ${company}` : "Profile match",
-      skills[0] ? `Skill signal: ${skills[0]}` : "Title match",
+      experienceLines.length > 1
+        ? `${experienceLines.length} roles on file`
+        : skills[0]
+          ? `Skill signal: ${skills[0]}`
+          : "Title match",
       experienceYears != null ? `${experienceYears}+ years` : "Experience on file",
     ],
   };
@@ -271,7 +307,7 @@ export async function searchPeopleDataLabs(
       provider: "peopledatalabs",
       mode: "live",
       candidates: rows.map((row, index) =>
-        mapCandidate(row, index, query.job.id),
+        mapPeopleDataLabsCandidate(row, index, query.job.id),
       ),
       latencyMs: Date.now() - started,
     };

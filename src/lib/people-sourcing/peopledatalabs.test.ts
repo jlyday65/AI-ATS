@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { searchPeopleDataLabs } from "@/lib/people-sourcing/peopledatalabs";
+import {
+  mapPeopleDataLabsCandidate,
+  searchPeopleDataLabs,
+} from "@/lib/people-sourcing/peopledatalabs";
 import type { JobRequisition } from "@/lib/types";
 
 const job: JobRequisition = {
@@ -31,5 +34,58 @@ describe("searchPeopleDataLabs", () => {
 
     if (prev != null) process.env.PEOPLEDATALABS_API_KEY = prev;
     if (prevAlt != null) process.env.PDL_API_KEY = prevAlt;
+  });
+});
+
+describe("mapPeopleDataLabsCandidate", () => {
+  it("builds a real resumeText from experience history when summary is empty (Mobility Driver)", () => {
+    const candidate = mapPeopleDataLabsCandidate(
+      {
+        id: "pdl_driver_1",
+        full_name: "Jordan Miles",
+        job_title: "Mobility Driver",
+        job_company_name: "City Transit Co",
+        location_name: "Atlanta, Georgia",
+        // Premium narrative fields often empty on blue-collar rows
+        summary: null,
+        headline: null,
+        job_summary: null,
+        skills: ["driving", "customer service"],
+        inferred_years_experience: 8,
+        experience: [
+          {
+            title: { name: "Mobility Driver" },
+            company: { name: "City Transit Co" },
+            start_date: "2019-03",
+            end_date: null,
+            location_names: ["Atlanta, Georgia"],
+          },
+          {
+            title: { name: "Delivery Driver" },
+            company: { name: "Parcel Express" },
+            start_date: "2015-01",
+            end_date: "2019-02",
+          },
+        ],
+        education: [
+          {
+            school: { name: "Atlanta Technical College" },
+            degrees: ["Certificate"],
+            end_date: "2014",
+          },
+        ],
+      },
+      0,
+      "job_mobility_driver",
+    );
+
+    assert.equal(candidate.fullName, "Jordan Miles");
+    assert.ok((candidate.resumeText || "").length >= 80);
+    assert.match(candidate.resumeText || "", /EXPERIENCE/);
+    assert.match(candidate.resumeText || "", /Mobility Driver — City Transit Co/);
+    assert.match(candidate.resumeText || "", /Delivery Driver — Parcel Express/);
+    assert.match(candidate.resumeText || "", /EDUCATION/);
+    assert.match(candidate.resumeText || "", /SKILLS/);
+    assert.match(candidate.resumeText || "", /driving/);
   });
 });

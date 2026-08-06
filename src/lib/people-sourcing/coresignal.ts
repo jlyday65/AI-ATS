@@ -7,6 +7,10 @@ import {
   educationFromProviderRow,
   ensureEducationInResumeText,
 } from "@/lib/resumes/education";
+import {
+  experienceFromProviderRow,
+  experienceTextFromLines,
+} from "@/lib/resumes/experience";
 import type { CandidateProfile } from "@/lib/types";
 
 const PREVIEW_URL =
@@ -116,6 +120,17 @@ function mapCandidate(
   const managementLevel = firstString(row.active_experience_management_level);
   const department = firstString(row.active_experience_department);
   const educationLines = educationFromProviderRow(row);
+  const experienceLines = experienceFromProviderRow(row);
+  const experienceBody =
+    experienceTextFromLines(experienceLines) ||
+    [
+      headline || "Role",
+      company ? `— ${company}` : "",
+      department ? `(${department})` : "",
+      managementLevel ? `· ${managementLevel}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
   const baseResume = [
     fullName,
     headline || "",
@@ -128,14 +143,7 @@ function mapCandidate(
       `Professional with overlap for the open role${company ? ` (current: ${company})` : ""}.`,
     "",
     "EXPERIENCE",
-    [
-      headline || "Role",
-      company ? `— ${company}` : "",
-      department ? `(${department})` : "",
-      managementLevel ? `· ${managementLevel}` : "",
-    ]
-      .filter(Boolean)
-      .join(" "),
+    experienceBody,
     "",
     "SKILLS",
     skills.join(", ") || "see LinkedIn / Coresignal profile",
