@@ -79,6 +79,7 @@ describe("mapPeopleDataLabsCandidate", () => {
       "job_mobility_driver",
     );
 
+    assert.ok(candidate);
     assert.equal(candidate.fullName, "Jordan Miles");
     assert.ok((candidate.resumeText || "").length >= 80);
     assert.match(candidate.resumeText || "", /EXPERIENCE/);
@@ -87,5 +88,19 @@ describe("mapPeopleDataLabsCandidate", () => {
     assert.match(candidate.resumeText || "", /EDUCATION/);
     assert.match(candidate.resumeText || "", /SKILLS/);
     assert.match(candidate.resumeText || "", /driving/);
+  });
+
+  it("returns null when PDL row has no mappable work history", () => {
+    const candidate = mapPeopleDataLabsCandidate(
+      {
+        id: "pdl_empty_1",
+        full_name: "No History",
+        // No job_title / company / experience array
+        skills: ["driving"],
+      },
+      0,
+      "job_mobility_driver",
+    );
+    assert.equal(candidate, null);
   });
 });

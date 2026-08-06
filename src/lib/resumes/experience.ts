@@ -167,3 +167,44 @@ export function experienceFromProviderRow(
 export function experienceTextFromLines(lines: ExperienceLine[]): string {
   return formatExperienceLines(lines).join("\n").trim();
 }
+
+/**
+ * True when resumeText contains a non-empty EXPERIENCE section.
+ * Maria uses this as a hard gate — work history mapping is not optional.
+ */
+export function hasMappedWorkHistory(resumeText: string): boolean {
+  const text = String(resumeText || "");
+  // Use [ \t]* (not \s*) after the header so blank lines stay in the body
+  // instead of being eaten before the capture starts.
+  const match = text.match(
+    /(?:^|\n)[ \t]*EXPERIENCE[ \t]*\n([\s\S]*?)(?=\n[ \t]*(?:SKILLS|EDUCATION|SUMMARY|CERTIFICATIONS|PROJECTS|AWARDS)[ \t]*\n|$)/i,
+  );
+  if (!match) return false;
+  const body = match[1]
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line || /^[-–—•]+$/.test(line)) return false;
+      // Never treat the next section header as experience content.
+      if (
+        /^(SKILLS|EDUCATION|SUMMARY|CERTIFICATIONS|PROJECTS|AWARDS)\b/i.test(
+          line,
+        )
+      ) {
+        return false;
+      }
+      return true;
+    });
+  if (!body.length) return false;
+  // Reject placeholder-only shells that look like "no resume" on the Board.
+  const joined = body.join(" ").trim();
+  if (joined.length < 8) return false;
+  if (/^see (people data labs|linkedin|coresignal)/i.test(joined)) return false;
+  return true;
+}
+
+/** Resume text is long enough and includes mapped work history. */
+export function hasUsableResumeWithWorkHistory(resumeText: string): boolean {
+  const text = String(resumeText || "").trim();
+  return text.length >= 80 && hasMappedWorkHistory(text);
+}

@@ -3,6 +3,7 @@ import { buildSourcingBrief, rankCandidates } from "@/lib/ai/matcher";
 import { pushCandidatesToAts } from "@/lib/ats/providers";
 import { searchCandidatePlatforms } from "@/lib/platforms/connector";
 import { listLivePlatforms } from "@/lib/platforms/catalog";
+import { hasUsableResumeWithWorkHistory } from "@/lib/resumes/experience";
 import {
   talentMatchToProfile,
   talentMatchesForJob,
@@ -22,10 +23,26 @@ export interface RunSourcingInput {
   limit?: number;
   /** Skip candidates without resumeText when pushing to ATS */
   resumesRequired?: boolean;
+  /**
+   * When true (Maria always), drop candidates whose resumeText lacks a mapped
+   * EXPERIENCE / work-history block — not optional for Maria shortlists.
+   */
+  workHistoryRequired?: boolean;
   pushToAtsConnectionId?: string;
   pushTopN?: number;
   /** Include archived Board/Candidate File talent that matches the JD (default true) */
   includeTalentPool?: boolean;
+}
+
+function passesResumeGates(
+  candidate: CandidateProfile,
+  input: Pick<RunSourcingInput, "resumesRequired" | "workHistoryRequired">,
+): boolean {
+  const text = candidate.resumeText || "";
+  if (input.workHistoryRequired || input.resumesRequired) {
+    return hasUsableResumeWithWorkHistory(text);
+  }
+  return true;
 }
 
 export interface RunSourcingResult {
@@ -88,7 +105,10 @@ export async function runSourcingAgent(input: RunSourcingInput): Promise<RunSour
     candidates = mergeCandidates(liveCandidates, poolProfiles);
   }
 
-  const matches = rankCandidates(job, candidates).slice(0, limit);
+  const ranked = rankCandidates(job, candidates);
+  const matches = ranked
+    .filter((match) => passesResumeGates(match.candidate, input))
+    .slice(0, limit);
 
   const run: SourcingRun = {
     id: `run_${randomUUID().slice(0, 8)}`,
@@ -117,12 +137,7 @@ export async function runSourcingAgent(input: RunSourcingInput): Promise<RunSour
     for (const match of matches) {
       if (selected.length >= topN) break;
       const candidate = match.candidate;
-      if (
-        input.resumesRequired &&
-        !(candidate.resumeText && candidate.resumeText.trim().length >= 80)
-      ) {
-        continue;
-      }
+      if (!passesResumeGates(candidate, input)) continue;
       const key = (
         candidate.email?.trim().toLowerCase() ||
         candidate.fullName.trim().toLowerCase()
@@ -131,9 +146,12 @@ export async function runSourcingAgent(input: RunSourcingInput): Promise<RunSour
       seen.add(key);
       selected.push(candidate);
     }
-    if (input.resumesRequired && selected.length === 0) {
+    if (
+      (input.resumesRequired || input.workHistoryRequired) &&
+      selected.length === 0
+    ) {
       throw new Error(
-        "No candidates with resume text on file matched this search. Retry or widen the brief.",
+        "No candidates with mapped work history / resume text matched this search. Retry or widen the brief.",
       );
     }
     const result = await pushCandidatesToAts({

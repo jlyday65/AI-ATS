@@ -10,6 +10,11 @@ import {
   educationFromProviderRow,
   ensureEducationInResumeText,
 } from "@/lib/resumes/education";
+import {
+  experienceFromProviderRow,
+  experienceTextFromLines,
+  hasUsableResumeWithWorkHistory,
+} from "@/lib/resumes/experience";
 import type { CandidateProfile } from "@/lib/types";
 
 const SCRAPE_URL = "https://api.brightdata.com/datasets/v3/scrape";
@@ -116,9 +121,13 @@ export async function searchBrightDataPeople(
       const skills: string[] = Array.isArray(row.skills)
         ? row.skills.map(String).slice(0, 12)
         : [];
-      const educationLines = educationFromProviderRow(
-        row as Record<string, unknown>,
-      );
+      const rowRecord = row as Record<string, unknown>;
+      const educationLines = educationFromProviderRow(rowRecord);
+      const experienceBody =
+        experienceTextFromLines(experienceFromProviderRow(rowRecord)) ||
+        (headline ? String(headline) : "");
+      if (!experienceBody.trim()) return null;
+
       const baseResume = [
         fullName,
         headline || "",
@@ -127,6 +136,9 @@ export async function searchBrightDataPeople(
         "",
         "SUMMARY",
         about || `LinkedIn profile enriched for ${query.job.title}.`,
+        "",
+        "EXPERIENCE",
+        experienceBody,
         "",
         "SKILLS",
         skills.join(", ") || "see LinkedIn profile",
@@ -137,6 +149,7 @@ export async function searchBrightDataPeople(
         fullName,
         seed: index * 17 + fullName.length,
       });
+      if (!hasUsableResumeWithWorkHistory(resumeText)) return null;
 
       return {
         id: `cand_brightdata_${query.job.id}_${index}`,
@@ -161,7 +174,7 @@ export async function searchBrightDataPeople(
           headline ? `Headline: ${headline}` : "Profile enriched",
         ],
       };
-    });
+    }).filter((c): c is CandidateProfile => Boolean(c));
 
     return {
       provider: "brightdata",

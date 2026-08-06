@@ -19,6 +19,7 @@ const schema = z.object({
   seniority: z.string().optional(),
   platformIds: z.array(z.string()).optional(),
   limit: z.number().int().min(1).max(100).optional(),
+  /** Ignored — Maria always requires mapped work history / resume text. */
   resumesRequired: z.boolean().optional(),
   pushToGina: z.boolean().optional(),
   pushTopN: z.number().int().min(1).max(50).optional(),

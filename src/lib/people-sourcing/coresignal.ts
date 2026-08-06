@@ -10,6 +10,7 @@ import {
 import {
   experienceFromProviderRow,
   experienceTextFromLines,
+  hasUsableResumeWithWorkHistory,
 } from "@/lib/resumes/experience";
 import type { CandidateProfile } from "@/lib/types";
 
@@ -81,7 +82,7 @@ function mapCandidate(
   row: Record<string, unknown>,
   index: number,
   jobId: string,
-): CandidateProfile {
+): CandidateProfile | null {
   const id = String(row.id ?? row.employee_id ?? index);
   const fullName = String(
     row.full_name ?? row.name ?? `Coresignal Candidate ${index + 1}`,
@@ -131,6 +132,8 @@ function mapCandidate(
     ]
       .filter(Boolean)
       .join(" ");
+  if (!experienceBody.trim()) return null;
+
   const baseResume = [
     fullName,
     headline || "",
@@ -155,6 +158,7 @@ function mapCandidate(
     fullName,
     seed: Array.from(id).reduce((n, ch) => n + ch.charCodeAt(0), 0),
   });
+  if (!hasUsableResumeWithWorkHistory(resumeText)) return null;
 
   return {
     id: `cand_coresignal_${jobId}_${id}`,
@@ -251,7 +255,8 @@ export async function searchCoresignalPeople(
       mode: "live",
       candidates: rows.map((row, index) =>
         mapCandidate(row, index, query.job.id),
-      ),
+      )
+        .filter((c): c is CandidateProfile => Boolean(c)),
       latencyMs: Date.now() - started,
     };
   } catch (error) {

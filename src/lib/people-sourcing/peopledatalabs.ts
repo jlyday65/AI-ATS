@@ -10,6 +10,7 @@ import {
 import {
   experienceFromProviderRow,
   experienceTextFromLines,
+  hasUsableResumeWithWorkHistory,
 } from "@/lib/resumes/experience";
 import type { CandidateProfile } from "@/lib/types";
 
@@ -111,7 +112,7 @@ export function mapPeopleDataLabsCandidate(
   row: Record<string, unknown>,
   index: number,
   jobId: string,
-): CandidateProfile {
+): CandidateProfile | null {
   const id = String(row.id || row.linkedin_id || index);
   const fullName =
     firstString(row.full_name, row.name) || `PDL Candidate ${index + 1}`;
@@ -160,11 +161,10 @@ export function mapPeopleDataLabsCandidate(
       : undefined;
   const educationLines = educationFromProviderRow(row);
   const experienceLines = experienceFromProviderRow(row);
-  const experienceBody =
-    experienceTextFromLines(experienceLines) ||
-    [headline || "Role", company ? `— ${company}` : ""]
-      .filter(Boolean)
-      .join(" ");
+  // Work history mapping is mandatory — never ship a PDL card without EXPERIENCE.
+  const experienceBody = experienceTextFromLines(experienceLines);
+  if (!experienceBody) return null;
+
   const summaryBody =
     summary ||
     [
@@ -194,6 +194,7 @@ export function mapPeopleDataLabsCandidate(
     "SKILLS",
     skills.join(", ") || "see People Data Labs / LinkedIn profile",
   ].join("\n");
+
   const { resumeText, educationText } = ensureEducationInResumeText({
     resumeText: baseResume,
     educationLines,
@@ -201,6 +202,8 @@ export function mapPeopleDataLabsCandidate(
     fullName,
     seed: Array.from(id).reduce((n, ch) => n + ch.charCodeAt(0), 0),
   });
+
+  if (!hasUsableResumeWithWorkHistory(resumeText)) return null;
 
   return {
     id: `cand_pdl_${jobId}_${id}`,
@@ -303,12 +306,15 @@ export async function searchPeopleDataLabs(
       };
     }
     const rows = asPeople(payload).slice(0, body.size);
+    const candidates = rows
+      .map((row, index) =>
+        mapPeopleDataLabsCandidate(row, index, query.job.id),
+      )
+      .filter((c): c is CandidateProfile => Boolean(c));
     return {
       provider: "peopledatalabs",
       mode: "live",
-      candidates: rows.map((row, index) =>
-        mapPeopleDataLabsCandidate(row, index, query.job.id),
-      ),
+      candidates,
       latencyMs: Date.now() - started,
     };
   } catch (error) {

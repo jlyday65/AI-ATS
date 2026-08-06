@@ -27,7 +27,10 @@ export interface MariaSourceRequest {
   seniority?: string;
   platformIds?: string[];
   limit?: number;
-  /** Only push candidates that have full resume text on file */
+  /**
+   * @deprecated Ignored. Maria always requires mapped work history / resume
+   * text — clients cannot disable this.
+   */
   resumesRequired?: boolean;
   /** Push top matches into Gina via saved ATS connection */
   pushToGina?: boolean;
@@ -142,7 +145,9 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
     );
   }
 
-  const resumesRequired = input.resumesRequired === true;
+  // Hard requirement: every Maria shortlist candidate must have mapped work
+  // history in resumeText. Callers cannot opt out (resumesRequired ignored).
+  const resumesRequired = true;
   const settings = getAppSettings();
   const result = await runSourcingAgent({
     orgId: org.id,
@@ -150,6 +155,7 @@ export async function runMariaSourcing(input: MariaSourceRequest) {
     platformIds: input.platformIds,
     limit: input.limit ?? 24,
     resumesRequired,
+    workHistoryRequired: true,
     pushToAtsConnectionId: pushToGina ? ginaConnection?.id : undefined,
     pushTopN: input.pushTopN ?? 5,
   });

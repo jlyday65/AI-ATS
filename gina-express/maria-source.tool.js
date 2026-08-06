@@ -280,12 +280,8 @@ export async function mariaSourceViaSignalHire(input = {}) {
     input = { ...input, location: input.context.location };
   }
 
-  const resumesRequired =
-    input.resumesRequired === true ||
-    input.context?.resumesRequired === true ||
-    /resume/i.test(String(taskText)) ||
-    /resume/i.test(String(input.roleDescription || "")) ||
-    input.requireResume === true;
+  // Always require mapped work history / resume text — not optional for Maria.
+  const resumesRequired = true;
 
   // Prefer roleTitle over a stale board jobId (e.g. Senior Manager selected while
   // Kimberley asked for Operations Manager). Only forward jobId when it is the
