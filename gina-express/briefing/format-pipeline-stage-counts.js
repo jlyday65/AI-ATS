@@ -11,6 +11,7 @@
  * Counts must reflect the LIVE Board — never invent New: 64 from chat memory.
  */
 
+import { boardColumnKey } from "../lib/board-stage.js";
 import {
   countLiveStageCounts,
   totalLiveCandidates,
@@ -27,35 +28,9 @@ export const PIPELINE_STAGES = [
 
 export { countLiveStageCounts, totalLiveCandidates };
 
+/** Same normalizer as Board + Dashboard columns. */
 function normalizeStageKey(raw) {
-  let s = String(raw || "new")
-    .trim()
-    .toLowerCase()
-    .replace(/[\s-]+/g, "_");
-  if (
-    s === "phone_screen" ||
-    s === "phonescreen" ||
-    s === "pre_screen" ||
-    s === "prescreen" ||
-    s === "screen" ||
-    s === "screening"
-  ) {
-    return "screening";
-  }
-  if (
-    s === "on_site" ||
-    s === "onsite" ||
-    s === "final" ||
-    s === "interview" ||
-    s === "interviewing"
-  ) {
-    return "interview";
-  }
-  if (s === "hired" || s === "hire") return "hired";
-  if (s === "offer") return "offer";
-  if (s === "rejected" || s === "reject") return "rejected";
-  if (s === "new") return "new";
-  return "new";
+  return boardColumnKey(raw);
 }
 
 function candidateJobTitle(c = {}) {

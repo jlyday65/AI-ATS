@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Apply Board stage-slide fixes on Gina (Mac).
+# Apply Board + Dashboard stage-slide fixes on Gina (Mac).
 #
-# Candidates slide under New / Screening / Interview / Offer / Hired / Rejected.
-# Kelley reject/advance commands actually move Board cards (not Notes-only).
+# Candidates slide under New / Screening / Interview / Offer / Hired / Rejected
+# on BOTH the Board tab and the Dashboard tab (same normalizer + columns).
+# Kelley reject/advance commands actually move cards (not Notes-only).
 # Stage aliases ("Rejected", "Phone Screen", "interviewing") normalize to keys.
 #
 # Usage:
@@ -33,16 +34,20 @@ fi
 echo "== Copy Board stage kit =="
 mkdir -p "$GINA_BACKEND/lib" "$GINA_BACKEND/agents" "$GINA_BACKEND/routes" \
   "$GINA_BACKEND/frontend/src"
+mkdir -p "$GINA_BACKEND/briefing"
 cp -f "$AI_ATS/gina-express/lib/board-stage.js" "$GINA_BACKEND/lib/"
 cp -f "$AI_ATS/gina-express/lib/live-stage-counts.js" "$GINA_BACKEND/lib/"
+cp -f "$AI_ATS/gina-express/briefing/format-pipeline-stage-counts.js" "$GINA_BACKEND/briefing/" 2>/dev/null || true
 cp -f "$AI_ATS/gina-express/agents/command-agent.tool.js" "$GINA_BACKEND/agents/"
 cp -f "$AI_ATS/gina-express/agents/bot-replies.js" "$GINA_BACKEND/agents/"
 cp -f "$AI_ATS/gina-express/routes/run-command.js" "$GINA_BACKEND/routes/"
 cp -f "$AI_ATS/gina-express/frontend/applyAgentAction.replacement.js" "$GINA_BACKEND/" 2>/dev/null || true
 cp -f "$AI_ATS/gina-express/GINA_TEAM_PROMPT_RULE.txt" "$GINA_BACKEND/" 2>/dev/null || true
 
-echo "== Patch App.jsx Board columns + Check for actions =="
+echo "== Patch App.jsx Board + Dashboard stage columns =="
 node "$AI_ATS/gina-express/frontend/patch-board-stage-columns.mjs" "$ROOT" || true
+node "$AI_ATS/gina-express/frontend/patch-dashboard-stage-pipeline.mjs" "$ROOT" || true
+node "$AI_ATS/gina-express/frontend/patch-live-pipeline-counts.mjs" "$GINA_BACKEND" || true
 if [[ -f "$GINA_BACKEND/frontend/src/App.jsx" ]]; then
   # Injects applyAgentAction.replacement.js (stage normalize + Kelley boardActions)
   node "$AI_ATS/gina-express/frontend/patch-check-for-actions.mjs" "$GINA_BACKEND" || true
@@ -58,6 +63,7 @@ cd "$ROOT"
 git add \
   gina-backend/lib/board-stage.js \
   gina-backend/lib/live-stage-counts.js \
+  gina-backend/briefing/format-pipeline-stage-counts.js \
   gina-backend/agents/command-agent.tool.js \
   gina-backend/agents/bot-replies.js \
   gina-backend/routes/run-command.js \
@@ -65,12 +71,13 @@ git add \
   gina-backend/GINA_TEAM_PROMPT_RULE.txt \
   gina-backend/applyAgentAction.replacement.js 2>/dev/null || true
 git add -f gina-backend/frontend/dist 2>/dev/null || true
-git add -A gina-backend/lib gina-backend/agents gina-backend/routes 2>/dev/null || true
+git add -A gina-backend/lib gina-backend/agents gina-backend/routes gina-backend/briefing 2>/dev/null || true
 
 git status
-git commit -m "Board: slide candidates under correct stage columns (Kelley moves + normalize)" || true
+git commit -m "Board + Dashboard: slide candidates under correct stage columns" || true
 git push || true
 
 echo ""
-echo "Done. Redeploy Gina Railway, hard-refresh the Board."
+echo "Done. Redeploy Gina Railway, hard-refresh Board AND Dashboard."
 echo "Re-ask Kelley to reject Ivy Kim / advance Ava Foster to interview, then Check for actions."
+echo "Both tabs should show Ivy under Rejected and Ava under Interview."

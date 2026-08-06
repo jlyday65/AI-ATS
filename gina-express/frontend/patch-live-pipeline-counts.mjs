@@ -46,13 +46,46 @@ function copy(rel) {
   console.log("Copied", rel);
 }
 
+copy("lib/board-stage.js");
 copy("lib/live-stage-counts.js");
 copy("briefing/format-pipeline-stage-counts.js");
 copy("routes/pipeline-briefing.js");
 copy("GINA_TEAM_PROMPT_RULE.txt");
 
 const LIVE_HELPER = `
-  /** LIVE Board only — never invent New: 64 from chat memory */
+  /** LIVE Board + Dashboard — same stage keys / aliases as Board columns */
+  function __ginaBoardColumnKey(raw) {
+    let s = String(raw || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[→➞]/g, " ")
+      .replace(/[\\s-]+/g, "_")
+      .replace(/_+/g, "_");
+    if (!s) return "new";
+    if (
+      s === "phone_screen" ||
+      s === "phonescreen" ||
+      s === "pre_screen" ||
+      s === "prescreen" ||
+      s === "screen" ||
+      s === "phone"
+    )
+      return "screening";
+    if (
+      s === "interviewing" ||
+      s === "interviews" ||
+      s === "on_site" ||
+      s === "onsite" ||
+      s === "final"
+    )
+      return "interview";
+    if (s === "reject" || s === "rejection" || s === "declined" || s === "pass")
+      return "rejected";
+    if (s === "hire") return "hired";
+    if (s === "offered") return "offer";
+    const allowed = ["new", "screening", "interview", "offer", "hired", "rejected"];
+    return allowed.includes(s) ? s : "new";
+  }
   function countLiveStageCounts(list = []) {
     const counts = {
       new: 0,
@@ -63,21 +96,8 @@ const LIVE_HELPER = `
       rejected: 0,
     };
     for (const c of Array.isArray(list) ? list : []) {
-      let s = String(c.stage || c.status || "new")
-        .trim()
-        .toLowerCase()
-        .replace(/[\\s-]+/g, "_");
-      if (
-        s === "phone_screen" ||
-        s === "phonescreen" ||
-        s === "pre_screen" ||
-        s === "prescreen" ||
-        s === "screen"
-      ) {
-        s = "screening";
-      }
-      if (!(s in counts)) s = "new";
-      counts[s] += 1;
+      const s = __ginaBoardColumnKey(c?.stage ?? c?.status);
+      counts[s] = (counts[s] || 0) + 1;
     }
     return counts;
   }
