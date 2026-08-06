@@ -36,6 +36,7 @@ cp -f "$AI_ATS/gina-express/GINA_TEAM_PROMPT_RULE.txt" "$GINA_BACKEND/" 2>/dev/n
 # applyAgentAction.replacement.js is read by patch-check-for-actions.mjs from AI-ATS
 
 echo "== Re-inject applyAgentAction + Jobs headcount/questions/View candidates =="
+node "$AI_ATS/gina-express/frontend/patch-check-for-actions.mjs" "$GINA_BACKEND" || true
 node "$AI_ATS/gina-express/frontend/patch-jobs-headcount.mjs" "$GINA_BACKEND"
 node "$AI_ATS/gina-express/frontend/patch-jobs-edit-questions.mjs" "$GINA_BACKEND"
 node "$AI_ATS/gina-express/frontend/patch-view-candidates.mjs" "$GINA_BACKEND"
@@ -51,6 +52,7 @@ cd "$FRONTEND"
 npm run build
 # CRITICAL: harden built JS — App.jsx source var names differ from minified o.questions
 node "$AI_ATS/gina-express/frontend/patch-jobs-edit-questions-dist.mjs" "$GINA_BACKEND"
+node "$AI_ATS/gina-express/frontend/patch-cf-jd-to-screening-dist.mjs" "$GINA_BACKEND" || true
 ls -la dist/assets/index-*.js | tail -3
 # Fail the apply if Jobs Edit would still crash in production
 if rg -n --pcre2 '(?<!\|\|\[\]\)\.)\bo\.questions\.length\b' dist/assets/index-*.js >/dev/null 2>&1; then

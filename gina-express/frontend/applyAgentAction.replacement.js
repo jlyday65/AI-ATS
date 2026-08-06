@@ -282,9 +282,10 @@
    * Link Board cards to a Jobs-tab row so "View candidates" finds them.
    * Matches by jobTitle/role when jobId is missing or points at a foreign id.
    */
-  function linkBoardCandidatesToJob(title = "", jobId = "") {
+  function linkBoardCandidatesToJob(title = "", jobId = "", jobDescription = "") {
     const t = String(title || "").trim().toLowerCase();
     const id = String(jobId || "").trim();
+    const jd = String(jobDescription || "").trim();
     if (!t || !id || typeof setCandidates !== "function") return 0;
     let linked = 0;
     setCandidates((prev) => {
@@ -295,8 +296,17 @@
         const role = String(c.jobTitle || c.role || c.title || "")
           .trim()
           .toLowerCase();
-        if (role !== t) return c;
-        if (String(c.jobId || "") === id) return c;
+        const sameJob =
+          role === t || (id && String(c.jobId || "") === id);
+        if (!sameJob) return c;
+        const needsId = String(c.jobId || "") !== id;
+        const prevJd = String(c.jobDescription || "").trim();
+        const needsJd =
+          jd &&
+          (isThinJobDescription(prevJd) ||
+            (!prevJd && !isThinJobDescription(jd)) ||
+            (jd.length > prevJd.length && !isThinJobDescription(jd)));
+        if (!needsId && !needsJd) return c;
         linked += 1;
         changed = true;
         return {
@@ -304,11 +314,76 @@
           jobId: id,
           jobTitle: c.jobTitle || title,
           role: c.role || title,
+          ...(needsJd ? { jobDescription: jd } : {}),
         };
       });
       return changed ? next : list;
     });
     return linked;
+  }
+
+  /**
+   * Candidate File / Maria JD → Jobs Edit (description) + Board Screening
+   * (candidate.jobDescription). Kimberley should not re-paste the JD.
+   */
+  function syncJobDescriptionEverywhere({
+    title = "",
+    jobId = "",
+    description = "",
+    location = "",
+    source = "candidate_file_jd",
+    task = "",
+  } = {}) {
+    const role = String(title || "").trim();
+    const jd = String(description || "").trim();
+    if (!role || isThinJobDescription(jd)) return null;
+    const job = upsertJobOnBoard({
+      title: role,
+      roleTitle: role,
+      location,
+      description: jd,
+      roleDescription: jd,
+      jobDescription: jd,
+      jobId: jobId || undefined,
+      source,
+      task,
+    });
+    const id = job?.id || jobId || resolveGinaJobIdForTitle(role, "");
+    if (id) {
+      linkBoardCandidatesToJob(role, id, jd);
+    }
+    // Also stamp JD onto any Board cards for this role that still lack it
+    // (even when jobId link is pending).
+    if (typeof setCandidates === "function") {
+      setCandidates((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        let changed = false;
+        const next = list.map((c) => {
+          if (!c) return c;
+          const roleKey = String(c.jobTitle || c.role || c.title || "")
+            .trim()
+            .toLowerCase();
+          const match =
+            roleKey === role.toLowerCase() ||
+            (id && String(c.jobId || "") === String(id));
+          if (!match) return c;
+          const prevJd = String(c.jobDescription || "").trim();
+          if (!isThinJobDescription(prevJd) && prevJd.length >= jd.length) {
+            return c;
+          }
+          changed = true;
+          return {
+            ...c,
+            jobId: c.jobId || id || null,
+            jobTitle: c.jobTitle || role,
+            role: c.role || role,
+            jobDescription: jd,
+          };
+        });
+        return changed ? next : list;
+      });
+    }
+    return job;
   }
 
   /** True when description is our thin Gina stub, not Kimberley's real JD. */
@@ -1013,6 +1088,37 @@
               })
             : null);
 
+        // Immediately push Candidate File JD into Jobs Edit + Board Screening
+        // fields (even before Maria shortlist arrives).
+        if (jobNote?.title) {
+          const earlyJd = pickBestJobDescription(
+            fileJob.description,
+            data.roleDescription,
+            data.result?.roleDescription,
+            data.result?.jobDescription,
+            payload?.roleDescription,
+            payload?.jobDescription,
+            payload?.context?.roleDescription,
+            payload?.context?.jobDescription,
+            jobNote.description,
+            jobNote.jobDescription,
+            mariaDesc,
+          );
+          if (!isThinJobDescription(earlyJd)) {
+            syncJobDescriptionEverywhere({
+              title: jobNote.title,
+              jobId: jobNote.id || "",
+              description: earlyJd,
+              location: jobNote.location || fileJob.location || "",
+              source:
+                type === "create_candidate_file"
+                  ? "candidate_file_jd_early"
+                  : "job_jd_early",
+              task: taskHint,
+            });
+          }
+        }
+
         // Maria shortlist often lands in Kimberley Notes first; push queues
         // import_candidate for a *later* Check for actions. Import from the
         // live response in this same click so the Board updates immediately.
@@ -1059,6 +1165,21 @@
                 headline: c.headline || "",
                 resumeText,
                 summary: c.summary || "",
+                // Board Screening + Jobs Edit — carry Candidate File / Jobs JD
+                jobDescription:
+                  jobNote?.description ||
+                  fileJob.description ||
+                  payload?.roleDescription ||
+                  payload?.jobDescription ||
+                  payload?.context?.roleDescription ||
+                  payload?.context?.jobDescription ||
+                  "",
+                roleDescription:
+                  jobNote?.description ||
+                  fileJob.description ||
+                  payload?.roleDescription ||
+                  payload?.jobDescription ||
+                  "",
                 candidateFileId:
                   payload?.context?.candidateFileId ||
                   data.result?.candidateFileId ||
@@ -1219,8 +1340,35 @@
           jobWithHc?.id || ginaJobIdForBoard || resolveGinaJobIdForTitle(roleForHc);
         let linkedToJob = 0;
         if (roleForHc && linkJobId) {
-          linkedToJob = linkBoardCandidatesToJob(roleForHc, linkJobId);
+          linkedToJob = linkBoardCandidatesToJob(
+            roleForHc,
+            linkJobId,
+            bestDescription || jobWithHc?.description || "",
+          );
         }
+        // Candidate File / Maria JD → Jobs Edit + Board Screening jobDescription.
+        if (roleForHc && !isThinJobDescription(bestDescription)) {
+          jobWithHc =
+            syncJobDescriptionEverywhere({
+              title: roleForHc,
+              jobId: jobWithHc?.id || ginaJobIdForBoard || linkJobId || "",
+              description: bestDescription,
+              location:
+                jobWithHc?.location ||
+                jobNote?.location ||
+                fileJob.location ||
+                mariaJob.location ||
+                data.location ||
+                payload?.location ||
+                "",
+              source:
+                type === "create_candidate_file"
+                  ? "candidate_file_jd"
+                  : "maria_jd_sync",
+              task: taskHint,
+            }) || jobWithHc;
+        }
+
         // Final guarantee: Jobs row always carries the richest JD we have.
         if (
           jobWithHc?.title &&
@@ -1325,16 +1473,47 @@
         // Board cards often arrive before Jobs — ensure the role exists on Jobs tab.
         // Do NOT use resumeText as the job description.
         const importRoleTitle = payload.jobTitle || payload.role || "";
+        const importJd = pickBestJobDescription(
+          payload.roleDescription,
+          payload.jobDescription,
+          payload.context?.roleDescription,
+          payload.context?.jobDescription,
+          // Prefer existing Jobs-tab JD when import payload is thin
+          (() => {
+            try {
+              const id = resolveGinaJobIdForTitle(importRoleTitle, "");
+              const jobsList =
+                typeof jobs !== "undefined" && Array.isArray(jobs)
+                  ? jobs
+                  : typeof window !== "undefined" &&
+                      window.__ginaLastJobUpsert &&
+                      String(window.__ginaLastJobUpsert.title || "")
+                        .toLowerCase() === importRoleTitle.toLowerCase()
+                    ? [window.__ginaLastJobUpsert]
+                    : [];
+              const hit =
+                jobsList.find((j) => String(j?.id) === String(id)) ||
+                jobsList.find(
+                  (j) =>
+                    String(j?.title || j?.name || "")
+                      .trim()
+                      .toLowerCase() === importRoleTitle.toLowerCase(),
+                );
+              return hit?.description || hit?.jobDescription || "";
+            } catch {
+              return "";
+            }
+          })(),
+        );
         let ensuredJob = null;
         if (importRoleTitle) {
           ensuredJob = upsertJobOnBoard({
             title: importRoleTitle,
             roleTitle: importRoleTitle,
             location: payload.location || "",
-            description:
-              payload.roleDescription ||
-              payload.jobDescription ||
-              "",
+            description: importJd,
+            roleDescription: importJd,
+            jobDescription: importJd,
             // Only pass jobId when it already belongs to a Gina Jobs row.
             jobId: resolveGinaJobIdForTitle(importRoleTitle, "") || undefined,
             source: "import_candidate",
@@ -1351,6 +1530,11 @@
           const ginaId = resolveGinaJobIdForTitle(importRoleTitle, ensuredJob?.id || "");
           if (ginaId) jobId = ginaId;
         }
+        const boardJd = pickBestJobDescription(
+          importJd,
+          ensuredJob?.description,
+          ensuredJob?.jobDescription,
+        );
         const sourcedFrom = Array.isArray(payload.sourcedFrom)
           ? payload.sourcedFrom
           : Array.isArray(payload.platformIds)
@@ -1371,6 +1555,8 @@
           phone: payload.phone || "",
           role: payload.jobTitle || payload.role || "",
           jobTitle: payload.jobTitle || "",
+          // Board Screening textarea binds to candidate.jobDescription
+          jobDescription: boardJd || "",
           resumeText,
           summary: payload.summary || "",
           headline: payload.headline || "",
@@ -1390,6 +1576,8 @@
             const list = Array.isArray(prev) ? prev : [];
             const existing = list.find((c) => sameBoardPerson(c, incoming));
             if (existing) {
+              const prevJd = String(existing.jobDescription || "").trim();
+              const nextJd = pickBestJobDescription(boardJd, prevJd);
               const patch = {
                 resumeText:
                   resumeText ||
@@ -1401,6 +1589,7 @@
                 education: education || existing.education || "",
                 role: incoming.role || existing.role || "",
                 jobTitle: incoming.jobTitle || existing.jobTitle || "",
+                jobDescription: nextJd || existing.jobDescription || "",
                 email: existing.email || incoming.email || "",
                 phone: existing.phone || incoming.phone || "",
                 source: incoming.source || existing.source,
