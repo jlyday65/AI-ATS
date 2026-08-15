@@ -4,12 +4,42 @@ import type {
   TalentPoolMatch,
 } from "@/lib/talent-pool/types";
 
+// Common English function/filler words — excluded from token overlap scoring.
+// Without this, ANY two job descriptions/resumes share enough generic words
+// ("and", "with", "team", "role", "strong", "maintain"...) to rack up a false
+// "Resume/JD overlap" score, regardless of actual domain relevance. This was
+// confirmed producing real false positives: an archived Warehouse Manager
+// candidate scored 38 (above the 28-point minScore threshold) against a
+// completely unrelated "CTO / VP IT Infrastructure & Cybersecurity" search,
+// purely off generic word overlap plus the near-universal same-city location
+// bonus — not any genuine skill or domain match. With this filter, the same
+// candidate scores 14 (correctly excluded), while a genuinely relevant
+// security-background candidate scores higher than before, since the
+// remaining matched terms are now meaningful ones.
+const STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "from", "have", "will",
+  "are", "was", "were", "been", "being", "has", "had", "not", "but",
+  "can", "could", "should", "would", "may", "might", "must", "shall",
+  "who", "what", "when", "where", "why", "how", "all", "any", "both",
+  "each", "few", "more", "most", "other", "some", "such", "only", "own",
+  "same", "than", "too", "very", "just", "role", "team", "teams",
+  "strong", "also", "across", "overall", "goals", "build", "builds",
+  "lead", "leads", "leader", "leaders", "leading", "support",
+  "supporting", "ensure", "ensures", "maintain", "maintains",
+  "maintained", "high", "top", "new", "our", "your", "their", "its",
+  "his", "her", "them", "you", "she", "him", "they", "one", "two",
+  "get", "got", "use", "used", "using", "into", "onto", "upon", "over",
+  "under", "between", "within", "without", "about", "after", "before",
+  "during", "through", "while", "because", "since", "align", "aligns",
+  "aligned", "daily", "key", "level", "levels",
+]);
+
 function tokens(text: string): string[] {
   return text
     .toLowerCase()
     .split(/[^a-z0-9+#./]+/)
     .map((t) => t.trim())
-    .filter((t) => t.length >= 3);
+    .filter((t) => t.length >= 3 && !STOPWORDS.has(t));
 }
 
 function unique(values: string[]): string[] {
